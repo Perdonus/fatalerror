@@ -64,11 +64,15 @@ class ScanRepository(private val context: Context) {
         dao.getRecentResults().map { it.toDomain() }
     }
 
-    fun startScan(scanType: String, selectedPackages: List<String> = emptyList()): Flow<ScanProgress> = flow {
+    fun startScan(
+        scanType: String,
+        selectedPackages: List<String> = emptyList(),
+        manageNotifications: Boolean = true
+    ): Flow<ScanProgress> = flow {
         val allApps = withContext(Dispatchers.IO) {
             when (scanType) {
                 "QUICK" -> PackageUtils.getUserApps(context).take(30)
-                "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
+                "FULL" -> PackageUtils.getUserApps(context)
                 "SELECTIVE" -> {
                     val userApps = PackageUtils.getUserApps(context)
                     if (selectedPackages.isEmpty()) userApps else userApps.filter { it.packageName in selectedPackages }
@@ -95,11 +99,13 @@ class ScanRepository(private val context: Context) {
                 )
             )
 
-            NotificationHelper.showScanNotification(
-                context,
-                (((index + 1).toFloat() / total.coerceAtLeast(1)) * 100).toInt(),
-                app.appName
-            )
+            if (manageNotifications) {
+                NotificationHelper.showScanNotification(
+                    context,
+                    (((index + 1).toFloat() / total.coerceAtLeast(1)) * 100).toInt(),
+                    app.appName
+                )
+            }
 
             val localThreat = withContext(Dispatchers.IO) { localThreatDetector.scan(app) }
 
@@ -126,7 +132,9 @@ class ScanRepository(private val context: Context) {
             }
         }
 
-        NotificationHelper.cancelScanNotification(context)
+        if (manageNotifications) {
+            NotificationHelper.cancelScanNotification(context)
+        }
         prefs.updateLastScanTime()
 
         val entity = ScanResultEntity(

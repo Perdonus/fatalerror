@@ -27,6 +27,8 @@ class LocalThreatDetector(context: Context) {
     }
 
     fun scan(app: AppInfo): ThreatInfo? {
+        if (app.isSystemApp) return null
+
         val normalizedPackage = app.packageName.lowercase()
         val normalizedName = app.appName.lowercase()
         val permissions = app.requestedPermissions.toSet()
@@ -60,8 +62,6 @@ class LocalThreatDetector(context: Context) {
                 summary = "Имя пакета попало под локальное правило по известному семейству."
             )
         }
-
-        if (app.isSystemApp) return null
 
         val keywordHits = intel.suspiciousKeywords.filter { keyword ->
             normalizedPackage.contains(keyword) || normalizedName.contains(keyword)

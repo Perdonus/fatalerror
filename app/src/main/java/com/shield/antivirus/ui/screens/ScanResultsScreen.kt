@@ -2,6 +2,7 @@ package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Security
@@ -72,10 +74,11 @@ fun ScanResultsScreen(
                     viewModel.clearExplanation()
                 }
             ) {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     when {
                         explainState.isLoading -> {
@@ -93,6 +96,14 @@ fun ScanResultsScreen(
                             }
                         }
                         !explainState.error.isNullOrBlank() -> {
+                            if (!explainState.title.isNullOrBlank()) {
+                                Text(
+                                    text = explainState.title.orEmpty(),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                            }
                             Text(
                                 text = explainState.error.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -100,6 +111,12 @@ fun ScanResultsScreen(
                             )
                         }
                         !explainState.explanation.isNullOrBlank() -> {
+                            Text(
+                                text = explainState.title.orEmpty(),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
                             Text(
                                 text = explainState.explanation.orEmpty(),
                                 style = MaterialTheme.typography.bodyLarge,
@@ -156,15 +173,6 @@ fun ScanResultsScreen(
                                 color = MaterialTheme.colorScheme.signalTone
                             )
                         }
-                        TextButton(
-                            onClick = {
-                                showExplainSheet = true
-                                viewModel.explainCurrentResult()
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text("Объяснить")
-                        }
                     }
                 }
 
@@ -189,7 +197,13 @@ fun ScanResultsScreen(
                         )
                     }
                     items(current.threats, key = { it.packageName + it.threatName }) { threat ->
-                        ThreatCard(threat)
+                        ThreatCard(
+                            threat = threat,
+                            onExplain = {
+                                showExplainSheet = true
+                                viewModel.explainThreat(threat)
+                            }
+                        )
                     }
                 }
             }
@@ -198,7 +212,10 @@ fun ScanResultsScreen(
 }
 
 @Composable
-private fun ThreatCard(threat: ThreatInfo) {
+private fun ThreatCard(
+    threat: ThreatInfo,
+    onExplain: () -> Unit
+) {
     val accent = when (threat.severity) {
         ThreatSeverity.CRITICAL -> MaterialTheme.colorScheme.criticalTone
         ThreatSeverity.HIGH -> MaterialTheme.colorScheme.warningTone
@@ -213,11 +230,16 @@ private fun ThreatCard(threat: ThreatInfo) {
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
             )
-            ShieldStatusChip(
-                label = severityLabel(threat.severity),
-                icon = if (threat.severity == ThreatSeverity.CRITICAL) Icons.Filled.Error else Icons.Filled.Warning,
-                color = accent
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onExplain) {
+                    Text("Объяснить")
+                }
+                ShieldStatusChip(
+                    label = severityLabel(threat.severity),
+                    icon = severityIcon(threat.severity),
+                    color = accent
+                )
+            }
         }
         Text(
             text = threat.threatName,
@@ -250,7 +272,7 @@ private fun formatResultsTime(timestamp: Long): String =
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Выборочная проверка"
+    "SELECTIVE" -> "Глубокая проверка"
     else -> scanType
 }
 
@@ -259,4 +281,11 @@ private fun severityLabel(severity: ThreatSeverity): String = when (severity) {
     ThreatSeverity.HIGH -> "Высокая"
     ThreatSeverity.MEDIUM -> "Средняя"
     ThreatSeverity.LOW -> "Низкая"
+}
+
+private fun severityIcon(severity: ThreatSeverity) = when (severity) {
+    ThreatSeverity.CRITICAL -> Icons.Filled.Error
+    ThreatSeverity.HIGH -> Icons.Filled.Warning
+    ThreatSeverity.MEDIUM -> Icons.Filled.BugReport
+    ThreatSeverity.LOW -> Icons.Filled.Security
 }

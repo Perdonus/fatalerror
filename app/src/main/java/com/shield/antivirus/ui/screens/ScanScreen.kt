@@ -76,7 +76,12 @@ fun ScanScreen(
         label = "scanProgress"
     )
     val threatCount = progress?.threats?.size ?: 0
-    val accent = if (threatCount > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.primary
+    val scanError = scanError(progress)
+    val accent = when {
+        scanError != null -> MaterialTheme.colorScheme.criticalTone
+        threatCount > 0 -> MaterialTheme.colorScheme.warningTone
+        else -> MaterialTheme.colorScheme.primary
+    }
 
     ShieldBackdrop {
         ShieldScreenScaffold(
@@ -158,9 +163,13 @@ fun ScanScreen(
                             )
                         }
                         Text(
-                            text = progressSummary(progress),
+                            text = scanError ?: progressSummary(progress),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = if (scanError != null) {
+                                MaterialTheme.colorScheme.criticalTone
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
                         )
                         if (keepRunningInBackground) {
                             Text(
@@ -265,10 +274,17 @@ private fun progressSummary(progress: ScanProgress?): String {
     return "${progress.scannedCount} из ${progress.totalCount.coerceAtLeast(0)}"
 }
 
+private fun scanError(progress: ScanProgress?): String? {
+    val current = progress?.currentApp.orEmpty()
+    if (current.startsWith("Глубокая проверка была прервана")) return current
+    if (current.contains("ошиб", ignoreCase = true)) return current
+    return null
+}
+
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Выборочная проверка"
+    "SELECTIVE" -> "Глубокая проверка"
     else -> scanType
 }
 

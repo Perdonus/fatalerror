@@ -69,6 +69,57 @@ function coerceAiResponse(content) {
     };
 }
 
+function severityLabel(severity) {
+    switch (String(severity || '').toUpperCase()) {
+        case 'CRITICAL':
+            return 'критический';
+        case 'HIGH':
+            return 'высокий';
+        case 'MEDIUM':
+            return 'средний';
+        default:
+            return 'низкий';
+    }
+}
+
+function buildFallbackExplanation({ summary, result }) {
+    const findings = Array.isArray(result?.findings) ? result.findings : [];
+    const topFinding = findings[0];
+    const totalThreats = Number(result?.threatsFound || summary?.totalThreats || findings.length || 0);
+    const totalScanned = Number(result?.totalScanned || 0);
+    const scanMode = String(result?.scanType || summary?.mode || '').toLowerCase();
+    const modeLabel = scanMode === 'full' ? 'глубокой проверке' : scanMode === 'quick' ? 'быстрой проверке' : 'проверке';
+
+    if (!topFinding) {
+        return {
+            model: 'local-fallback',
+            explanation: totalScanned > 0
+                ? `Проверка завершена. Просмотрено ${totalScanned} приложений, явных угроз не найдено.`
+                : 'Проверка завершена, явных угроз не найдено.',
+            advice: ['Повторите глубокую проверку позже, если поведение устройства кажется подозрительным.']
+        };
+    }
+
+    const engine = topFinding.detectionEngine ? ` Источник сигнала: ${topFinding.detectionEngine}.` : '';
+    const summaryText = topFinding.summary ? ` ${topFinding.summary}` : '';
+
+    return {
+        model: 'local-fallback',
+        explanation: [
+            `${topFinding.appName} помечено как приложение с ${severityLabel(topFinding.severity)} уровнем риска.`,
+            `Причина: ${topFinding.threatName}.`,
+            totalThreats > 1 ? `В этом отчёте есть ещё ${totalThreats - 1} сигнал(ов).` : `Это основной сигнал в текущей ${modeLabel}.`,
+            engine,
+            summaryText
+        ].join(' ').replace(/\s+/g, ' ').trim(),
+        advice: [
+            'Если приложение установлено не из официального магазина, лучше удалить его.',
+            'Проверьте выданные разрешения и отключите лишние.',
+            'Повторите глубокую проверку после обновления базы.'
+        ]
+    };
+}
+
 async function resolveModel() {
     if (process.env.AIH_MODEL) {
         return process.env.AIH_MODEL.trim();
@@ -100,37 +151,42 @@ async function explainScan({ summary, result }) {
         throw error;
     }
 
-    const model = await resolveModel();
-    const summaryText = sanitizeInput(summary);
-    const resultText = sanitizeInput(result);
+    try {
+        const model = await resolveModel();
+        const summaryText = sanitizeInput(summary);
+        const resultText = sanitizeInput(result);
 
-    const completion = await apiRequest('/chat/completions', {
-        model,
-        temperature: 0.2,
-        max_tokens: 350,
-        messages: [
-            {
-                role: 'system',
-                content: 'Ты помогаешь пользователю Android-антивируса. Кратко и по-русски объясняй результаты сканирования. Не придумывай факты. Отвечай JSON-объектом вида {"explanation":"...","advice":["...","..."]}. Советы должны быть практичными и короткими.'
-            },
-            {
-                role: 'user',
-                content: `Сводка сканирования:\n${summaryText || 'Нет сводки.'}\n\nДетальные результаты:\n${resultText || 'Нет подробных данных.'}`
-            }
-        ]
-    });
+        const completion = await apiRequest('/chat/completions', {
+            model,
+            temperature: 0.2,
+            max_tokens: 350,
+            messages: [
+                {
+                    role: 'system',
+                    content: 'Ты помогаешь пользователю Android-антивируса. Кратко и по-русски объясняй результаты сканирования. Не придумывай факты. Отвечай JSON-объектом вида {"explanation":"...","advice":["...","..."]}. Советы должны быть практичными и короткими.'
+                },
+                {
+                    role: 'user',
+                    content: `Сводка сканирования:\n${summaryText || 'Нет сводки.'}\n\nДетальные результаты:\n${resultText || 'Нет подробных данных.'}`
+                }
+            ]
+        });
 
-    const content = completion?.choices?.[0]?.message?.content;
-    if (!content) {
-        throw new Error('AI upstream returned empty completion');
+        const content = completion?.choices?.[0]?.message?.content;
+        if (!content) {
+            throw new Error('AI upstream returned empty completion');
+        }
+
+        const parsed = coerceAiResponse(content);
+        return {
+            model,
+            explanation: parsed.explanation,
+            advice: parsed.advice
+        };
+    } catch (error) {
+        console.error('AI explain fallback:', error);
+        return buildFallbackExplanation({ summary, result });
     }
-
-    const parsed = coerceAiResponse(content);
-    return {
-        model,
-        explanation: parsed.explanation,
-        advice: parsed.advice
-    };
 }
 
 module.exports = {

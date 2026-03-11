@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -38,6 +40,7 @@ import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.ui.theme.safeTone
+import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.ui.theme.warningTone
 import com.shield.antivirus.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
@@ -152,6 +155,7 @@ fun HistoryScreen(
 @Composable
 private fun HistoryCard(result: ScanResult, onClick: () -> Unit) {
     val accent = if (result.threatsFound > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
+    val maxSeverity = result.threats.maxByOrNull { severityRank(it.severity) }?.severity
     ShieldPanel(
         modifier = Modifier
             .fillMaxWidth()
@@ -166,9 +170,13 @@ private fun HistoryCard(result: ScanResult, onClick: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             ShieldStatusChip(
-                label = if (result.threatsFound > 0) "Угроз: ${result.threatsFound}" else "Чисто",
-                icon = if (result.threatsFound > 0) Icons.Filled.Warning else Icons.Filled.Security,
-                color = accent
+                label = if (result.threatsFound > 0) {
+                    "${severityLabel(maxSeverity)} • ${result.threatsFound}"
+                } else {
+                    "Чисто"
+                },
+                icon = severityIcon(maxSeverity),
+                color = historyAccent(maxSeverity)
             )
         }
         Text(
@@ -190,6 +198,38 @@ private fun formatHistoryTime(timestamp: Long): String =
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Выборочная проверка"
+    "SELECTIVE" -> "Глубокая проверка"
     else -> scanType
+}
+
+@Composable
+private fun historyAccent(severity: com.shield.antivirus.data.model.ThreatSeverity?): androidx.compose.ui.graphics.Color = when (severity) {
+    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> MaterialTheme.colorScheme.criticalTone
+    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> MaterialTheme.colorScheme.warningTone
+    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> MaterialTheme.colorScheme.tertiary
+    com.shield.antivirus.data.model.ThreatSeverity.LOW -> MaterialTheme.colorScheme.signalTone
+    null -> MaterialTheme.colorScheme.safeTone
+}
+
+private fun severityIcon(severity: com.shield.antivirus.data.model.ThreatSeverity?) = when (severity) {
+    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> Icons.Filled.Error
+    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> Icons.Filled.Warning
+    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> Icons.Filled.BugReport
+    com.shield.antivirus.data.model.ThreatSeverity.LOW -> Icons.Filled.Security
+    null -> Icons.Filled.Security
+}
+
+private fun severityLabel(severity: com.shield.antivirus.data.model.ThreatSeverity?): String = when (severity) {
+    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> "Критично"
+    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> "Высокая"
+    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> "Средняя"
+    com.shield.antivirus.data.model.ThreatSeverity.LOW -> "Низкая"
+    null -> "Чисто"
+}
+
+private fun severityRank(severity: com.shield.antivirus.data.model.ThreatSeverity): Int = when (severity) {
+    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> 4
+    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> 3
+    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> 2
+    com.shield.antivirus.data.model.ThreatSeverity.LOW -> 1
 }

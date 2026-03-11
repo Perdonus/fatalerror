@@ -1,6 +1,7 @@
 package com.shield.antivirus.worker
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
@@ -31,7 +32,14 @@ class DeepScanWorker(
         val prefs = UserPreferences(applicationContext)
         var lastProgress = ScanProgress(totalCount = 1)
         return try {
-            repo.startScan(scanType, selectedPackages).collect { progress ->
+            NotificationHelper.createChannels(applicationContext)
+            setForeground(createForegroundInfo(scanType, lastProgress))
+
+            repo.startScan(
+                scanType = scanType,
+                selectedPackages = selectedPackages,
+                manageNotifications = false
+            ).collect { progress ->
                 lastProgress = progress
                 setForeground(createForegroundInfo(scanType, progress))
                 setProgress(progress.toWorkData(scanType))
@@ -40,10 +48,16 @@ class DeepScanWorker(
             prefs.clearActiveDeepScan()
             NotificationHelper.cancelScanNotification(applicationContext)
             Result.success(lastProgress.toWorkData(scanType))
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.e("DeepScanWorker", "Deep scan failed", error)
             prefs.clearActiveDeepScan()
             NotificationHelper.cancelScanNotification(applicationContext)
-            Result.failure(lastProgress.toWorkData(scanType))
+            Result.failure(
+                lastProgress.toWorkData(
+                    scanType = scanType,
+                    errorMessage = error.message ?: "Глубокая проверка завершилась с ошибкой"
+                )
+            )
         }
     }
 
@@ -68,6 +82,7 @@ class DeepScanWorker(
         const val KEY_IS_COMPLETE = "is_complete"
         const val KEY_SAVED_ID = "saved_id"
         const val KEY_THREATS_FOUND = "threats_found"
+        const val KEY_ERROR_MESSAGE = "error_message"
 
         fun enqueue(context: Context, scanType: String, selectedPackages: List<String>): java.util.UUID {
             val request = OneTimeWorkRequestBuilder<DeepScanWorker>()
@@ -99,14 +114,15 @@ class DeepScanWorker(
     }
 }
 
-private fun ScanProgress.toWorkData(scanType: String) = workDataOf(
+private fun ScanProgress.toWorkData(scanType: String, errorMessage: String? = null) = workDataOf(
     DeepScanWorker.KEY_SCAN_TYPE to scanType,
-    DeepScanWorker.KEY_CURRENT_APP to currentApp,
+    DeepScanWorker.KEY_CURRENT_APP to (errorMessage ?: currentApp),
     DeepScanWorker.KEY_SCANNED_COUNT to scannedCount,
     DeepScanWorker.KEY_TOTAL_COUNT to totalCount,
     DeepScanWorker.KEY_IS_COMPLETE to isComplete,
     DeepScanWorker.KEY_SAVED_ID to savedId,
-    DeepScanWorker.KEY_THREATS_FOUND to threats.size
+    DeepScanWorker.KEY_THREATS_FOUND to threats.size,
+    DeepScanWorker.KEY_ERROR_MESSAGE to errorMessage.orEmpty()
 )
 
 private fun ScanProgress.progressPercent(): Int =

@@ -64,6 +64,7 @@ object NotificationHelper {
             .build()
 
     fun showThreatNotification(context: Context, appName: String, threatName: String, id: Int) {
+        createChannels(context)
         val notification = NotificationCompat.Builder(context, CHANNEL_THREATS)
             .setSmallIcon(R.drawable.ic_notification_shield)
             .setContentTitle("Обнаружена угроза")
@@ -82,6 +83,7 @@ object NotificationHelper {
     }
 
     fun showScanNotification(context: Context, progress: Int, current: String) {
+        createChannels(context)
         NotificationManagerCompat.from(context).notify(
             NOTIF_SCAN_ID,
             buildScanNotification(context, progress, current)
@@ -94,25 +96,28 @@ object NotificationHelper {
         current: String,
         stage: String? = null,
         deepMode: Boolean = false
-    ) = NotificationCompat.Builder(context, CHANNEL_SCAN)
-        .setSmallIcon(R.drawable.ic_notification_shield)
-        .setContentTitle(if (deepMode) "Глубокая проверка" else "Идёт проверка")
-        .setContentText(current.ifBlank { if (deepMode) "Серверный анализ" else "Сканирование" })
-        .setSubText(stage)
-        .setStyle(
-            BigTextStyle().bigText(
-                listOfNotNull(
-                    current.ifBlank { null },
-                    stage
-                ).joinToString(separator = "\n")
+    ): android.app.Notification {
+        createChannels(context)
+        return NotificationCompat.Builder(context, CHANNEL_SCAN)
+            .setSmallIcon(R.drawable.ic_notification_shield)
+            .setContentTitle(if (deepMode) "Глубокая проверка" else "Идёт проверка")
+            .setContentText(current.ifBlank { if (deepMode) "Серверный анализ" else "Сканирование" })
+            .setSubText(stage)
+            .setStyle(
+                BigTextStyle().bigText(
+                    listOfNotNull(
+                        current.ifBlank { null },
+                        stage
+                    ).joinToString(separator = "\n")
+                )
             )
-        )
-        .setProgress(100, progress.coerceIn(0, 100), progress <= 0)
-        .setOnlyAlertOnce(true)
-        .setOngoing(true)
-        .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-        .setContentIntent(buildMainIntent(context))
-        .build()
+            .setProgress(100, progress.coerceIn(0, 100), progress <= 0)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setContentIntent(buildMainIntent(context))
+            .build()
+    }
 
     fun cancelScanNotification(context: Context) {
         NotificationManagerCompat.from(context).cancel(NOTIF_SCAN_ID)

@@ -4,8 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.shield.antivirus.data.datastore.UserPreferences
+import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.repository.InsightRepository
 import com.shield.antivirus.data.repository.ScanProgress
@@ -24,6 +26,7 @@ import java.util.UUID
 
 data class ScanExplainUiState(
     val isLoading: Boolean = false,
+    val title: String? = null,
     val explanation: String? = null,
     val error: String? = null
 )
@@ -79,9 +82,15 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     .takeIf { it.isNotBlank() }
                     ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
                 val existingType = prefs.activeDeepScanType.first()
-                val workId = if (existingWorkId != null && existingType == scanType) {
-                    existingWorkId
+                val reusableWorkId = existingWorkId
+                    ?.takeIf { existingType == scanType && isWorkReusable(it) }
+
+                val workId = if (reusableWorkId != null) {
+                    reusableWorkId
                 } else {
+                    if (existingWorkId != null) {
+                        prefs.clearActiveDeepScan()
+                    }
                     val newId = DeepScanWorker.enqueue(context.applicationContext, scanType, selectedPackages)
                     prefs.setActiveDeepScan(newId.toString(), scanType)
                     newId
@@ -105,13 +114,21 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         workObserverJob?.cancel()
         workObserverJob = viewModelScope.launch {
             while (true) {
-                val info = runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull() ?: break
+                val info = runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull()
+                if (info == null) {
+                    prefs.clearActiveDeepScan()
+                    _progress.value = _progress.value?.copy(
+                        currentApp = "Глубокая проверка была прервана. Запустите её заново."
+                    )
+                    break
+                }
                 val data = if (info.state.isFinished) info.outputData else info.progress
                 val totalCount = data.getInt(DeepScanWorker.KEY_TOTAL_COUNT, _progress.value?.totalCount ?: 1)
                 val scannedCount = data.getInt(DeepScanWorker.KEY_SCANNED_COUNT, _progress.value?.scannedCount ?: 0)
                 val savedId = data.getLong(DeepScanWorker.KEY_SAVED_ID, 0L)
+                val errorMessage = data.getString(DeepScanWorker.KEY_ERROR_MESSAGE).orEmpty()
                 _progress.value = ScanProgress(
-                    currentApp = data.getString(DeepScanWorker.KEY_CURRENT_APP).orEmpty(),
+                    currentApp = if (errorMessage.isNotBlank()) errorMessage else data.getString(DeepScanWorker.KEY_CURRENT_APP).orEmpty(),
                     scannedCount = scannedCount,
                     totalCount = totalCount.coerceAtLeast(1),
                     threats = _progress.value?.threats.orEmpty(),
@@ -150,14 +167,49 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 _explainState.value = ScanExplainUiState(error = "Сначала откройте готовый отчёт")
                 return@launch
             }
-            _explainState.value = ScanExplainUiState(isLoading = true)
+            _explainState.value = ScanExplainUiState(
+                isLoading = true,
+                title = result.threats.firstOrNull()?.appName ?: "Отчёт"
+            )
             insightRepo.explainResult(
                 result = result,
                 isGuest = prefs.isGuest.first()
             ).onSuccess { explanation ->
-                _explainState.value = ScanExplainUiState(explanation = explanation)
+                _explainState.value = ScanExplainUiState(
+                    title = result.threats.firstOrNull()?.appName ?: "Отчёт",
+                    explanation = explanation
+                )
             }.onFailure { error ->
                 _explainState.value = ScanExplainUiState(
+                    title = result.threats.firstOrNull()?.appName ?: "Отчёт",
+                    error = error.message ?: "Не удалось получить объяснение"
+                )
+            }
+        }
+    }
+
+    fun explainThreat(threat: ThreatInfo) {
+        viewModelScope.launch {
+            val result = _currentResult.value ?: run {
+                _explainState.value = ScanExplainUiState(error = "Сначала откройте готовый отчёт")
+                return@launch
+            }
+            _explainState.value = ScanExplainUiState(isLoading = true, title = threat.appName)
+            val scopedResult = result.copy(
+                threats = listOf(threat),
+                threatsFound = 1
+            )
+            insightRepo.explainResult(
+                result = scopedResult,
+                isGuest = prefs.isGuest.first()
+            ).onSuccess { explanation ->
+                _explainState.value = ScanExplainUiState(
+                    title = threat.appName,
+                    explanation = explanation
+                )
+            }.onFailure { error ->
+                _explainState.value = ScanExplainUiState(
+                    title = threat.appName,
                     error = error.message ?: "Не удалось получить объяснение"
                 )
             }
@@ -178,6 +230,11 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     suspend fun shouldExitGuestModeAfterResult(): Boolean =
         prefs.isGuest.first() && prefs.guestScanUsed.first()
+
+    private suspend fun isWorkReusable(workId: UUID): Boolean {
+        val info = runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull() ?: return false
+        return info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED
+    }
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

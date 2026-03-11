@@ -26,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldBrandMark
 import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.screens.HistoryScreen
 import com.shield.antivirus.ui.screens.HomeScreen
@@ -34,6 +35,7 @@ import com.shield.antivirus.ui.screens.RegisterScreen
 import com.shield.antivirus.ui.screens.ScanResultsScreen
 import com.shield.antivirus.ui.screens.ScanScreen
 import com.shield.antivirus.ui.screens.SettingsScreen
+import com.shield.antivirus.ui.screens.WelcomeScreen
 import com.shield.antivirus.viewmodel.AuthViewModel
 import com.shield.antivirus.viewmodel.HomeViewModel
 import com.shield.antivirus.viewmodel.ScanViewModel
@@ -55,6 +57,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.padding(24.dp)
                 ) {
+                    ShieldBrandMark()
                     ShieldStatusChip(
                         label = "SESSION CHECK",
                         icon = Icons.Filled.Security,
@@ -74,15 +77,23 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
 
     NavHost(
         navController = navController,
-        startDestination = if (isLoggedIn == true) Screen.Home.route else Screen.Login.route
+        startDestination = if (isLoggedIn == true) Screen.Home.route else Screen.Welcome.route
     ) {
+        composable(Screen.Welcome.route) {
+            WelcomeScreen(
+                onLoginClick = { navController.navigate(Screen.Login.route) },
+                onRegisterClick = { navController.navigate(Screen.Register.route) }
+            )
+        }
         composable(Screen.Login.route) {
             val vm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(context))
             LoginScreen(
                 viewModel = vm,
+                onBack = { navController.popBackStack() },
                 onLoginSuccess = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
                 onNavigateRegister = { navController.navigate(Screen.Register.route) }
@@ -92,12 +103,14 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             val vm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(context))
             RegisterScreen(
                 viewModel = vm,
+                onBack = { navController.popBackStack() },
                 onRegisterSuccess = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
+                        popUpTo(Screen.Welcome.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 },
-                onNavigateLogin = { navController.popBackStack() }
+                onNavigateLogin = { navController.navigate(Screen.Login.route) }
             )
         }
         composable(Screen.Home.route) {
@@ -157,7 +170,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 viewModel = authVm,
                 onBack = { navController.popBackStack() },
                 onLogout = {
-                    navController.navigate(Screen.Login.route) {
+                    navController.navigate(Screen.Welcome.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                         launchSingleTop = true
                     }

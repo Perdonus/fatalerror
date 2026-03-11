@@ -2,12 +2,14 @@ package com.shield.antivirus.ui.theme
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -16,7 +18,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.view.WindowCompat
 
 private val ShieldLightColorScheme = lightColorScheme(
@@ -92,11 +93,11 @@ private val ShieldDarkColorScheme = darkColorScheme(
 )
 
 private val ShieldShapes = Shapes(
-    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-    small = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
-    medium = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
-    large = androidx.compose.foundation.shape.RoundedCornerShape(34.dp),
-    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(42.dp)
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(18.dp),
+    medium = RoundedCornerShape(26.dp),
+    large = RoundedCornerShape(34.dp),
+    extraLarge = RoundedCornerShape(42.dp)
 )
 
 @Composable
@@ -119,7 +120,10 @@ fun ShieldAntivirusTheme(
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = colorScheme.surface.copy(alpha = 0.92f).toArgb()
+            window.navigationBarColor = Color.Transparent.toArgb()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
             WindowCompat.setDecorFitsSystemWindows(window, false)
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = !darkTheme

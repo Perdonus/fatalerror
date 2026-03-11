@@ -1,15 +1,16 @@
 package com.shield.antivirus.navigation
 
 sealed class Screen(val route: String) {
-    object Login    : Screen("login")
-    object Register : Screen("register")
-    object Home     : Screen("home")
-    object Scan     : Screen("scan/{scanType}") {
+    data object Welcome : Screen("welcome")
+    data object Login : Screen("login")
+    data object Register : Screen("register")
+    data object Home : Screen("home")
+    data object Scan : Screen("scan/{scanType}") {
         fun createRoute(scanType: String) = "scan/$scanType"
     }
-    object Results  : Screen("results/{scanId}") {
+    data object Results : Screen("results/{scanId}") {
         fun createRoute(scanId: Long) = "results/$scanId"
     }
-    object History  : Screen("history")
-    object Settings : Screen("settings")
+    data object History : Screen("history")
+    data object Settings : Screen("settings")
 }

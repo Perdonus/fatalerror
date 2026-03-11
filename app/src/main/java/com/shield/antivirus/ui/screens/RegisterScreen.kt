@@ -3,12 +3,16 @@ package com.shield.antivirus.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -30,18 +34,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.collectAsState
+import com.shield.antivirus.ui.components.ShieldBrandMark
 import com.shield.antivirus.ui.components.ShieldCalmBackdrop
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
@@ -51,10 +59,13 @@ import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.ui.theme.safeTone
 import com.shield.antivirus.viewmodel.AuthViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun RegisterScreen(
     viewModel: AuthViewModel,
+    onBack: () -> Unit,
     onRegisterSuccess: () -> Unit,
     onNavigateLogin: () -> Unit
 ) {
@@ -64,6 +75,11 @@ fun RegisterScreen(
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val nameBringIntoView = remember { BringIntoViewRequester() }
+    val emailBringIntoView = remember { BringIntoViewRequester() }
+    val passwordBringIntoView = remember { BringIntoViewRequester() }
+    val confirmBringIntoView = remember { BringIntoViewRequester() }
 
     LaunchedEffect(uiState.success) {
         if (uiState.success) onRegisterSuccess()
@@ -73,33 +89,46 @@ fun RegisterScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .safeDrawingPadding()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+                .padding(horizontal = 20.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            IconButton(onClick = onNavigateLogin) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            }
-            ShieldSectionHeader(
-                eyebrow = "Onboarding",
-                title = "Provision a new operator",
-                subtitle = "Create an account for synced scan history, token refresh, and security preferences without the noisy auth backdrop."
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
                 ShieldStatusChip(
-                    label = "ENCRYPTED SESSION",
+                    label = "NEW OPERATOR",
                     icon = Icons.Filled.Security,
                     color = MaterialTheme.colorScheme.safeTone
                 )
-                ShieldStatusChip(
-                    label = "PASSWORD RULES",
-                    icon = Icons.Filled.Lock,
-                    color = MaterialTheme.colorScheme.primary
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                ShieldBrandMark(modifier = Modifier.padding(start = 8.dp))
+                ShieldSectionHeader(
+                    eyebrow = "Onboarding",
+                    title = "Create the account once",
+                    subtitle = "Registration keeps the form reachable above the keyboard and writes an encrypted session immediately after success."
                 )
             }
-            ShieldPanel(accent = MaterialTheme.colorScheme.tertiary) {
+
+            ShieldPanel(
+                modifier = Modifier.navigationBarsPadding(),
+                accent = MaterialTheme.colorScheme.tertiary
+            ) {
                 Text(
-                    text = "Create account",
+                    text = "Provision operator",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
@@ -107,26 +136,60 @@ fun RegisterScreen(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(nameBringIntoView)
+                        .onFocusEvent { event ->
+                            if (event.isFocused) {
+                                scope.launch {
+                                    delay(180)
+                                    nameBringIntoView.bringIntoView()
+                                }
+                            }
+                        },
                     label = { Text("Display name") },
                     leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = shieldTextFieldColors()
                 )
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(emailBringIntoView)
+                        .onFocusEvent { event ->
+                            if (event.isFocused) {
+                                scope.launch {
+                                    delay(180)
+                                    emailBringIntoView.bringIntoView()
+                                }
+                            }
+                        },
                     label = { Text("Email") },
                     leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next
+                    ),
                     colors = shieldTextFieldColors()
                 )
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(passwordBringIntoView)
+                        .onFocusEvent { event ->
+                            if (event.isFocused) {
+                                scope.launch {
+                                    delay(180)
+                                    passwordBringIntoView.bringIntoView()
+                                }
+                            }
+                        },
                     label = { Text("Password") },
                     leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     trailingIcon = {
@@ -139,19 +202,43 @@ fun RegisterScreen(
                     },
                     singleLine = true,
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Next
+                    ),
                     colors = shieldTextFieldColors()
                 )
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(confirmBringIntoView)
+                        .onFocusEvent { event ->
+                            if (event.isFocused) {
+                                scope.launch {
+                                    delay(180)
+                                    confirmBringIntoView.bringIntoView()
+                                }
+                            }
+                        },
                     label = { Text("Confirm password") },
                     leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     singleLine = true,
                     isError = confirmPassword.isNotEmpty() && confirmPassword != password,
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            if (!uiState.isLoading && name.isNotBlank() && email.isNotBlank() && password == confirmPassword && password.length >= 6) {
+                                viewModel.clearError()
+                                viewModel.register(name.trim(), email.trim(), password)
+                            }
+                        }
+                    ),
                     colors = shieldTextFieldColors()
                 )
                 if (confirmPassword.isNotBlank() && confirmPassword != password) {
@@ -163,8 +250,15 @@ fun RegisterScreen(
                 }
                 if (uiState.error != null) {
                     ShieldPanel(accent = MaterialTheme.colorScheme.criticalTone) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.criticalTone)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.criticalTone
+                            )
                             Text(
                                 text = uiState.error.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -180,16 +274,14 @@ fun RegisterScreen(
                             viewModel.register(name.trim(), email.trim(), password)
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = !uiState.isLoading && name.isNotBlank() && email.isNotBlank() && password.length >= 6 && password == confirmPassword,
                     colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.tertiary),
                     shape = MaterialTheme.shapes.medium
                 ) {
                     if (uiState.isLoading) {
                         CircularProgressIndicator(
-                            modifier = Modifier.height(20.dp),
+                            modifier = Modifier.padding(vertical = 2.dp),
                             color = MaterialTheme.colorScheme.onTertiary,
                             strokeWidth = 2.dp
                         )
@@ -198,11 +290,12 @@ fun RegisterScreen(
                     }
                 }
                 Text(
-                    text = "Minimum baseline: valid email and 6+ character password. Additional server-side checks still apply.",
+                    text = "The server validates the final request, then stores the session in encrypted preferences for seamless return to the app.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -217,7 +310,6 @@ fun RegisterScreen(
                     Text("Return to sign in")
                 }
             }
-            Spacer(Modifier.height(12.dp))
         }
     }
 }

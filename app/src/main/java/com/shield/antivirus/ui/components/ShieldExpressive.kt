@@ -1,5 +1,12 @@
 package com.shield.antivirus.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,12 +19,20 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,13 +52,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Tune
+import com.shield.antivirus.R
 import com.shield.antivirus.ui.theme.criticalTone
 
 @Composable
@@ -51,50 +68,7 @@ fun ShieldBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    val colors = MaterialTheme.colorScheme
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(320.dp)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            colors.primary.copy(alpha = 0.16f),
-                            colors.tertiary.copy(alpha = 0.12f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-        Box(
-            modifier = Modifier
-                .size(280.dp)
-                .align(Alignment.TopEnd)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(colors.secondary.copy(alpha = 0.14f), Color.Transparent),
-                        radius = 320f
-                    )
-                )
-        )
-        Box(
-            modifier = Modifier
-                .size(240.dp)
-                .align(Alignment.BottomStart)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(colors.primary.copy(alpha = 0.08f), Color.Transparent),
-                        radius = 280f
-                    )
-                )
-        )
-        content()
-    }
+    ShieldBackdropSurface(modifier = modifier, vivid = true, content = content)
 }
 
 @Composable
@@ -102,34 +76,150 @@ fun ShieldCalmBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
+    ShieldBackdropSurface(modifier = modifier, vivid = false, content = content)
+}
+
+@Composable
+private fun ShieldBackdropSurface(
+    modifier: Modifier = Modifier,
+    vivid: Boolean,
+    content: @Composable BoxScope.() -> Unit
+) {
     val colors = MaterialTheme.colorScheme
+    val transition = rememberInfiniteTransition(label = if (vivid) "shieldBackdropVivid" else "shieldBackdropCalm")
+    val driftX by transition.animateFloat(
+        initialValue = -140f,
+        targetValue = 140f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (vivid) 16000 else 22000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftX"
+    )
+    val driftY by transition.animateFloat(
+        initialValue = -90f,
+        targetValue = 110f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (vivid) 18000 else 24000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftY"
+    )
+    val driftXSecondary by transition.animateFloat(
+        initialValue = 110f,
+        targetValue = -90f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (vivid) 21000 else 28000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftXSecondary"
+    )
+    val driftYSecondary by transition.animateFloat(
+        initialValue = 90f,
+        targetValue = -70f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (vivid) 19000 else 26000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "driftYSecondary"
+    )
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = if (vivid) 42000 else 56000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
+    val topColor = if (vivid) {
+        lerp(colors.primaryContainer, colors.secondaryContainer, 0.35f).copy(alpha = 0.72f)
+    } else {
+        colors.primary.copy(alpha = 0.12f)
+    }
+    val middleColor = if (vivid) {
+        lerp(colors.surfaceContainerLow, colors.tertiaryContainer, 0.22f)
+    } else {
+        colors.surfaceContainerLow
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surfaceContainerLowest)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(topColor, middleColor, colors.background)
+                )
+            )
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(220.dp)
+                .size(if (vivid) 360.dp else 280.dp)
+                .align(Alignment.TopStart)
+                .graphicsLayer {
+                    translationX = driftX
+                    translationY = driftY
+                    rotationZ = rotation * 0.08f
+                }
                 .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            colors.primary.copy(alpha = 0.06f),
-                            colors.secondary.copy(alpha = 0.04f),
+                    Brush.radialGradient(
+                        colors = listOf(
+                            colors.primary.copy(alpha = if (vivid) 0.22f else 0.1f),
                             Color.Transparent
                         )
-                    )
+                    ),
+                    shape = CircleShape
                 )
         )
         Box(
             modifier = Modifier
-                .size(180.dp)
+                .size(if (vivid) 320.dp else 240.dp)
                 .align(Alignment.TopEnd)
+                .graphicsLayer {
+                    translationX = driftXSecondary
+                    translationY = driftYSecondary
+                    rotationZ = -rotation * 0.06f
+                }
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(colors.primary.copy(alpha = 0.05f), Color.Transparent),
-                        radius = 220f
+                        colors = listOf(
+                            colors.tertiary.copy(alpha = if (vivid) 0.18f else 0.09f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .size(if (vivid) 300.dp else 220.dp)
+                .align(Alignment.BottomStart)
+                .graphicsLayer {
+                    translationX = -driftXSecondary * 0.75f
+                    translationY = -driftY * 0.55f
+                }
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            colors.secondary.copy(alpha = if (vivid) 0.14f else 0.07f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (vivid) 280.dp else 220.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            colors.surface.copy(alpha = if (vivid) 0.3f else 0.16f),
+                            Color.Transparent
+                        )
                     )
                 )
         )
@@ -148,6 +238,9 @@ fun ShieldScreenScaffold(
 ) {
     Scaffold(
         containerColor = Color.Transparent,
+        contentWindowInsets = WindowInsets.safeDrawing.only(
+            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+        ),
         topBar = {
             CenterAlignedTopAppBar(
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -158,7 +251,7 @@ fun ShieldScreenScaffold(
                     if (onBack != null) {
                         IconButton(onClick = onBack) {
                             Icon(
-                                imageVector = androidx.compose.material.icons.Icons.Filled.ArrowBack,
+                                imageVector = Icons.Filled.ArrowBack,
                                 contentDescription = "Back"
                             )
                         }
@@ -188,6 +281,42 @@ fun ShieldScreenScaffold(
 }
 
 @Composable
+fun ShieldBrandMark(
+    modifier: Modifier = Modifier,
+    accent: Color = MaterialTheme.colorScheme.primary
+) {
+    Surface(
+        modifier = modifier.size(104.dp),
+        shape = CircleShape,
+        color = accent.copy(alpha = 0.12f),
+        contentColor = accent,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.24f))
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(82.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                accent.copy(alpha = 0.22f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.06f)
+                            )
+                        )
+                    )
+            )
+            Icon(
+                painter = rememberVectorPainter(ImageVector.vectorResource(id = R.drawable.ic_brand_emblem)),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(72.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun ShieldPanel(
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary,
@@ -197,9 +326,9 @@ fun ShieldPanel(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)
         ),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.16f))
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.14f))
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -333,7 +462,7 @@ fun ShieldActionCard(
                 }
                 Spacer(Modifier.weight(1f))
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Filled.ArrowForward,
+                    imageVector = Icons.Filled.ArrowForward,
                     contentDescription = null,
                     tint = accent
                 )
@@ -342,7 +471,7 @@ fun ShieldActionCard(
             Text(text = subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             ShieldStatusChip(
                 label = meta,
-                icon = androidx.compose.material.icons.Icons.Filled.Tune,
+                icon = Icons.Filled.Tune,
                 color = accent
             )
         }
@@ -384,8 +513,8 @@ fun shieldTextFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
     focusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
     unfocusedTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    focusedContainerColor = MaterialTheme.colorScheme.surface,
-    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
     errorBorderColor = MaterialTheme.colorScheme.criticalTone,
     errorLabelColor = MaterialTheme.colorScheme.criticalTone,
     errorLeadingIconColor = MaterialTheme.colorScheme.criticalTone,

@@ -18,6 +18,7 @@ PHPMYADMIN_VERSION="${PHPMYADMIN_VERSION:-5.2.2}"
 SSL_SOURCE_DIR="${SSL_SOURCE_DIR:-/root/Heroku/modules/ssl}"
 SSL_TARGET_DIR="${SSL_TARGET_DIR:-/etc/ssl/sosiskibot}"
 
+
 echo "[1/8] Installing system packages..."
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -47,7 +48,7 @@ sed "s/shield_auth/${DB_NAME}/g" "${APP_ROOT}/scripts/schema.sql" | mysql -u roo
 echo "[5/8] Writing backend env file..."
 install -d -m 0755 "${APP_ROOT}"
 cat > "${APP_ROOT}/.env" <<ENV_FILE
-PORT=3001
+PORT=5001
 DB_HOST=localhost
 DB_PORT=3306
 DB_NAME=${DB_NAME}
@@ -113,11 +114,12 @@ systemctl restart nginx
 ufw allow OpenSSH >/dev/null 2>&1 || true
 ufw allow 80/tcp >/dev/null 2>&1 || true
 ufw allow 443/tcp >/dev/null 2>&1 || true
+ufw allow 5001/tcp >/dev/null 2>&1 || true
 ufw --force enable >/dev/null 2>&1 || true
 
 echo "[8/8] Ready for npm install and PM2 startup."
 
-cat <<EOF
+cat <<EOF2
 Setup complete.
 
 Backend root: ${APP_ROOT}
@@ -133,4 +135,4 @@ Next commands:
   npm run pm2:start
   pm2 save
   certbot renew --dry-run
-EOF
+EOF2

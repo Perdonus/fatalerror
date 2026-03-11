@@ -19,11 +19,4 @@ class AntivirusService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Restart service if killed
-        val restartIntent = Intent(applicationContext, AntivirusService::class.java)
-        startService(restartIntent)
-    }
 }

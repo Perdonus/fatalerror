@@ -207,7 +207,7 @@ fun SettingsScreen(
                     )
                     SettingsInfoRow(icon = Icons.Filled.Tune, label = "UI system", value = "Material 3 Expressive")
                     SettingsInfoRow(icon = Icons.Filled.Security, label = "Session store", value = "EncryptedSharedPreferences")
-                    SettingsInfoRow(icon = Icons.Filled.VpnKey, label = "Backend", value = "sosiskibot.ru")
+                    SettingsInfoRow(icon = Icons.Filled.VpnKey, label = "Backend", value = "sosiskibot.ru/api + :5001 fallback")
                 }
 
                 Button(

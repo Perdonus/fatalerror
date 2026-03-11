@@ -11,14 +11,14 @@ ssh vertiggo@91.233.168.135
 
 ### Шаг 2 — Залить файлы на сервер
 
-С твоего компьютера (в папке shield-backend):
+С твоего компьютера (в папке `shield-backend`):
 ```bash
 scp -r . vertiggo@91.233.168.135:/home/vertiggo/shield-backend/
 ```
 
 Или через FileZilla / WinSCP (SFTP):
 - Host: 91.233.168.135
-- User: vertiggo  
+- User: vertiggo
 - Password: vertiggo
 - Port: 22
 
@@ -34,21 +34,13 @@ bash /home/vertiggo/shield-backend/scripts/setup.sh
 ```bash
 cd /home/vertiggo/shield-backend
 cp .env.example .env
-# отредактируй JWT_SECRET — вставь любую длинную случайную строку
+# отредактируй JWT_SECRET — вставь длинную случайную строку
 nano .env
 
 npm install
-npm start
-```
-
-### Шаг 5 — Автозапуск (PM2)
-
-```bash
-pm2 startup
+npm run pm2:start
 pm2 save
 ```
-
----
 
 ## API эндпоинты
 
@@ -57,38 +49,43 @@ pm2 save
 | POST | /api/auth/register | Регистрация |
 | POST | /api/auth/login | Логин |
 | GET | /api/auth/me | Профиль (токен) |
+| POST | /api/auth/refresh | Обновить access token |
+| POST | /api/auth/logout | Закрыть текущую сессию |
 | POST | /api/scans | Сохранить скан |
 | GET | /api/scans | История сканов |
 | DELETE | /api/scans | Очистить историю |
-| GET | /api/scans/stats/summary | Статистика |
 | POST | /api/purchases | Сохранить покупку |
 | GET | /api/purchases/active | Проверить Premium |
-| GET | /health | Проверить что сервер жив |
+| GET | /healths | Health check для Shield backend |
+| GET | /api/healths | Health check через API namespace |
 
 ## Проверить что работает
 
 ```bash
-curl http://91.233.168.135:3001/health
+curl http://91.233.168.135:5001/healths
+curl https://sosiskibot.ru/healths
+curl https://sosiskibot.ru/api/healths
 ```
 
-Должен ответить:
+Ожидаемый ответ:
 ```json
 {"status":"ok","service":"Shield Antivirus API","version":"1.0.0"}
 ```
 
-## Открыть порт в firewall (если не работает)
+## Открыть порт в firewall
 
 ```bash
-ufw allow 3001
+ufw allow 5001/tcp
 ufw reload
 ```
 
 ## Таблицы базы данных
 
-- **users** — пользователи (id, name, email, password_hash, is_premium)
-- **scan_sessions** — история сканирований
-- **purchases** — покупки Premium
-- **threat_reports** — отчёты об угрозах
+- `users` — пользователи и профиль
+- `auth_sessions` — refresh-сессии и ревокации
+- `login_attempts` — brute-force троттлинг
+- `scans` / связанные таблицы — история сканирований
+- `purchases` — покупки Premium
 
 ## Смотреть логи
 

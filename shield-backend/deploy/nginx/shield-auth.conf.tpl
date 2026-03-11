@@ -23,7 +23,7 @@ server {
     add_header Referrer-Policy "same-origin" always;
 
     location /api/ {
-        proxy_pass http://127.0.0.1:3001/api/;
+        proxy_pass http://127.0.0.1:5001/api/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -32,8 +32,8 @@ server {
         proxy_set_header Connection "";
     }
 
-    location = /health {
-        proxy_pass http://127.0.0.1:3001/health;
+    location = /healths {
+        proxy_pass http://127.0.0.1:5001/healths;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

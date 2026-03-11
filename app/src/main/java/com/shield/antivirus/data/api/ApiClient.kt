@@ -1,11 +1,11 @@
 package com.shield.antivirus.data.api
 
 import com.shield.antivirus.BuildConfig
-import okhttp3.OkHttpClient
 import okhttp3.CertificatePinner
+import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
 import retrofit2.Response
+import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
@@ -26,7 +26,7 @@ object ApiClient {
         ),
         ShieldEndpoint(
             label = "Direct VPS fallback",
-            baseUrl = "http://91.233.168.135:3001/",
+            baseUrl = "http://91.233.168.135:5001/",
             usePinnedTls = false
         )
     )

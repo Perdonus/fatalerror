@@ -14,10 +14,12 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,12 +50,34 @@ import java.util.Locale
 fun ScanResultsScreen(
     viewModel: ScanViewModel,
     scanId: Long,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onGuestLogin: () -> Unit,
+    onGuestRegister: () -> Unit
 ) {
     val result by viewModel.currentResult.collectAsState()
+    val isGuest by viewModel.isGuest.collectAsState()
+    val guestScanUsed by viewModel.guestScanUsed.collectAsState()
 
     LaunchedEffect(scanId) {
         viewModel.loadResult(scanId)
+    }
+
+    if (isGuest && guestScanUsed) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Гостевой доступ закончился") },
+            text = { Text("Лафа кончилась, пора регаться.") },
+            confirmButton = {
+                TextButton(onClick = onGuestRegister) {
+                    Text("Зарегистрироваться")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onGuestLogin) {
+                    Text("Войти")
+                }
+            }
+        )
     }
 
     ShieldBackdrop {
@@ -105,7 +129,7 @@ fun ScanResultsScreen(
                         ShieldEmptyState(
                             icon = Icons.Filled.Security,
                             title = "Всё чисто",
-                            subtitle = "Защита активна"
+                            subtitle = if (isGuest) "Гостевая проверка завершена" else "Защита активна"
                         )
                     }
                 } else {

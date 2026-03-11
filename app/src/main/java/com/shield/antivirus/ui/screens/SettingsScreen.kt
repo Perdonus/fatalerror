@@ -70,7 +70,6 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.logout()
                         showLogoutDialog = false
                         onLogout()
                     }

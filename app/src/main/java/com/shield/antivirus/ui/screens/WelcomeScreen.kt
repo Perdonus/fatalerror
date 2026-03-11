@@ -1,11 +1,5 @@
 package com.shield.antivirus.ui.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,29 +16,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.shield.antivirus.ui.components.ShieldBackdrop
-import com.shield.antivirus.ui.components.ShieldBrandMark
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 
 @Composable
 fun WelcomeScreen(
+    guestAvailable: Boolean,
     onLoginClick: () -> Unit,
-    onRegisterClick: () -> Unit
+    onRegisterClick: () -> Unit,
+    onGuestClick: () -> Unit
 ) {
-    val heroMotion = rememberInfiniteTransition(label = "welcomeHero")
-    val heroScale = heroMotion.animateFloat(
-        initialValue = 0.97f,
-        targetValue = 1.03f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "heroScale"
-    )
-
     ShieldBackdrop {
         Box(
             modifier = Modifier
@@ -53,20 +37,13 @@ fun WelcomeScreen(
                 .imePadding()
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                ShieldBrandMark(
-                    modifier = Modifier.graphicsLayer {
-                        scaleX = heroScale.value
-                        scaleY = heroScale.value
-                    }
-                )
-            }
+            Text(
+                text = "ShieldSecurity",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopStart)
+            )
 
             ShieldPanel(
                 modifier = Modifier
@@ -75,6 +52,13 @@ fun WelcomeScreen(
                     .navigationBarsPadding(),
                 accent = MaterialTheme.colorScheme.primary
             ) {
+                if (!guestAvailable) {
+                    Text(
+                        text = "Гостевой доступ закончился. Пора регаться.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
                 Button(
                     onClick = onLoginClick,
                     modifier = Modifier.fillMaxWidth(),
@@ -89,6 +73,15 @@ fun WelcomeScreen(
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Text("Зарегистрироваться")
+                }
+                if (guestAvailable) {
+                    OutlinedButton(
+                        onClick = onGuestClick,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Text("Войти как гость")
+                    }
                 }
             }
         }

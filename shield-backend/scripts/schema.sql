@@ -32,6 +32,38 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     INDEX idx_auth_sessions_revoked_at (revoked_at)
 );
 
+CREATE TABLE IF NOT EXISTS email_auth_challenges (
+    id VARCHAR(36) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    user_id VARCHAR(36) DEFAULT NULL,
+    purpose ENUM('REGISTER', 'LOGIN') NOT NULL,
+    code_hash VARCHAR(64) NOT NULL,
+    payload_json LONGTEXT DEFAULT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 5,
+    created_at BIGINT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    consumed_at BIGINT DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_email_auth_email_purpose (email, purpose),
+    INDEX idx_email_auth_expires_at (expires_at),
+    INDEX idx_email_auth_consumed_at (consumed_at)
+);
+
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    created_at BIGINT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    consumed_at BIGINT DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_password_reset_user_id (user_id),
+    INDEX idx_password_reset_expires_at (expires_at),
+    INDEX idx_password_reset_consumed_at (consumed_at)
+);
+
 CREATE TABLE IF NOT EXISTS login_attempts (
     email VARCHAR(255) NOT NULL,
     ip_address VARCHAR(64) NOT NULL,

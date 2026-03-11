@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -22,31 +23,48 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
+import com.shield.antivirus.data.datastore.PendingAuthFlow
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.ui.components.ShieldBackdrop
-import com.shield.antivirus.ui.components.ShieldBrandMark
 import com.shield.antivirus.ui.screens.HistoryScreen
 import com.shield.antivirus.ui.screens.HomeScreen
 import com.shield.antivirus.ui.screens.LoginScreen
 import com.shield.antivirus.ui.screens.RegisterScreen
+import com.shield.antivirus.ui.screens.ResetPasswordScreen
 import com.shield.antivirus.ui.screens.ScanResultsScreen
 import com.shield.antivirus.ui.screens.ScanScreen
 import com.shield.antivirus.ui.screens.SettingsScreen
 import com.shield.antivirus.ui.screens.WelcomeScreen
+import com.shield.antivirus.util.ProtectionServiceController
 import com.shield.antivirus.viewmodel.AuthViewModel
 import com.shield.antivirus.viewmodel.HomeViewModel
 import com.shield.antivirus.viewmodel.ScanViewModel
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 
 @Composable
 fun NavGraph(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
     val prefs = UserPreferences(context)
-    val isLoggedIn by produceState<Boolean?>(initialValue = null, context) {
-        value = prefs.isLoggedIn.first()
+    val scope = rememberCoroutineScope()
+    val sessionState by produceState<SessionGateState?>(initialValue = null, context) {
+        combine(
+            prefs.isLoggedIn,
+            prefs.isGuest,
+            prefs.guestScanUsed,
+            prefs.pendingAuthFlow
+        ) { isLoggedIn, isGuest, guestScanUsed, pendingAuthFlow ->
+            SessionGateState(
+                isLoggedIn = isLoggedIn,
+                isGuest = isGuest,
+                guestScanUsed = guestScanUsed,
+                pendingAuthFlow = pendingAuthFlow
+            )
+        }.collect { value = it }
     }
 
-    if (isLoggedIn == null) {
+    if (sessionState == null) {
         ShieldBackdrop {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
@@ -54,10 +72,9 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.padding(24.dp)
                 ) {
-                    ShieldBrandMark()
                     CircularProgressIndicator()
                     Text(
-                        text = "Проверка сессии",
+                        text = "Загрузка",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onBackground
                     )
@@ -67,14 +84,33 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
         return
     }
 
+    val gate = sessionState!!
+    val startDestination = when {
+        gate.isLoggedIn || gate.isGuest -> Screen.Home.route
+        gate.pendingAuthFlow == PendingAuthFlow.LOGIN -> Screen.Login.route
+        gate.pendingAuthFlow == PendingAuthFlow.REGISTER -> Screen.Register.route
+        else -> Screen.Welcome.route
+    }
+
     NavHost(
         navController = navController,
-        startDestination = if (isLoggedIn == true) Screen.Home.route else Screen.Welcome.route
+        startDestination = startDestination
     ) {
         composable(Screen.Welcome.route) {
             WelcomeScreen(
+                guestAvailable = !gate.guestScanUsed,
                 onLoginClick = { navController.navigate(Screen.Login.route) },
-                onRegisterClick = { navController.navigate(Screen.Register.route) }
+                onRegisterClick = { navController.navigate(Screen.Register.route) },
+                onGuestClick = {
+                    scope.launch {
+                        prefs.enterGuestMode()
+                        ProtectionServiceController.stop(context)
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Welcome.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                }
             )
         }
         composable(Screen.Login.route) {
@@ -105,13 +141,47 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 onNavigateLogin = { navController.navigate(Screen.Login.route) }
             )
         }
+        composable(
+            route = Screen.ResetPassword.route,
+            arguments = listOf(
+                navArgument("token") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("email") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            ),
+            deepLinks = listOf(
+                navDeepLink {
+                    uriPattern = "shieldsecurity://auth/reset-password?token={token}&email={email}"
+                }
+            )
+        ) { backStack ->
+            val vm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(context))
+            ResetPasswordScreen(
+                viewModel = vm,
+                token = backStack.arguments?.getString("token").orEmpty(),
+                email = backStack.arguments?.getString("email").orEmpty(),
+                onBack = { navController.popBackStack() },
+                onDone = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Welcome.route)
+                        launchSingleTop = true
+                    }
+                }
+            )
+        }
         composable(Screen.Home.route) {
             val vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory(context))
             HomeScreen(
                 viewModel = vm,
                 onStartScan = { type -> navController.navigate(Screen.Scan.createRoute(type)) },
                 onOpenHistory = { navController.navigate(Screen.History.route) },
-                onOpenSettings = { navController.navigate(Screen.Settings.route) }
+                onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                onOpenLogin = { navController.navigate(Screen.Login.route) },
+                onOpenRegister = { navController.navigate(Screen.Register.route) }
             )
         }
         composable(
@@ -145,6 +215,26 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                         popUpTo(Screen.Home.route)
                         launchSingleTop = true
                     }
+                },
+                onGuestLogin = {
+                    vm.clearHistory()
+                    scope.launch {
+                        vm.exitGuestMode()
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onGuestRegister = {
+                    vm.clearHistory()
+                    scope.launch {
+                        vm.exitGuestMode()
+                        navController.navigate(Screen.Register.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
                 }
             )
         }
@@ -162,12 +252,21 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 viewModel = authVm,
                 onBack = { navController.popBackStack() },
                 onLogout = {
-                    navController.navigate(Screen.Welcome.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                        launchSingleTop = true
+                    authVm.logout {
+                        navController.navigate(Screen.Welcome.route) {
+                            popUpTo(Screen.Home.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
                     }
                 }
             )
         }
     }
 }
+
+data class SessionGateState(
+    val isLoggedIn: Boolean,
+    val isGuest: Boolean,
+    val guestScanUsed: Boolean,
+    val pendingAuthFlow: PendingAuthFlow?
+)

@@ -1,95 +1,105 @@
 # Shield Antivirus — Backend API
 
-## Деплой на VPS (91.233.168.135)
-
-### Шаг 1 — Зайти на сервер по SSH
+## Deploy
 
 ```bash
 ssh fatalerror@91.233.168.135
-# пароль: fatalerror
-```
-
-### Шаг 2 — Залить файлы на сервер
-
-С твоего компьютера (в папке `shield-backend`):
-```bash
-scp -r . fatalerror@91.233.168.135:/home/fatalerror/shield-backend/
-```
-
-Или через FileZilla / WinSCP (SFTP):
-- Host: 91.233.168.135
-- User: fatalerror
-- Password: fatalerror
-- Port: 22
-
-### Шаг 3 — Запустить setup (от root)
-
-```bash
-su root
-bash /home/fatalerror/shield-backend/scripts/setup.sh
-```
-
-### Шаг 4 — Запустить API
-
-```bash
 cd /home/fatalerror/shield-backend
 cp .env.example .env
-# отредактируй JWT_SECRET — вставь длинную случайную строку
 nano .env
-
 npm install
-npm run pm2:start
+npm run check
+npm run pm2:restart
 pm2 save
+mysql -u root shield_auth < scripts/schema.sql
 ```
 
-## API эндпоинты
+## Required mail env
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `MAIL_FROM`
+- `APP_RESET_URL`
 
-| Метод | URL | Описание |
-|-------|-----|----------|
-| POST | /api/auth/register | Регистрация |
-| POST | /api/auth/login | Логин |
-| GET | /api/auth/me | Профиль (токен) |
-| POST | /api/auth/refresh | Обновить access token |
-| POST | /api/auth/logout | Закрыть текущую сессию |
-| POST | /api/scans | Сохранить скан |
-| GET | /api/scans | История сканов |
-| DELETE | /api/scans | Очистить историю |
-| POST | /api/purchases | Сохранить покупку |
-| GET | /api/purchases/active | Проверить Premium |
-| GET | /healths | Внутренний health check Shield backend |
+For Gmail SMTP use:
+- `SMTP_HOST=smtp.gmail.com`
+- `SMTP_PORT=587`
+- `SMTP_SECURE=false`
+- `SMTP_PASS=<Google app password, not the normal account password>`
+- `APP_RESET_URL=shieldsecurity://auth/reset-password`
 
-## Проверить что работает
+## Auth API
 
+### Two-step register
+- `POST /api/auth/register/start`
+- body:
+```json
+{
+  "name": "Fatal Error",
+  "email": "user@example.com",
+  "password": "secret123",
+  "device_id": "android-device-id"
+}
+```
+
+- `POST /api/auth/register/verify`
+- body:
+```json
+{
+  "challenge_id": "...",
+  "code": "123456",
+  "device_id": "android-device-id"
+}
+```
+
+### Two-step login
+- `POST /api/auth/login/start`
+- `POST /api/auth/login/verify`
+
+### Password reset
+- `POST /api/auth/password-reset/request`
+- body:
+```json
+{ "email": "user@example.com" }
+```
+
+- `POST /api/auth/password-reset/confirm`
+- body:
+```json
+{
+  "token": "raw-reset-token",
+  "email": "user@example.com",
+  "password": "newSecret123"
+}
+```
+
+## Other API
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `POST /api/scans`
+- `GET /api/scans`
+- `DELETE /api/scans`
+- `POST /api/purchases`
+- `GET /api/purchases/active`
+- `GET /healths`
+
+## Health checks
 ```bash
 curl http://91.233.168.135:5001/healths
 curl https://sosiskibot.ru/basedata
 curl https://sosiskibot.ru/basedata/health
 ```
 
-Ожидаемый ответ:
-```json
-{"status":"ok","service":"Shield Antivirus API","version":"1.0.0"}
-```
+## Schema additions
+- `email_auth_challenges` — one-time mail codes for login and registration
+- `password_reset_tokens` — one-time reset links
 
-Публичные маршруты в общем nginx ограничены только `/basedata` и `/basedata/health`, чтобы не затрагивать чужие сервисы под `/api/*`.
-
-## Открыть порт в firewall
-
-```bash
-ufw allow 5001/tcp
-ufw reload
-```
-
-## Таблицы базы данных
-
-- `users` — пользователи и профиль
-- `auth_sessions` — refresh-сессии и ревокации
-- `login_attempts` — brute-force троттлинг
-- `scans` / связанные таблицы — история сканирований
-- `purchases` — покупки Premium
-
-## Смотреть логи
-
+## Logs
 ```bash
 pm2 logs shield-api
 ```

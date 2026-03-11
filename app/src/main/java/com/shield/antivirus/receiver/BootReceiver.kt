@@ -3,17 +3,20 @@ package com.shield.antivirus.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import com.shield.antivirus.service.AntivirusService
+import com.shield.antivirus.util.ProtectionServiceController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
-            val serviceIntent = Intent(context, AntivirusService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    ProtectionServiceController.sync(context)
+                }
+                pendingResult.finish()
             }
         }
     }

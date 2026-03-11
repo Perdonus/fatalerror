@@ -1,11 +1,16 @@
 package com.shield.antivirus.data.repository
 
 import android.content.Context
+import android.util.Patterns
+import com.google.gson.JsonParser
 import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.model.LoginRequest
+import com.shield.antivirus.data.model.PasswordResetConfirmRequest
+import com.shield.antivirus.data.model.PasswordResetRequest
 import com.shield.antivirus.data.model.RegisterRequest
 import com.shield.antivirus.data.model.User
+import com.shield.antivirus.data.model.VerifyCodeRequest
 import com.shield.antivirus.data.security.ShieldSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +21,13 @@ import javax.net.ssl.SSLException
 
 sealed class AuthResult {
     data class Success(val user: User) : AuthResult()
+    data class CodeSent(
+        val email: String,
+        val challengeId: String,
+        val message: String,
+        val expiresAt: Long
+    ) : AuthResult()
+    data class Message(val message: String) : AuthResult()
     data class Error(val message: String) : AuthResult()
 }
 
@@ -23,13 +35,14 @@ class AuthRepository(context: Context) {
     private val prefs = UserPreferences(context)
     private val sessionManager = ShieldSessionManager(context)
 
-    suspend fun register(name: String, email: String, password: String): AuthResult =
+    suspend fun startRegister(name: String, email: String, password: String): AuthResult =
         withContext(Dispatchers.IO) {
             try {
-                if (name.isBlank() || email.isBlank() || password.isBlank()) {
+                val normalizedEmail = email.trim().lowercase()
+                if (name.isBlank() || normalizedEmail.isBlank() || password.isBlank()) {
                     return@withContext AuthResult.Error("Заполните все поля")
                 }
-                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                if (!Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()) {
                     return@withContext AuthResult.Error("Неверный email")
                 }
                 if (password.length < 6) {
@@ -37,68 +50,151 @@ class AuthRepository(context: Context) {
                 }
 
                 val response = ApiClient.executeShieldCall { api ->
-                    api.register(
+                    api.startRegister(
                         RegisterRequest(
                             name = name.trim(),
-                            email = email.trim().lowercase(),
+                            email = normalizedEmail,
                             password = password,
                             deviceId = prefs.getOrCreateDeviceId()
                         )
                     )
                 }
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
-                        AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
-                    } else {
-                        AuthResult.Error(body?.error ?: "Не удалось зарегистрироваться")
+                if (!response.isSuccessful) {
+                    val parsedError = parseError(response.errorBody()?.string())
+                    if (response.code() == 404 || response.code() >= 500) {
+                        return@withContext performDirectRegister(name.trim(), normalizedEmail, password)
                     }
+                    return@withContext AuthResult.Error(
+                        parsedError ?: "Не удалось отправить код (${response.code()})"
+                    )
+                }
+
+                val body = response.body()
+                val challengeId = body?.challengeId
+                val targetEmail = body?.email ?: normalizedEmail
+                if (body?.success == true && !challengeId.isNullOrBlank()) {
+                    AuthResult.CodeSent(
+                        email = targetEmail,
+                        challengeId = challengeId,
+                        message = body.message ?: "Код отправлен на $targetEmail",
+                        expiresAt = body.expiresAt ?: (System.currentTimeMillis() + 15 * 60 * 1000)
+                    )
                 } else {
-                    val message = parseError(response.errorBody()?.string())
-                        ?: if (response.code() == 404) {
-                            "Сервер авторизации недоступен"
-                        } else {
-                            "Ошибка регистрации (${response.code()})"
-                        }
-                    AuthResult.Error(message)
+                    AuthResult.Error(body?.error ?: "Не удалось начать регистрацию")
                 }
             } catch (error: Exception) {
                 AuthResult.Error(error.toUserMessage())
             }
         }
 
-    suspend fun login(email: String, password: String): AuthResult =
+    suspend fun verifyRegister(challengeId: String, code: String): AuthResult =
+        verifyCode(challengeId, code) { api, request -> api.verifyRegister(request) }
+
+    suspend fun startLogin(email: String, password: String): AuthResult =
         withContext(Dispatchers.IO) {
             try {
-                if (email.isBlank() || password.isBlank()) {
+                val normalizedEmail = email.trim().lowercase()
+                if (normalizedEmail.isBlank() || password.isBlank()) {
                     return@withContext AuthResult.Error("Введите email и пароль")
                 }
 
                 val response = ApiClient.executeShieldCall { api ->
-                    api.login(
+                    api.startLogin(
                         LoginRequest(
-                            email = email.trim().lowercase(),
+                            email = normalizedEmail,
                             password = password,
                             deviceId = prefs.getOrCreateDeviceId()
                         )
                     )
                 }
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
-                        AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
-                    } else {
-                        AuthResult.Error(body?.error ?: "Не удалось войти")
+                if (!response.isSuccessful) {
+                    val parsedError = parseError(response.errorBody()?.string())
+                    if (response.code() == 404 || response.code() >= 500) {
+                        return@withContext performDirectLogin(normalizedEmail, password)
                     }
-                } else {
-                    val message = parseError(response.errorBody()?.string())
-                        ?: if (response.code() == 404) {
-                            "Сервер авторизации недоступен"
-                        } else {
-                            "Неверный email или пароль"
-                        }
-                    AuthResult.Error(message)
+                    return@withContext AuthResult.Error(
+                        parsedError ?: "Не удалось отправить код (${response.code()})"
+                    )
                 }
+
+                val body = response.body()
+                val challengeId = body?.challengeId
+                val targetEmail = body?.email ?: normalizedEmail
+                if (body?.success == true && !challengeId.isNullOrBlank()) {
+                    AuthResult.CodeSent(
+                        email = targetEmail,
+                        challengeId = challengeId,
+                        message = body.message ?: "Код отправлен на $targetEmail",
+                        expiresAt = body.expiresAt ?: (System.currentTimeMillis() + 15 * 60 * 1000)
+                    )
+                } else {
+                    AuthResult.Error(body?.error ?: "Не удалось начать вход")
+                }
+            } catch (error: Exception) {
+                AuthResult.Error(error.toUserMessage())
+            }
+        }
+
+    suspend fun verifyLogin(challengeId: String, code: String): AuthResult =
+        verifyCode(challengeId, code) { api, request -> api.verifyLogin(request) }
+
+    suspend fun requestPasswordReset(email: String): AuthResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val normalizedEmail = email.trim().lowercase()
+                if (!Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()) {
+                    return@withContext AuthResult.Error("Введите корректный email")
+                }
+
+                val response = ApiClient.executeShieldCall(shouldFailover = { it.code() >= 500 }) { api ->
+                    api.requestPasswordReset(PasswordResetRequest(normalizedEmail))
+                }
+                if (!response.isSuccessful) {
+                    return@withContext AuthResult.Error(
+                        parseError(response.errorBody()?.string())
+                            ?: "Не удалось отправить ссылку"
+                    )
+                }
+                val body = response.body()
+                AuthResult.Message(body?.message ?: "Если почта существует, ссылка уже отправлена")
+            } catch (error: Exception) {
+                AuthResult.Error(error.toUserMessage())
+            }
+        }
+
+    suspend fun confirmPasswordReset(token: String, email: String, password: String): AuthResult =
+        withContext(Dispatchers.IO) {
+            try {
+                if (token.isBlank()) {
+                    return@withContext AuthResult.Error("Ссылка недействительна")
+                }
+                val normalizedEmail = email.trim().lowercase()
+                if (!Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()) {
+                    return@withContext AuthResult.Error("Неверный email")
+                }
+                if (password.length < 6) {
+                    return@withContext AuthResult.Error("Пароль слишком короткий")
+                }
+
+                val response = ApiClient.executeShieldCall(shouldFailover = { it.code() >= 500 }) { api ->
+                    api.confirmPasswordReset(
+                        PasswordResetConfirmRequest(
+                            token = token,
+                            email = normalizedEmail,
+                            password = password
+                        )
+                    )
+                }
+                if (!response.isSuccessful) {
+                    return@withContext AuthResult.Error(
+                        parseError(response.errorBody()?.string())
+                            ?: "Не удалось изменить пароль"
+                    )
+                }
+
+                sessionManager.clearLocalSession()
+                val body = response.body()
+                AuthResult.Message(body?.message ?: "Пароль обновлён")
             } catch (error: Exception) {
                 AuthResult.Error(error.toUserMessage())
             }
@@ -116,22 +212,111 @@ class AuthRepository(context: Context) {
             ApiClient.executeShieldCall { api ->
                 api.getMe("Bearer $token")
             }.isSuccessful
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
+        }
+    }
+
+    private suspend fun verifyCode(
+        challengeId: String,
+        code: String,
+        block: suspend (com.shield.antivirus.data.api.ShieldApi, VerifyCodeRequest) -> retrofit2.Response<com.shield.antivirus.data.model.AuthResponse>
+    ): AuthResult = withContext(Dispatchers.IO) {
+        try {
+            if (challengeId.isBlank() || code.length < 4) {
+                return@withContext AuthResult.Error("Введите код из письма")
+            }
+
+            val response = ApiClient.executeShieldCall { api ->
+                block(
+                    api,
+                    VerifyCodeRequest(
+                        challengeId = challengeId,
+                        code = code.trim(),
+                        deviceId = prefs.getOrCreateDeviceId()
+                    )
+                )
+            }
+            if (!response.isSuccessful) {
+                return@withContext AuthResult.Error(
+                    parseError(response.errorBody()?.string())
+                        ?: "Неверный код"
+                )
+            }
+
+            val body = response.body()
+            if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
+                AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
+            } else {
+                AuthResult.Error(body?.error ?: "Код не подтверждён")
+            }
+        } catch (error: Exception) {
+            AuthResult.Error(error.toUserMessage())
+        }
+    }
+
+    private suspend fun performDirectRegister(name: String, normalizedEmail: String, password: String): AuthResult {
+        val response = ApiClient.executeShieldCall { api ->
+            api.registerDirect(
+                RegisterRequest(
+                    name = name,
+                    email = normalizedEmail,
+                    password = password,
+                    deviceId = prefs.getOrCreateDeviceId()
+                )
+            )
+        }
+        if (!response.isSuccessful) {
+            return AuthResult.Error(
+                parseError(response.errorBody()?.string())
+                    ?: "Не удалось зарегистрироваться (${response.code()})"
+            )
+        }
+
+        val body = response.body()
+        return if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
+            AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
+        } else {
+            AuthResult.Error(body?.error ?: "Не удалось зарегистрироваться")
+        }
+    }
+
+    private suspend fun performDirectLogin(normalizedEmail: String, password: String): AuthResult {
+        val response = ApiClient.executeShieldCall { api ->
+            api.loginDirect(
+                LoginRequest(
+                    email = normalizedEmail,
+                    password = password,
+                    deviceId = prefs.getOrCreateDeviceId()
+                )
+            )
+        }
+        if (!response.isSuccessful) {
+            return AuthResult.Error(
+                parseError(response.errorBody()?.string())
+                    ?: "Не удалось войти (${response.code()})"
+            )
+        }
+
+        val body = response.body()
+        return if (body?.success == true && body.user != null && sessionManager.persistAuth(body)) {
+            AuthResult.Success(User(body.user.id, body.user.name, body.user.email))
+        } else {
+            AuthResult.Error(body?.error ?: "Не удалось войти")
         }
     }
 
     private fun parseError(body: String?): String? {
         if (body.isNullOrBlank()) return null
         return try {
-            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+            val json = JsonParser.parseString(body).asJsonObject
             when {
                 json.get("error")?.isJsonPrimitive == true -> json.get("error").asString
                 json.get("detail")?.isJsonPrimitive == true -> json.get("detail").asString
                 json.get("message")?.isJsonPrimitive == true -> json.get("message").asString
                 else -> null
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

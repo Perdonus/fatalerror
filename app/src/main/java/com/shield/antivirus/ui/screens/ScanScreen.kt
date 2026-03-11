@@ -55,6 +55,7 @@ fun ScanScreen(
     onCancel: () -> Unit
 ) {
     val progress by viewModel.progress.collectAsState()
+    val guestLimitReached by viewModel.guestLimitReached.collectAsState()
 
     LaunchedEffect(scanType) {
         viewModel.startScan(scanType)
@@ -92,6 +93,34 @@ fun ScanScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                if (guestLimitReached) {
+                    item {
+                        ShieldPanel(accent = MaterialTheme.colorScheme.warningTone) {
+                            Text(
+                                text = "Гостевой запуск уже использован",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Чтобы запустить новую проверку, войдите или зарегистрируйтесь.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    item {
+                        Button(
+                            onClick = onCancel,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.criticalTone),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Назад")
+                        }
+                    }
+                    return@LazyColumn
+                }
+
                 item {
                     ShieldPanel(accent = accent) {
                         ShieldSectionHeader(

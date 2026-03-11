@@ -18,13 +18,15 @@ class AppInstallReceiver : BroadcastReceiver() {
             CoroutineScope(Dispatchers.IO).launch {
                 val prefs = UserPreferences(context)
                 val scanOnInstall = prefs.scanOnInstall.first()
-                if (scanOnInstall) {
-                    // Trigger a quick scan notification for the new app
+                val isGuest = prefs.isGuest.first()
+                val isLoggedIn = prefs.isLoggedIn.first()
+                if (scanOnInstall && isLoggedIn && !isGuest) {
                     val pm = context.packageManager
-                    val appName = try {
+                    try {
                         pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
-                    } catch (e: Exception) { packageName }
-                    // Notification is handled by AntivirusService / ScanRepository
+                    } catch (_: Exception) {
+                        packageName
+                    }
                 }
             }
         }

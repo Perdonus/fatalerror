@@ -1,9 +1,7 @@
 package com.shield.antivirus
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,10 +12,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.shield.antivirus.navigation.NavGraph
-import com.shield.antivirus.service.AntivirusService
 import com.shield.antivirus.ui.theme.ShieldAntivirusTheme
+import com.shield.antivirus.util.ProtectionServiceController
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher =
@@ -27,7 +27,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        startProtectionService()
+        lifecycleScope.launch {
+            ProtectionServiceController.sync(this@MainActivity)
+        }
         requestNotificationPermissionIfNeeded()
 
         setContent {
@@ -43,17 +45,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startProtectionService() {
-        val intent = Intent(this, AntivirusService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-    }
-
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) return
         val granted = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.POST_NOTIFICATIONS

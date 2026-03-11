@@ -10,6 +10,12 @@ data class RegisterRequest(
     @SerializedName("device_id") val deviceId: String
 )
 
+data class VerifyCodeRequest(
+    @SerializedName("challenge_id") val challengeId: String,
+    val code: String,
+    @SerializedName("device_id") val deviceId: String
+)
+
 data class LoginRequest(
     val email: String,
     val password: String,
@@ -34,6 +40,31 @@ data class AuthResponse(
     @SerializedName("access_token_expires_at") val accessTokenExpiresAt: Long?,
     @SerializedName("refresh_token_expires_at") val refreshTokenExpiresAt: Long?,
     val user: RemoteUser?,
+    val error: String?
+)
+
+data class ChallengeResponse(
+    val success: Boolean,
+    @SerializedName("challenge_id") val challengeId: String?,
+    @SerializedName("expires_at") val expiresAt: Long?,
+    val email: String?,
+    val message: String?,
+    val error: String?
+)
+
+data class PasswordResetRequest(
+    val email: String
+)
+
+data class PasswordResetConfirmRequest(
+    val token: String,
+    val email: String,
+    val password: String
+)
+
+data class BasicResponse(
+    val success: Boolean,
+    val message: String?,
     val error: String?
 )
 

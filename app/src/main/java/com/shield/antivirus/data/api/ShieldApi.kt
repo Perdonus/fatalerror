@@ -7,11 +7,23 @@ import retrofit2.http.*
 interface ShieldApi {
 
     // --- Auth ---
+    @POST("api/auth/register/start")
+    suspend fun startRegister(@Body request: RegisterRequest): Response<ChallengeResponse>
+
     @POST("api/auth/register")
-    suspend fun register(@Body request: RegisterRequest): Response<AuthResponse>
+    suspend fun registerDirect(@Body request: RegisterRequest): Response<AuthResponse>
+
+    @POST("api/auth/register/verify")
+    suspend fun verifyRegister(@Body request: VerifyCodeRequest): Response<AuthResponse>
+
+    @POST("api/auth/login/start")
+    suspend fun startLogin(@Body request: LoginRequest): Response<ChallengeResponse>
 
     @POST("api/auth/login")
-    suspend fun login(@Body request: LoginRequest): Response<AuthResponse>
+    suspend fun loginDirect(@Body request: LoginRequest): Response<AuthResponse>
+
+    @POST("api/auth/login/verify")
+    suspend fun verifyLogin(@Body request: VerifyCodeRequest): Response<AuthResponse>
 
     @POST("api/auth/refresh")
     suspend fun refresh(@Body request: RefreshRequest): Response<AuthResponse>
@@ -24,6 +36,12 @@ interface ShieldApi {
 
     @GET("api/auth/me")
     suspend fun getMe(@Header("Authorization") token: String): Response<AuthResponse>
+
+    @POST("api/auth/password-reset/request")
+    suspend fun requestPasswordReset(@Body request: PasswordResetRequest): Response<BasicResponse>
+
+    @POST("api/auth/password-reset/confirm")
+    suspend fun confirmPasswordReset(@Body request: PasswordResetConfirmRequest): Response<BasicResponse>
 
     // --- Scans ---
     @POST("api/scans")

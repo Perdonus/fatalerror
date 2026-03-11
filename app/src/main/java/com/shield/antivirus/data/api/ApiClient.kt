@@ -20,12 +20,7 @@ object ApiClient {
 
     private val shieldEndpoints = listOf(
         ShieldEndpoint(
-            label = "Primary domain",
-            baseUrl = "https://sosiskibot.ru/",
-            usePinnedTls = true
-        ),
-        ShieldEndpoint(
-            label = "Direct VPS fallback",
+            label = "Direct backend",
             baseUrl = "http://91.233.168.135:5001/",
             usePinnedTls = false
         )
@@ -38,9 +33,9 @@ object ApiClient {
 
     private fun newHttpClient(usePinnedTls: Boolean): OkHttpClient {
         val builder = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) {
                     HttpLoggingInterceptor.Level.BASIC

@@ -9,7 +9,6 @@ import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.repository.ScanRepository
 import com.shield.antivirus.util.PackageUtils
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -22,7 +21,9 @@ data class HomeUiState(
     val recentResults: List<ScanResult> = emptyList(),
     val isProtectionActive: Boolean = true,
     val totalThreatsEver: Int = 0,
-    val totalScans: Int = 0
+    val totalScans: Int = 0,
+    val isGuest: Boolean = false,
+    val guestScanUsed: Boolean = false
 )
 
 class HomeViewModel(private val context: Context) : ViewModel() {
@@ -42,17 +43,21 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                 prefs.userName,
                 prefs.lastScanTime,
                 prefs.realtimeProtection,
+                prefs.isGuest,
+                prefs.guestScanUsed,
                 scanRepo.getAllResults()
-            ) { name, lastScan, protection, results ->
+            ) { name, lastScan, protection, isGuest, guestScanUsed, results ->
                 val appCount = PackageUtils.getUserApps(context).size
                 HomeUiState(
                     userName = name,
                     installedAppsCount = appCount,
                     lastScanTime = lastScan,
-                    recentResults = results.take(4),
-                    isProtectionActive = protection,
-                    totalThreatsEver = results.sumOf { it.threatsFound },
-                    totalScans = results.size
+                    recentResults = if (isGuest) emptyList() else results.take(4),
+                    isProtectionActive = protection && !isGuest,
+                    totalThreatsEver = if (isGuest) 0 else results.sumOf { it.threatsFound },
+                    totalScans = if (isGuest) 0 else results.size,
+                    isGuest = isGuest,
+                    guestScanUsed = guestScanUsed
                 )
             }.collect { _state.value = it }
         }

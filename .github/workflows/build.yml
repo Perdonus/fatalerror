@@ -58,10 +58,30 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Assemble debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon --console=plain
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace --no-daemon --console=plain 2>&1 | tee gradle-build.log
+
+      - name: Surface Gradle failure
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^(e: |FAILURE:|\\* What went wrong:|Caused by:|> Task .+ FAILED)" gradle-build.log | tail -n 50 | while IFS= read -r line; do
+            printf '::error::%s\n' "$line"
+          done
+
+      - name: Upload Gradle log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-gradle-log
+          path: gradle-build.log
 
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: shield-antivirus-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore

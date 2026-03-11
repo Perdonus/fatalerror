@@ -204,9 +204,9 @@ fun HomeScreen(
                                 eyebrow = "Гость",
                                 title = if (state.guestScanUsed) "Лимит исчерпан" else "Один запуск",
                                 subtitle = if (state.guestScanUsed) {
-                                    "Дальше нужен аккаунт"
+                                    "Нужен аккаунт"
                                 } else {
-                                    "Быстрый режим доступен сразу"
+                                    "Доступна быстрая проверка"
                                 }
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -227,7 +227,7 @@ fun HomeScreen(
                         ShieldSectionHeader(
                             eyebrow = "Режимы",
                             title = "Проверка",
-                            subtitle = "Полный набор откроется после входа"
+                            subtitle = ""
                         )
                     }
                     item {
@@ -268,19 +268,16 @@ fun HomeScreen(
                             meta = "Только для аккаунта"
                         )
                     }
-                    item {
-                        ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
-                            Text(
-                                text = if (state.guestScanUsed) "Пора войти или зарегистрироваться." else "После входа откроются глубокая проверка, история и 24/7.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                TextButton(onClick = onOpenLogin) {
-                                    Text("Войти")
-                                }
-                                TextButton(onClick = onOpenRegister) {
-                                    Text("Регистрация")
+                    if (state.guestScanUsed) {
+                        item {
+                            ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    TextButton(onClick = onOpenLogin) {
+                                        Text("Войти")
+                                    }
+                                    TextButton(onClick = onOpenRegister) {
+                                        Text("Регистрация")
+                                    }
                                 }
                             }
                         }

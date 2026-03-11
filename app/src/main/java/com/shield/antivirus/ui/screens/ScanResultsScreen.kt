@@ -114,9 +114,13 @@ fun ScanResultsScreen(
                 } else {
                     item {
                         ShieldSectionHeader(
-                            eyebrow = "Угрозы",
-                            title = "Список совпадений",
-                            subtitle = "Проверьте отмеченные приложения"
+                            eyebrow = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники" else "Угрозы",
+                            title = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники проверки" else "Список совпадений",
+                            subtitle = if (current.threats.any { !it.summary.isNullOrBlank() }) {
+                                "Сводка по каждому движку и этапу"
+                            } else {
+                                "Проверьте отмеченные приложения"
+                            }
                         )
                     }
                     items(current.threats, key = { it.packageName + it.threatName }) { threat ->
@@ -155,6 +159,13 @@ private fun ThreatCard(threat: ThreatInfo) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
+        if (!threat.summary.isNullOrBlank()) {
+            Text(
+                text = threat.summary.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Text(
             text = threat.packageName,
             style = MaterialTheme.typography.bodySmall,

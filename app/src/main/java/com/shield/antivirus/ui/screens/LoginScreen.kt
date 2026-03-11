@@ -43,7 +43,6 @@ import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldSectionHeader
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.shieldTextFieldColors
-import com.shield.antivirus.ui.components.shieldBottomInsets
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 
@@ -135,13 +134,9 @@ fun LoginScreen(
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 ShieldSectionHeader(
-                    eyebrow = "Аккаунт",
-                    title = if (uiState.requiresCode) "Подтвердите вход" else "Вход",
-                    subtitle = if (uiState.requiresCode) {
-                        "Код отправлен на ${uiState.pendingEmail}"
-                    } else {
-                        ""
-                    },
+                    eyebrow = "",
+                    title = if (uiState.requiresCode) "Код из почты" else "Вход",
+                    subtitle = "",
                     modifier = Modifier.align(Alignment.TopStart)
                 )
 
@@ -150,7 +145,6 @@ fun LoginScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .shieldBottomInsets()
                         .imePadding()
                 ) {
                     if (!uiState.infoMessage.isNullOrBlank()) {
@@ -274,7 +268,7 @@ fun LoginScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(onClick = onNavigateRegister) {
-                                Text("Регистрация")
+                                Text("Нет аккаунта?")
                             }
                             TextButton(onClick = {
                                 resetEmail = email.trim()

@@ -37,7 +37,6 @@ import com.shield.antivirus.ui.components.ShieldCalmBackdrop
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldSectionHeader
-import com.shield.antivirus.ui.components.shieldBottomInsets
 import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
@@ -78,7 +77,7 @@ fun ResetPasswordScreen(
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 ShieldSectionHeader(
-                    eyebrow = "Сброс",
+                    eyebrow = "",
                     title = "Новый пароль",
                     subtitle = if (token.isBlank()) "Ссылка недействительна" else "",
                     modifier = Modifier.align(Alignment.TopStart)
@@ -89,7 +88,6 @@ fun ResetPasswordScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .shieldBottomInsets()
                         .imePadding()
                 ) {
                     OutlinedTextField(

@@ -1,7 +1,6 @@
 package com.shield.antivirus.data.model
 
 import com.google.gson.annotations.SerializedName
-
 // ---- Auth ----
 data class RegisterRequest(
     val name: String,
@@ -143,6 +142,7 @@ data class RemoteScan(
 data class DeepScanStartRequest(
     @SerializedName("app_name") val appName: String,
     @SerializedName("package_name") val packageName: String,
+    @SerializedName("scan_mode") val scanMode: String,
     val sha256: String?,
     @SerializedName("installer_package") val installerPackage: String?,
     val permissions: List<String>,
@@ -163,13 +163,22 @@ data class DeepScanFinding(
     val type: String,
     val severity: String,
     val title: String,
-    val detail: String
+    val detail: String,
+    val source: String? = null
 )
 
 data class DeepScanSummary(
     val verdict: String?,
     @SerializedName("risk_score") val riskScore: Int? = null,
-    val recommendations: List<String>? = emptyList()
+    val recommendations: List<String>? = emptyList(),
+    val sources: List<DeepScanSourceSummary>? = emptyList()
+)
+
+data class DeepScanSourceSummary(
+    val source: String,
+    val severity: String? = null,
+    @SerializedName("finding_count") val findingCount: Int? = null,
+    val summary: String? = null
 )
 
 data class DeepScanJob(
@@ -179,6 +188,8 @@ data class DeepScanJob(
     @SerializedName("app_name") val appName: String? = null,
     val verdict: String? = null,
     @SerializedName("risk_score") val riskScore: Int? = null,
+    @SerializedName("next_action") val nextAction: String? = null,
+    @SerializedName("upload_reason") val uploadReason: String? = null,
     val summary: DeepScanSummary? = null,
     val findings: List<DeepScanFinding>? = emptyList(),
     val error: String? = null

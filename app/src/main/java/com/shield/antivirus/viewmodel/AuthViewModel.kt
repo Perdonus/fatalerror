@@ -79,7 +79,7 @@ class AuthViewModel(private val context: Context) : ViewModel() {
                         requiresCode = true,
                         pendingEmail = result.email,
                         pendingChallengeId = result.challengeId,
-                        infoMessage = result.message
+                        infoMessage = "${result.message}. Проверьте входящие и папку Спам."
                     )
                 }
                 is AuthResult.Error -> _uiState.value = AuthUiState(error = result.message)
@@ -107,7 +107,7 @@ class AuthViewModel(private val context: Context) : ViewModel() {
                         requiresCode = true,
                         pendingEmail = result.email,
                         pendingChallengeId = result.challengeId,
-                        infoMessage = result.message
+                        infoMessage = "${result.message}. Проверьте входящие и папку Спам."
                     )
                 }
                 is AuthResult.Error -> _uiState.value = AuthUiState(error = result.message)

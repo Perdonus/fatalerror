@@ -56,6 +56,7 @@ fun ScanScreen(
 ) {
     val progress by viewModel.progress.collectAsState()
     val guestLimitReached by viewModel.guestLimitReached.collectAsState()
+    val keepRunningInBackground = scanType.uppercase() != "QUICK"
 
     LaunchedEffect(scanType) {
         viewModel.startScan(scanType)
@@ -82,7 +83,9 @@ fun ScanScreen(
             title = scanTypeLabel(scanType),
             subtitle = scanPhase(progress),
             onBack = {
-                viewModel.cancelScan()
+                if (!keepRunningInBackground) {
+                    viewModel.cancelScan()
+                }
                 onCancel()
             }
         ) { padding ->
@@ -159,6 +162,13 @@ fun ScanScreen(
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                        if (keepRunningInBackground) {
+                            Text(
+                                text = "Если выйти из приложения, глубокая проверка продолжится в уведомлении.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (!progress?.currentApp.isNullOrBlank()) {
                             Text(
                                 text = "Сейчас: ${progress?.currentApp}",
@@ -226,7 +236,7 @@ fun ScanScreen(
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Icon(Icons.Filled.Close, contentDescription = null)
-                        Text("  Остановить")
+                        Text(if (keepRunningInBackground) "  Остановить глубокую проверку" else "  Остановить")
                     }
                 }
             }

@@ -43,7 +43,8 @@ class LocalThreatDetector(context: Context) {
                 severity = ThreatSeverity.CRITICAL,
                 detectionEngine = "Shield локальные правила",
                 detectionCount = 1,
-                totalEngines = 1
+                totalEngines = 1,
+                summary = "Хэш APK совпал с локально заблокированной сигнатурой."
             )
         }
 
@@ -55,7 +56,8 @@ class LocalThreatDetector(context: Context) {
                 severity = ThreatSeverity.HIGH,
                 detectionEngine = "Shield локальные правила",
                 detectionCount = 1,
-                totalEngines = 1
+                totalEngines = 1,
+                summary = "Имя пакета попало под локальное правило по известному семейству."
             )
         }
 
@@ -92,7 +94,18 @@ class LocalThreatDetector(context: Context) {
             severity = severity,
             detectionEngine = "Shield локальные правила",
             detectionCount = keywordHits.size + matchedCombos.size,
-            totalEngines = riskyPermissions.size.coerceAtLeast(1)
+            totalEngines = riskyPermissions.size.coerceAtLeast(1),
+            summary = buildString {
+                if (keywordHits.isNotEmpty()) {
+                    append("Ключевые слова: ${keywordHits.joinToString()}. ")
+                }
+                if (matchedCombos.isNotEmpty()) {
+                    append("Опасные комбинации разрешений: ${matchedCombos.size}. ")
+                }
+                if (untrustedInstaller) {
+                    append("Источник установки не доверенный.")
+                }
+            }.trim()
         )
     }
 }

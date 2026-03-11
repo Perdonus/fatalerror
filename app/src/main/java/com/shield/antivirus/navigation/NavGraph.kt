@@ -86,7 +86,8 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
 
     val gate = sessionState!!
     val startDestination = when {
-        gate.isLoggedIn || gate.isGuest -> Screen.Home.route
+        gate.isLoggedIn -> Screen.Home.route
+        gate.isGuest && !gate.guestScanUsed -> Screen.Home.route
         gate.pendingAuthFlow == PendingAuthFlow.LOGIN -> Screen.Login.route
         gate.pendingAuthFlow == PendingAuthFlow.REGISTER -> Screen.Register.route
         else -> Screen.Welcome.route
@@ -212,9 +213,21 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 viewModel = vm,
                 scanId = scanId,
                 onBack = {
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
+                    scope.launch {
+                        val isGuestSession = vm.isGuest.value
+                        val guestLimitReached = vm.guestScanUsed.value
+                        if (isGuestSession && guestLimitReached) {
+                            vm.exitGuestMode()
+                            navController.navigate(Screen.Welcome.route) {
+                                popUpTo(Screen.Home.route) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        } else {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Home.route)
+                                launchSingleTop = true
+                            }
+                        }
                     }
                 },
                 onGuestLogin = {

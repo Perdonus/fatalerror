@@ -18,7 +18,8 @@ data class ThreatInfo(
     val severity: ThreatSeverity,
     val detectionEngine: String,
     val detectionCount: Int = 0,
-    val totalEngines: Int = 0
+    val totalEngines: Int = 0,
+    val summary: String? = null
 )
 
 enum class ThreatSeverity { LOW, MEDIUM, HIGH, CRITICAL }

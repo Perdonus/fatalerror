@@ -89,13 +89,15 @@ function normalizePermissions(rawPermissions) {
         .slice(0, 256)));
 }
 
-function makeFinding(type, severity, title, detail, evidence = {}) {
+function makeFinding(type, severity, title, detail, evidence = {}, source = 'Shield Rules', score = 0) {
     return {
         type,
         severity,
         title,
         detail,
-        evidence
+        evidence,
+        source,
+        score
     };
 }
 
@@ -139,6 +141,7 @@ function normalizeDeepScanPayload(payload = {}) {
     return {
         appName: normalizeString(payload.app_name || payload.appName, 255),
         packageName: normalizePackageName(payload.package_name || payload.packageName),
+        scanMode: normalizeString(payload.scan_mode || payload.scanMode, 32)?.toUpperCase() || null,
         sha256: normalizeSha256(payload.sha256),
         installerPackage: normalizeString(payload.installer_package || payload.installerPackage || payload.install_source || payload.installSource, 255),
         permissions: normalizePermissions(payload.permissions || payload.requested_permissions || payload.requestedPermissions),
@@ -152,7 +155,11 @@ function normalizeDeepScanPayload(payload = {}) {
         lastUpdateTime: normalizeNumber(payload.last_update_time ?? payload.lastUpdateTime),
         sizeBytes: normalizeNumber(payload.size_bytes ?? payload.sizeBytes),
         isDebuggable: normalizeBoolean(payload.is_debuggable ?? payload.isDebuggable),
-        usesCleartextTraffic: normalizeBoolean(payload.uses_cleartext_traffic ?? payload.usesCleartextTraffic)
+        usesCleartextTraffic: normalizeBoolean(payload.uses_cleartext_traffic ?? payload.usesCleartextTraffic),
+        uploadedApkPath: normalizeString(payload.uploaded_apk_path || payload.uploadedApkPath, 1024),
+        uploadedApkName: normalizeString(payload.uploaded_apk_name || payload.uploadedApkName, 255),
+        uploadedApkSha256: normalizeSha256(payload.uploaded_apk_sha256 || payload.uploadedApkSha256),
+        uploadedApkSizeBytes: normalizeNumber(payload.uploaded_apk_size_bytes ?? payload.uploadedApkSizeBytes)
     };
 }
 
@@ -344,7 +351,9 @@ function analyzeHeuristics(normalized, vtStats = null) {
                     suspicious: vtStats.suspicious,
                     harmless: vtStats.harmless,
                     undetected: vtStats.undetected
-                }
+                },
+                'VirusTotal',
+                vtStats.malicious >= 5 ? 50 : 25
             ));
             riskScore += vtStats.malicious >= 5 ? 50 : 25;
         } else if ((vtStats.suspicious || 0) > 0) {
@@ -357,7 +366,9 @@ function analyzeHeuristics(normalized, vtStats = null) {
                     suspicious: vtStats.suspicious,
                     harmless: vtStats.harmless,
                     undetected: vtStats.undetected
-                }
+                },
+                'VirusTotal',
+                15
             ));
             riskScore += 15;
         }
@@ -366,7 +377,9 @@ function analyzeHeuristics(normalized, vtStats = null) {
             'virustotal_lookup',
             'low',
             'VirusTotal lookup failed',
-            'The external hash reputation check did not complete successfully.'
+            'The external hash reputation check did not complete successfully.',
+            {},
+            'VirusTotal'
         ));
     }
 
@@ -396,7 +409,11 @@ function analyzeHeuristics(normalized, vtStats = null) {
             last_update_time: normalized.lastUpdateTime,
             size_bytes: normalized.sizeBytes,
             is_debuggable: normalized.isDebuggable,
-            uses_cleartext_traffic: normalized.usesCleartextTraffic
+            uses_cleartext_traffic: normalized.usesCleartextTraffic,
+            scan_mode: normalized.scanMode,
+            uploaded_apk_name: normalized.uploadedApkName,
+            uploaded_apk_sha256: normalized.uploadedApkSha256,
+            uploaded_apk_size_bytes: normalized.uploadedApkSizeBytes
         }
     };
 }
@@ -404,5 +421,6 @@ function analyzeHeuristics(normalized, vtStats = null) {
 module.exports = {
     normalizeDeepScanPayload,
     validateDeepScanPayload,
-    analyzeHeuristics
+    analyzeHeuristics,
+    classifyVerdict
 };

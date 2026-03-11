@@ -49,6 +49,8 @@ class UserPreferences(private val context: Context) {
         val KEY_PENDING_AUTH_CHALLENGE_ID = stringPreferencesKey("pending_auth_challenge_id")
         val KEY_PENDING_AUTH_EMAIL = stringPreferencesKey("pending_auth_email")
         val KEY_PENDING_AUTH_EXPIRES_AT = longPreferencesKey("pending_auth_expires_at")
+        val KEY_ACTIVE_DEEP_SCAN_WORK_ID = stringPreferencesKey("active_deep_scan_work_id")
+        val KEY_ACTIVE_DEEP_SCAN_TYPE = stringPreferencesKey("active_deep_scan_type")
     }
 
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.preferenceFlow(KEY_IS_LOGGED_IN, false)
@@ -68,6 +70,8 @@ class UserPreferences(private val context: Context) {
     val pendingAuthChallengeId: Flow<String> = context.dataStore.data.preferenceFlow(KEY_PENDING_AUTH_CHALLENGE_ID, "")
     val pendingAuthEmail: Flow<String> = context.dataStore.data.preferenceFlow(KEY_PENDING_AUTH_EMAIL, "")
     val pendingAuthExpiresAt: Flow<Long> = context.dataStore.data.preferenceFlow(KEY_PENDING_AUTH_EXPIRES_AT, 0L)
+    val activeDeepScanWorkId: Flow<String> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_DEEP_SCAN_WORK_ID, "")
+    val activeDeepScanType: Flow<String> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_DEEP_SCAN_TYPE, "")
 
     suspend fun setLoggedIn(value: Boolean) {
         context.dataStore.edit { it[KEY_IS_LOGGED_IN] = value }
@@ -103,6 +107,8 @@ class UserPreferences(private val context: Context) {
             it[KEY_USER_EMAIL] = ""
             it[KEY_USER_ID] = ""
             it[KEY_AUTH_TOKEN] = ""
+            it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
+            it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
         }
     }
 
@@ -126,6 +132,8 @@ class UserPreferences(private val context: Context) {
             it.remove(KEY_PENDING_AUTH_CHALLENGE_ID)
             it.remove(KEY_PENDING_AUTH_EMAIL)
             it.remove(KEY_PENDING_AUTH_EXPIRES_AT)
+            it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
+            it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
         }
     }
 
@@ -164,6 +172,20 @@ class UserPreferences(private val context: Context) {
 
     suspend fun updateLastScanTime() {
         context.dataStore.edit { it[KEY_LAST_SCAN_TIME] = System.currentTimeMillis() }
+    }
+
+    suspend fun setActiveDeepScan(workId: String, scanType: String) {
+        context.dataStore.edit {
+            it[KEY_ACTIVE_DEEP_SCAN_WORK_ID] = workId
+            it[KEY_ACTIVE_DEEP_SCAN_TYPE] = scanType
+        }
+    }
+
+    suspend fun clearActiveDeepScan() {
+        context.dataStore.edit {
+            it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
+            it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
+        }
     }
 
     suspend fun getOrCreateDeviceId(): String {

@@ -15,10 +15,13 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -117,8 +120,11 @@ fun SettingsScreen(
                         label = { Text("API ключ") },
                         leadingIcon = { Icon(Icons.Filled.VpnKey, contentDescription = null) },
                         trailingIcon = {
-                            TextButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                                Text(if (apiKeyVisible) "Скрыть" else "Показать")
+                            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                                Icon(
+                                    imageVector = if (apiKeyVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (apiKeyVisible) "Скрыть ключ" else "Показать ключ"
+                                )
                             }
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),

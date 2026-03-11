@@ -1,6 +1,7 @@
 package com.shield.antivirus.data.api
 
 import com.shield.antivirus.data.model.*
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -70,6 +71,15 @@ interface ShieldApi {
     suspend fun getDeepScan(
         @Header("Authorization") token: String,
         @Path("id") id: String
+    ): Response<DeepScanPollResponse>
+
+    @Headers("Content-Type: application/vnd.android.package-archive")
+    @POST("api/scans/deep/{id}/apk")
+    suspend fun uploadDeepScanApk(
+        @Header("Authorization") token: String,
+        @Path("id") id: String,
+        @Header("X-File-Name") fileName: String,
+        @Body apkBody: RequestBody
     ): Response<DeepScanPollResponse>
 
     // --- AI ---

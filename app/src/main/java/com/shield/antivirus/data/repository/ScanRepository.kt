@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 
 data class ScanProgress(
@@ -71,12 +73,8 @@ class ScanRepository(private val context: Context) {
             }
         }
 
-        val vtApiKey = withContext(Dispatchers.IO) {
-            prefs.vtApiKey.first()
-        }
-        val accessToken = withContext(Dispatchers.IO) {
-            sessionManager.getValidAccessToken()
-        }
+        val vtApiKey = withContext(Dispatchers.IO) { prefs.vtApiKey.first() }
+        val accessToken = withContext(Dispatchers.IO) { sessionManager.getValidAccessToken() }
         val useServerDeepScan = scanType != "QUICK" && !accessToken.isNullOrBlank()
 
         val total = allApps.size
@@ -100,45 +98,37 @@ class ScanRepository(private val context: Context) {
                 app.appName
             )
 
-            val localThreat = withContext(Dispatchers.IO) {
-                localThreatDetector.scan(app)
-            }
+            val localThreat = withContext(Dispatchers.IO) { localThreatDetector.scan(app) }
 
-            val finalThreat = if (useServerDeepScan) {
-                val serverThreat = withContext(Dispatchers.IO) {
-                    checkWithServerDeepScan(app, accessToken.orEmpty())
+            val threatBatch = if (useServerDeepScan) {
+                val serverThreats = withContext(Dispatchers.IO) {
+                    checkWithServerDeepScan(app, accessToken.orEmpty(), scanType)
                 }
-                mergeThreats(localThreat, serverThreat)
+                mergeThreats(localThreat, serverThreats)
             } else {
                 val shouldAskVirusTotal = vtApiKey.isNotBlank() && (
                     localThreat == null ||
                         localThreat.severity == ThreatSeverity.LOW ||
                         localThreat.severity == ThreatSeverity.MEDIUM
                     )
-
-                if (shouldAskVirusTotal) {
-                    val cloudThreat = withContext(Dispatchers.IO) {
-                        checkWithVirusTotal(app, vtApiKey)
-                    }
-                    when {
-                        cloudThreat != null && localThreat != null -> cloudThreat.copy(
-                            threatName = "${localThreat.threatName} / ${cloudThreat.threatName}",
-                            detectionEngine = "Shield + VirusTotal"
-                        )
-                        cloudThreat != null -> cloudThreat
-                        else -> localThreat
-                    }
+                val cloudThreat = if (shouldAskVirusTotal) {
+                    withContext(Dispatchers.IO) { checkWithVirusTotal(app, vtApiKey) }
                 } else {
-                    localThreat
+                    null
+                }
+                buildList {
+                    localThreat?.let { add(it) }
+                    cloudThreat?.let { add(it) }
                 }
             }
 
-            if (finalThreat != null) {
-                threats.add(finalThreat)
+            if (threatBatch.isNotEmpty()) {
+                threats.addAll(threatBatch)
+                val mainThreat = threatBatch.maxByOrNull { threatRank(it.severity) } ?: threatBatch.first()
                 NotificationHelper.showThreatNotification(
                     context,
                     app.appName,
-                    finalThreat.threatName,
+                    mainThreat.threatName,
                     notifId++
                 )
             }
@@ -193,7 +183,7 @@ class ScanRepository(private val context: Context) {
                 ThreatInfo(
                     packageName = app.packageName,
                     appName = app.appName,
-                    threatName = topResult?.result ?: "Неизвестная угроза",
+                    threatName = topResult?.result ?: "Репутационный флаг",
                     severity = when {
                         stats.malicious > 20 -> ThreatSeverity.CRITICAL
                         stats.malicious > 10 -> ThreatSeverity.HIGH
@@ -202,17 +192,18 @@ class ScanRepository(private val context: Context) {
                     },
                     detectionEngine = topResult?.engineName ?: "VirusTotal",
                     detectionCount = malicious,
-                    totalEngines = stats.malicious + stats.suspicious + stats.undetected + stats.harmless
+                    totalEngines = stats.malicious + stats.suspicious + stats.undetected + stats.harmless,
+                    summary = "VirusTotal: malicious=${stats.malicious}, suspicious=${stats.suspicious}, harmless=${stats.harmless}."
                 )
             } else {
                 null
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }
 
-    private suspend fun checkWithServerDeepScan(app: AppInfo, accessToken: String): ThreatInfo? {
+    private suspend fun checkWithServerDeepScan(app: AppInfo, accessToken: String, scanType: String): List<ThreatInfo> {
         return try {
             val apkFile = File(app.apkPath)
             val sha256 = if (apkFile.exists()) HashUtils.sha256(apkFile) else null
@@ -223,6 +214,7 @@ class ScanRepository(private val context: Context) {
                     request = DeepScanStartRequest(
                         appName = app.appName,
                         packageName = app.packageName,
+                        scanMode = scanType,
                         sha256 = sha256,
                         installerPackage = app.installerPackage,
                         permissions = app.requestedPermissions,
@@ -241,71 +233,111 @@ class ScanRepository(private val context: Context) {
                 )
             }
 
-            val scanId = startResponse.body()?.scan?.id
-            if (!startResponse.isSuccessful || scanId.isNullOrBlank()) return null
+            val job = startResponse.body()?.scan
+            val scanId = job?.id
+            if (!startResponse.isSuccessful || scanId.isNullOrBlank()) return emptyList()
 
-            repeat(18) { attempt ->
-                delay(if (attempt == 0) 300L else 700L)
+            if (job?.nextAction.equals("upload_apk", ignoreCase = true) && apkFile.exists()) {
+                val uploadResponse = ApiClient.executeShieldCall { api ->
+                    api.uploadDeepScanApk(
+                        token = "Bearer $accessToken",
+                        id = scanId,
+                        fileName = "${app.packageName}.apk",
+                        apkBody = apkFile.asRequestBody("application/vnd.android.package-archive".toMediaType())
+                    )
+                }
+                if (!uploadResponse.isSuccessful) {
+                    return emptyList()
+                }
+            }
+
+            repeat(40) { attempt ->
+                delay(if (attempt == 0) 500L else 1200L)
                 val pollResponse = ApiClient.executeShieldCall { api ->
                     api.getDeepScan("Bearer $accessToken", scanId)
                 }
-                if (!pollResponse.isSuccessful) return null
+                if (!pollResponse.isSuccessful) return emptyList()
 
-                val job = pollResponse.body()?.scan ?: return null
-                when (job.status.uppercase()) {
-                    "QUEUED", "RUNNING" -> Unit
-                    "FAILED" -> return null
-                    "COMPLETED" -> return mapDeepScanToThreat(app, job)
-                    else -> return null
+                val currentJob = pollResponse.body()?.scan ?: return emptyList()
+                when (currentJob.status.uppercase()) {
+                    "AWAITING_UPLOAD", "QUEUED", "RUNNING" -> Unit
+                    "FAILED" -> return emptyList()
+                    "COMPLETED" -> return mapDeepScanToThreats(app, currentJob)
+                    else -> return emptyList()
                 }
             }
-            null
+            emptyList()
         } catch (_: Exception) {
-            null
+            emptyList()
         }
     }
 
-    private fun mapDeepScanToThreat(app: AppInfo, job: DeepScanJob): ThreatInfo? {
+    private fun mapDeepScanToThreats(app: AppInfo, job: DeepScanJob): List<ThreatInfo> {
         val verdict = job.verdict?.lowercase().orEmpty()
         val findings = job.findings.orEmpty()
         val score = job.riskScore ?: 0
-        if (verdict == "clean" && findings.isEmpty() && score < 20) return null
+        if (verdict == "clean" && findings.isEmpty() && score < 20) return emptyList()
 
-        val severity = when {
-            verdict == "malicious" || score >= 85 -> ThreatSeverity.CRITICAL
-            verdict == "suspicious" || score >= 55 -> ThreatSeverity.HIGH
-            verdict == "low_risk" || score >= 25 -> ThreatSeverity.MEDIUM
-            else -> ThreatSeverity.LOW
+        val sourceThreats = findings
+            .groupBy { it.source?.ifBlank { null } ?: "Shield Deep" }
+            .map { (source, items) ->
+                val severity = items.maxByOrNull { severityRank(it.severity) }?.severity?.toThreatSeverity()
+                    ?: verdict.toThreatSeverity(score)
+                ThreatInfo(
+                    packageName = app.packageName,
+                    appName = app.appName,
+                    threatName = items.firstOrNull()?.title ?: "Серверный сигнал",
+                    severity = severity,
+                    detectionEngine = source,
+                    detectionCount = items.size,
+                    totalEngines = findings.size.coerceAtLeast(items.size),
+                    summary = items.joinToString(separator = "\n") { it.detail }
+                )
+            }
+            .sortedByDescending { threatRank(it.severity) }
+
+        if (sourceThreats.isNotEmpty()) {
+            return sourceThreats
         }
 
-        val title = findings.firstOrNull()?.title
-            ?: job.summary?.verdict
-            ?: "Серверная проверка"
-        return ThreatInfo(
-            packageName = app.packageName,
-            appName = app.appName,
-            threatName = title,
-            severity = severity,
-            detectionEngine = "Shield deep",
-            detectionCount = findings.size.coerceAtLeast(if (score > 0) 1 else 0),
-            totalEngines = (findings.size + 1).coerceAtLeast(1)
+        val fallbackSource = job.summary?.sources.orEmpty().firstOrNull()
+        return listOf(
+            ThreatInfo(
+                packageName = app.packageName,
+                appName = app.appName,
+                threatName = fallbackSource?.summary ?: "Серверная проверка",
+                severity = verdict.toThreatSeverity(score),
+                detectionEngine = fallbackSource?.source ?: "Shield Deep",
+                detectionCount = fallbackSource?.findingCount ?: findings.size.coerceAtLeast(if (score > 0) 1 else 0),
+                totalEngines = job.summary?.sources?.size ?: 1,
+                summary = job.summary?.recommendations.orEmpty().joinToString(separator = "\n")
+            )
         )
     }
 
-    private fun mergeThreats(localThreat: ThreatInfo?, serverThreat: ThreatInfo?): ThreatInfo? {
-        return when {
-            localThreat == null -> serverThreat
-            serverThreat == null -> localThreat
-            else -> {
-                val severity = maxOf(localThreat.severity, serverThreat.severity, compareBy { threatRank(it) })
-                serverThreat.copy(
-                    threatName = "${serverThreat.threatName} / ${localThreat.threatName}",
-                    severity = severity,
-                    detectionEngine = "Shield deep + локально",
-                    detectionCount = serverThreat.detectionCount + localThreat.detectionCount,
-                    totalEngines = maxOf(serverThreat.totalEngines, localThreat.totalEngines)
-                )
-            }
+    private fun mergeThreats(localThreat: ThreatInfo?, serverThreats: List<ThreatInfo>): List<ThreatInfo> {
+        return buildList {
+            addAll(serverThreats)
+            localThreat?.let { add(it) }
+        }.distinctBy { listOf(it.packageName, it.threatName, it.detectionEngine).joinToString("::") }
+    }
+
+    private fun severityRank(severity: String?): Int = when (severity?.lowercase()) {
+        "critical" -> 4
+        "high" -> 3
+        "medium" -> 2
+        else -> 1
+    }
+
+    private fun String.toThreatSeverity(score: Int = 0): ThreatSeverity = when (lowercase()) {
+        "malicious" -> ThreatSeverity.CRITICAL
+        "suspicious" -> ThreatSeverity.HIGH
+        "low_risk" -> ThreatSeverity.MEDIUM
+        else -> when {
+            score >= 75 -> ThreatSeverity.CRITICAL
+            score >= 50 -> ThreatSeverity.HIGH
+            score >= 25 -> ThreatSeverity.MEDIUM
+            else -> ThreatSeverity.LOW
         }
     }
 
@@ -340,7 +372,7 @@ class ScanRepository(private val context: Context) {
         val threatType = object : com.google.gson.reflect.TypeToken<List<ThreatInfo>>() {}.type
         val threats: List<ThreatInfo> = try {
             gson.fromJson(threatsJson, threatType) ?: emptyList()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
 

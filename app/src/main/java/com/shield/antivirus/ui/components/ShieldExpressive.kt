@@ -155,10 +155,13 @@ private fun ShieldBackdropSurface(
         modifier = modifier
             .fillMaxSize()
             .background(
-                Brush.linearGradient(
-                    colors = listOf(topColor, middleColor, colors.background),
-                    start = Offset(-220f, -160f),
-                    end = Offset(1180f, 2140f)
+                Brush.verticalGradient(
+                    colors = listOf(
+                        topColor,
+                        middleColor,
+                        colors.background,
+                        colors.surfaceContainerLowest
+                    )
                 )
             )
     ) {
@@ -224,13 +227,13 @@ private fun ShieldBackdropSurface(
                 .background(
                     Brush.linearGradient(
                         colors = listOf(
-                            colors.surface.copy(alpha = if (vivid) 0.12f else 0.06f),
+                            colors.surface.copy(alpha = if (vivid) 0.08f else 0.04f),
                             Color.Transparent,
-                            colors.background.copy(alpha = if (vivid) 0.05f else 0.03f),
-                            colors.surfaceContainerLow.copy(alpha = if (vivid) 0.05f else 0.02f)
+                            colors.background.copy(alpha = if (vivid) 0.04f else 0.02f),
+                            colors.surfaceContainerLow.copy(alpha = if (vivid) 0.04f else 0.015f)
                         ),
-                        start = Offset.Zero,
-                        end = Offset(1400f, 2400f)
+                        start = Offset(-120f, -80f),
+                        end = Offset(1560f, 2680f)
                     )
                 )
         )

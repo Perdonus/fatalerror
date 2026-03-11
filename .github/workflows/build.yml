@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   backend-check:
     name: Backend Check
@@ -85,3 +88,31 @@ jobs:
           name: shield-antivirus-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: ignore
+
+      - name: Publish debug APK branch
+        if: success()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APK_PATH="$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)"
+          test -n "${APK_PATH}"
+
+          rm -rf /tmp/apk-publish
+          mkdir -p /tmp/apk-publish
+          cp "${APK_PATH}" /tmp/apk-publish/shield-antivirus-debug.apk
+          cat > /tmp/apk-publish/BUILD_INFO.txt <<EOF
+          Repository: ${GITHUB_REPOSITORY}
+          Commit: ${GITHUB_SHA}
+          Workflow Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          Built At: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          EOF
+
+          cd /tmp/apk-publish
+          git init
+          git checkout -b apk-builds
+          git add shield-antivirus-debug.apk BUILD_INFO.txt
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish APK for ${GITHUB_SHA} [skip ci]"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin apk-builds

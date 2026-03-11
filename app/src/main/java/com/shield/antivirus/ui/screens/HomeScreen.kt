@@ -52,6 +52,7 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
+    sessionGateIsGuest: Boolean,
     onStartScan: (String) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -62,6 +63,15 @@ fun HomeScreen(
 
     ShieldBackdrop {
         val current = state
+        if (sessionGateIsGuest && (current == null || !current.isGuest)) {
+            ShieldLoadingState(
+                title = "Готовим режим гостя",
+                subtitle = "Поднимаем одноразовую проверку",
+                modifier = Modifier.fillMaxSize()
+            )
+            return@ShieldBackdrop
+        }
+
         if (current == null) {
             ShieldLoadingState(
                 title = "Загружаем защиту",

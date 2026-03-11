@@ -11,8 +11,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +52,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
     val prefs = UserPreferences(context)
     val scope = rememberCoroutineScope()
+    var guestEntryPending by remember { mutableStateOf(false) }
     val sessionState by produceState<SessionGateState?>(initialValue = null, context) {
         combine(
             prefs.isLoggedIn,
@@ -86,6 +90,11 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
     }
 
     val gate = sessionState!!
+    LaunchedEffect(gate.isGuest, gate.isLoggedIn) {
+        if (gate.isGuest || gate.isLoggedIn) {
+            guestEntryPending = false
+        }
+    }
     val startDestination = when {
         gate.isLoggedIn -> Screen.Home.route
         gate.isGuest && !gate.guestScanUsed -> Screen.Home.route
@@ -104,6 +113,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 onLoginClick = { navController.navigate(Screen.Login.route) },
                 onRegisterClick = { navController.navigate(Screen.Register.route) },
                 onGuestClick = {
+                    guestEntryPending = true
                     scope.launch {
                         prefs.enterGuestMode()
                         ProtectionServiceController.stop(context)
@@ -179,6 +189,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             val vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory(context))
             HomeScreen(
                 viewModel = vm,
+                sessionGateIsGuest = gate.isGuest || guestEntryPending,
                 onStartScan = { type -> navController.navigate(Screen.Scan.createRoute(type)) },
                 onOpenHistory = { navController.navigate(Screen.History.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
@@ -214,9 +225,8 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 scanId = scanId,
                 onBack = {
                     scope.launch {
-                        val isGuestSession = vm.isGuest.value
-                        val guestLimitReached = vm.guestScanUsed.value
-                        if (isGuestSession && guestLimitReached) {
+                        val shouldExitGuestMode = vm.shouldExitGuestModeAfterResult()
+                        if (shouldExitGuestMode) {
                             vm.exitGuestMode()
                             navController.navigate(Screen.Welcome.route) {
                                 popUpTo(Screen.Home.route) { inclusive = true }

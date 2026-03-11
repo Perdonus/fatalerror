@@ -17,6 +17,9 @@ interface ShieldApi {
     @POST("api/auth/register/verify")
     suspend fun verifyRegister(@Body request: VerifyCodeRequest): Response<AuthResponse>
 
+    @POST("api/auth/register/resend")
+    suspend fun resendRegisterCode(@Body request: ResendChallengeRequest): Response<ChallengeResponse>
+
     @POST("api/auth/login/start")
     suspend fun startLogin(@Body request: LoginRequest): Response<ChallengeResponse>
 
@@ -25,6 +28,9 @@ interface ShieldApi {
 
     @POST("api/auth/login/verify")
     suspend fun verifyLogin(@Body request: VerifyCodeRequest): Response<AuthResponse>
+
+    @POST("api/auth/login/resend")
+    suspend fun resendLoginCode(@Body request: ResendChallengeRequest): Response<ChallengeResponse>
 
     @POST("api/auth/refresh")
     suspend fun refresh(@Body request: RefreshRequest): Response<AuthResponse>

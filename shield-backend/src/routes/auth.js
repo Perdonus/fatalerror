@@ -159,6 +159,20 @@ async function markChallengeConsumed(challengeId, db = pool) {
     );
 }
 
+async function refreshChallengeCode(challenge) {
+    const code = createNumericCode();
+    const now = nowMs();
+    const expiresAt = authCodeExpiresAt(now);
+    await pool.query(
+        `UPDATE email_auth_challenges
+         SET code_hash = ?, attempts = 0, created_at = ?, expires_at = ?, consumed_at = NULL
+         WHERE id = ?`,
+        [hashToken(code), now, expiresAt, challenge.id]
+    );
+    await sendAuthCodeEmail(challenge.email, code, challenge.purpose);
+    return { id: challenge.id, expiresAt };
+}
+
 async function sendAuthCodeEmail(email, code, purpose) {
     const actionLabel = purpose === 'REGISTER' ? 'регистрации' : 'входа';
     await sendMail({
@@ -280,6 +294,38 @@ router.post('/register/start', async (req, res) => {
     }
 });
 
+// POST /api/auth/register/resend
+router.post('/register/resend', async (req, res) => {
+    if (!ensureMailConfigured(res)) return;
+    const { challenge_id } = req.body;
+    if (!challenge_id) {
+        return res.status(400).json({ error: 'challenge_id required' });
+    }
+    try {
+        const challenge = await fetchChallenge(challenge_id, 'REGISTER');
+        if (!challenge) {
+            return res.status(404).json({ error: 'Challenge not found' });
+        }
+        if (challenge.consumed_at) {
+            return res.status(410).json({ error: 'Challenge already used' });
+        }
+        const refreshed = await refreshChallengeCode(challenge);
+        res.status(202).json({
+            success: true,
+            challenge_id: refreshed.id,
+            expires_at: refreshed.expiresAt,
+            email: challenge.email,
+            message: 'Verification code sent to email'
+        });
+    } catch (e) {
+        console.error('Register resend error:', e);
+        if (e.code === 'MAIL_NOT_CONFIGURED') {
+            return res.status(503).json({ error: 'Mail service is not configured' });
+        }
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // POST /api/auth/register/verify
 router.post('/register/verify', async (req, res) => {
     const { challenge_id, code } = req.body;
@@ -385,6 +431,38 @@ router.post('/login/start', async (req, res) => {
         });
     } catch (e) {
         console.error('Login start error:', e);
+        if (e.code === 'MAIL_NOT_CONFIGURED') {
+            return res.status(503).json({ error: 'Mail service is not configured' });
+        }
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// POST /api/auth/login/resend
+router.post('/login/resend', async (req, res) => {
+    if (!ensureMailConfigured(res)) return;
+    const { challenge_id } = req.body;
+    if (!challenge_id) {
+        return res.status(400).json({ error: 'challenge_id required' });
+    }
+    try {
+        const challenge = await fetchChallenge(challenge_id, 'LOGIN');
+        if (!challenge) {
+            return res.status(404).json({ error: 'Challenge not found' });
+        }
+        if (challenge.consumed_at) {
+            return res.status(410).json({ error: 'Challenge already used' });
+        }
+        const refreshed = await refreshChallengeCode(challenge);
+        res.status(202).json({
+            success: true,
+            challenge_id: refreshed.id,
+            expires_at: refreshed.expiresAt,
+            email: challenge.email,
+            message: 'Verification code sent to email'
+        });
+    } catch (e) {
+        console.error('Login resend error:', e);
         if (e.code === 'MAIL_NOT_CONFIGURED') {
             return res.status(503).json({ error: 'Mail service is not configured' });
         }

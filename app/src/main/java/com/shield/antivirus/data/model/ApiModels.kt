@@ -21,6 +21,10 @@ data class LoginRequest(
     @SerializedName("device_id") val deviceId: String
 )
 
+data class ResendChallengeRequest(
+    @SerializedName("challenge_id") val challengeId: String
+)
+
 data class RefreshRequest(
     @SerializedName("refresh_token") val refreshToken: String,
     @SerializedName("session_id") val sessionId: String,

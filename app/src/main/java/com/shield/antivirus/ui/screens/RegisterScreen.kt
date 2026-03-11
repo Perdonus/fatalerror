@@ -71,7 +71,7 @@ fun RegisterScreen(
         ) { padding ->
             ShieldFormScreenContent(padding = padding) {
                 ShieldPanel(accent = MaterialTheme.colorScheme.tertiary) {
-                    if (!uiState.infoMessage.isNullOrBlank()) {
+                    if (!uiState.infoMessage.isNullOrBlank() && !uiState.requiresCode) {
                         Text(
                             text = uiState.infoMessage.orEmpty(),
                             style = MaterialTheme.typography.bodyMedium,
@@ -80,6 +80,16 @@ fun RegisterScreen(
                     }
 
                     if (uiState.requiresCode) {
+                        Text(
+                            text = "Код отправлен на ${uiState.pendingEmail.ifBlank { "вашу почту" }}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Если письма нет, проверьте Спам или отправьте код ещё раз.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         OutlinedTextField(
                             value = code,
                             onValueChange = { code = it.filter(Char::isDigit).take(6) },
@@ -237,14 +247,25 @@ fun RegisterScreen(
                     }
 
                     if (uiState.requiresCode) {
-                        TextButton(
-                            onClick = {
-                                code = ""
-                                viewModel.clearPending(PendingAuthFlow.REGISTER)
-                            },
-                            modifier = Modifier.align(Alignment.End)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Ввести заново")
+                            TextButton(
+                                onClick = {
+                                    code = ""
+                                    viewModel.clearPending(PendingAuthFlow.REGISTER)
+                                }
+                            ) {
+                                Text("Ввести заново")
+                            }
+                            TextButton(
+                                onClick = { viewModel.resendCode(PendingAuthFlow.REGISTER) },
+                                enabled = !uiState.isLoading
+                            ) {
+                                Text("Отправить ещё раз")
+                            }
                         }
                     } else {
                         Row(

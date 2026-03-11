@@ -54,6 +54,10 @@ class ScanRepository(private val context: Context) {
         dao.getById(id)?.toDomain()
     }
 
+    suspend fun hasLocalResults(): Boolean = withContext(Dispatchers.IO) {
+        dao.getRecentResults().isNotEmpty()
+    }
+
     suspend fun deleteAll() = withContext(Dispatchers.IO) { dao.deleteAll() }
 
     suspend fun getRecentResults() = withContext(Dispatchers.IO) {

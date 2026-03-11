@@ -60,15 +60,15 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         workObserverJob?.cancel()
         scanJob = viewModelScope.launch {
             val guest = prefs.isGuest.first()
-            val guestUsed = prefs.guestScanUsed.first()
+            var guestUsed = prefs.guestScanUsed.first()
+            if (guest && guestUsed && !repo.hasLocalResults()) {
+                prefs.clearGuestScanUsed()
+                guestUsed = false
+            }
             if (guest && guestUsed) {
                 _guestLimitReached.value = true
                 _progress.value = null
                 return@launch
-            }
-
-            if (guest) {
-                prefs.markGuestScanUsed()
             }
 
             _guestLimitReached.value = false
@@ -90,8 +90,13 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 return@launch
             }
 
+            var guestMarked = false
             repo.startScan(scanType, selectedPackages).collect { progress ->
                 _progress.value = progress
+                if (guest && !guestMarked && progress.isComplete && progress.savedId > 0L) {
+                    prefs.markGuestScanUsed()
+                    guestMarked = true
+                }
             }
         }
     }
@@ -170,6 +175,9 @@ class ScanViewModel(private val context: Context) : ViewModel() {
     suspend fun exitGuestMode() {
         prefs.exitGuestMode()
     }
+
+    suspend fun shouldExitGuestModeAfterResult(): Boolean =
+        prefs.isGuest.first() && prefs.guestScanUsed.first()
 
     class Factory(private val context: Context) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

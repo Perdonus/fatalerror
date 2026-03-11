@@ -120,6 +120,10 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_GUEST_SCAN_USED] = true }
     }
 
+    suspend fun clearGuestScanUsed() {
+        context.dataStore.edit { it[KEY_GUEST_SCAN_USED] = false }
+    }
+
     suspend fun logout() {
         context.dataStore.edit {
             it[KEY_IS_LOGGED_IN] = false

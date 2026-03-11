@@ -47,10 +47,12 @@ class AuthViewModel(private val context: Context) : ViewModel() {
             val pendingFlow = prefs.pendingAuthFlow.first()
             val expiresAt = prefs.pendingAuthExpiresAt.first()
             if (pendingFlow == flow && expiresAt > System.currentTimeMillis()) {
+                val email = prefs.pendingAuthEmail.first()
                 _uiState.value = _uiState.value.copy(
                     requiresCode = true,
-                    pendingEmail = prefs.pendingAuthEmail.first(),
+                    pendingEmail = email,
                     pendingChallengeId = prefs.pendingAuthChallengeId.first(),
+                    infoMessage = "Код уже отправлен на $email. Проверьте входящие и Спам.",
                     error = null
                 )
             } else if (pendingFlow == flow) {
@@ -148,6 +150,50 @@ class AuthViewModel(private val context: Context) : ViewModel() {
                         requiresCode = true,
                         pendingEmail = pendingEmail,
                         pendingChallengeId = challengeId
+                    )
+                }
+            }
+        }
+    }
+
+    fun resendCode(flow: PendingAuthFlow) {
+        viewModelScope.launch {
+            val challengeId = uiState.value.pendingChallengeId.ifBlank { prefs.pendingAuthChallengeId.first() }
+            val pendingEmail = uiState.value.pendingEmail.ifBlank { prefs.pendingAuthEmail.first() }
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            when (val result = repo.resendCode(flow, challengeId)) {
+                is AuthResult.CodeSent -> {
+                    prefs.savePendingAuth(
+                        flow = flow,
+                        challengeId = result.challengeId,
+                        email = result.email.ifBlank { pendingEmail },
+                        expiresAt = result.expiresAt
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        requiresCode = true,
+                        pendingEmail = result.email.ifBlank { pendingEmail },
+                        pendingChallengeId = result.challengeId,
+                        infoMessage = "Код отправлен повторно на ${result.email.ifBlank { pendingEmail }}. Проверьте входящие и Спам."
+                    )
+                }
+                is AuthResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        requiresCode = true,
+                        pendingEmail = pendingEmail,
+                        pendingChallengeId = challengeId,
+                        error = result.message
+                    )
+                }
+                else -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        requiresCode = true,
+                        pendingEmail = pendingEmail,
+                        pendingChallengeId = challengeId,
+                        error = "Не удалось отправить код повторно"
                     )
                 }
             }

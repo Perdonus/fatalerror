@@ -8,6 +8,7 @@ import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.model.LoginRequest
 import com.shield.antivirus.data.model.PasswordResetConfirmRequest
 import com.shield.antivirus.data.model.PasswordResetRequest
+import com.shield.antivirus.data.model.ResendChallengeRequest
 import com.shield.antivirus.data.model.RegisterRequest
 import com.shield.antivirus.data.model.User
 import com.shield.antivirus.data.model.VerifyCodeRequest
@@ -137,6 +138,45 @@ class AuthRepository(context: Context) {
 
     suspend fun verifyLogin(challengeId: String, code: String): AuthResult =
         verifyCode(challengeId, code) { api, request -> api.verifyLogin(request) }
+
+    suspend fun resendCode(flow: com.shield.antivirus.data.datastore.PendingAuthFlow, challengeId: String): AuthResult =
+        withContext(Dispatchers.IO) {
+            try {
+                if (challengeId.isBlank()) {
+                    return@withContext AuthResult.Error("Нет активного кода для повторной отправки")
+                }
+                val response = ApiClient.executeShieldCall { api ->
+                    when (flow) {
+                        com.shield.antivirus.data.datastore.PendingAuthFlow.LOGIN -> {
+                            api.resendLoginCode(ResendChallengeRequest(challengeId))
+                        }
+                        com.shield.antivirus.data.datastore.PendingAuthFlow.REGISTER -> {
+                            api.resendRegisterCode(ResendChallengeRequest(challengeId))
+                        }
+                    }
+                }
+                if (!response.isSuccessful) {
+                    return@withContext AuthResult.Error(
+                        parseError(response.errorBody()?.string()) ?: "Не удалось отправить код повторно"
+                    )
+                }
+                val body = response.body()
+                val email = body?.email.orEmpty()
+                val refreshedChallengeId = body?.challengeId ?: challengeId
+                if (body?.success == true && refreshedChallengeId.isNotBlank()) {
+                    AuthResult.CodeSent(
+                        email = email,
+                        challengeId = refreshedChallengeId,
+                        message = body.message ?: "Код отправлен повторно",
+                        expiresAt = body.expiresAt ?: (System.currentTimeMillis() + 15 * 60 * 1000)
+                    )
+                } else {
+                    AuthResult.Error(body?.error ?: "Не удалось отправить код повторно")
+                }
+            } catch (error: Exception) {
+                AuthResult.Error(error.toUserMessage())
+            }
+        }
 
     suspend fun requestPasswordReset(email: String): AuthResult =
         withContext(Dispatchers.IO) {

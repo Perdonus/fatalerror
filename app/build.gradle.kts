@@ -13,13 +13,27 @@ android {
         applicationId = "com.shield.antivirus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.2.3"
+        versionCode = 16
+        versionName = "1.2.4"
+    }
+
+    signingConfigs {
+        create("stableDebug") {
+            // Stable signing keeps CI APK updates compatible across future builds.
+            storeFile = rootProject.file("signing/shield-update.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("stableDebug")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("stableDebug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

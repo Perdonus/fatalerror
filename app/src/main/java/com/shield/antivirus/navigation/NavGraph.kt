@@ -1,27 +1,80 @@
 package com.shield.antivirus.navigation
 
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.*
-import androidx.navigation.compose.*
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.shield.antivirus.data.datastore.UserPreferences
-import com.shield.antivirus.ui.screens.*
-import com.shield.antivirus.viewmodel.*
+import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldStatusChip
+import com.shield.antivirus.ui.screens.HistoryScreen
+import com.shield.antivirus.ui.screens.HomeScreen
+import com.shield.antivirus.ui.screens.LoginScreen
+import com.shield.antivirus.ui.screens.RegisterScreen
+import com.shield.antivirus.ui.screens.ScanResultsScreen
+import com.shield.antivirus.ui.screens.ScanScreen
+import com.shield.antivirus.ui.screens.SettingsScreen
+import com.shield.antivirus.viewmodel.AuthViewModel
+import com.shield.antivirus.viewmodel.HomeViewModel
+import com.shield.antivirus.viewmodel.ScanViewModel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
 @Composable
-fun NavGraph(navController: NavHostController) {
+fun NavGraph(navController: NavHostController = rememberNavController()) {
     val context = LocalContext.current
-    val prefs = remember { UserPreferences(context) }
-    val isLoggedIn = remember {
-        runBlocking { prefs.isLoggedIn.first() }
+    val prefs = UserPreferences(context)
+    val isLoggedIn by produceState<Boolean?>(initialValue = null, context) {
+        value = prefs.isLoggedIn.first()
+    }
+
+    if (isLoggedIn == null) {
+        ShieldBackdrop {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    ShieldStatusChip(
+                        label = "SESSION CHECK",
+                        icon = Icons.Filled.Security,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    CircularProgressIndicator()
+                    Text(
+                        text = "Securing control room",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+        }
+        return
     }
 
     NavHost(
         navController = navController,
-        startDestination = if (isLoggedIn) Screen.Home.route else Screen.Login.route
+        startDestination = if (isLoggedIn == true) Screen.Home.route else Screen.Login.route
     ) {
         composable(Screen.Login.route) {
             val vm: AuthViewModel = viewModel(factory = AuthViewModel.Factory(context))
@@ -51,9 +104,7 @@ fun NavGraph(navController: NavHostController) {
             val vm: HomeViewModel = viewModel(factory = HomeViewModel.Factory(context))
             HomeScreen(
                 viewModel = vm,
-                onStartScan = { type ->
-                    navController.navigate(Screen.Scan.createRoute(type))
-                },
+                onStartScan = { type -> navController.navigate(Screen.Scan.createRoute(type)) },
                 onOpenHistory = { navController.navigate(Screen.History.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) }
             )

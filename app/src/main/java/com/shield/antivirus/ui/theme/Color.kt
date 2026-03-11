@@ -1,17 +1,32 @@
 package com.shield.antivirus.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
-val ShieldGreen      = Color(0xFF00C853)
-val ShieldGreenDark  = Color(0xFF009624)
-val ShieldGreenLight = Color(0xFF5EFC82)
-val ShieldRed        = Color(0xFFEF5350)
-val ShieldOrange     = Color(0xFFFF7043)
-val ShieldYellow     = Color(0xFFFFCA28)
+val ShieldMint = Color(0xFF006B68)
+val ShieldMintBright = Color(0xFF00A99A)
+val ShieldInk = Color(0xFF122130)
+val ShieldSky = Color(0xFF5F7CFF)
+val ShieldAmber = Color(0xFFC86A15)
+val ShieldCoral = Color(0xFFBA1A1A)
+val ShieldSafe = Color(0xFF1C8C46)
+val ShieldWarning = Color(0xFFB75B00)
+val ShieldCritical = Color(0xFFC62828)
+val ShieldCanvas = Color(0xFFF3F6F8)
+val ShieldCanvasWarm = Color(0xFFF8F1E8)
+val ShieldNight = Color(0xFF08131D)
+val ShieldNightSurface = Color(0xFF122231)
+val ShieldNightAccent = Color(0xFF16374D)
 
-val DarkBg       = Color(0xFF060D1A)
-val DarkSurface  = Color(0xFF0D1626)
-val DarkCard     = Color(0xFF141F35)
-val DarkCardAlt  = Color(0xFF1A2840)
-val TextPrimary  = Color(0xFFE8F0FE)
-val TextSecondary = Color(0xFF8899B8)
+val ColorScheme.safeTone: Color
+    get() = if (background.luminance() > 0.5f) ShieldSafe else Color(0xFF6BDC90)
+
+val ColorScheme.warningTone: Color
+    get() = if (background.luminance() > 0.5f) ShieldWarning else Color(0xFFFFB870)
+
+val ColorScheme.criticalTone: Color
+    get() = if (background.luminance() > 0.5f) ShieldCritical else Color(0xFFFF8A80)
+
+val ColorScheme.signalTone: Color
+    get() = if (background.luminance() > 0.5f) ShieldSky else Color(0xFFB5C4FF)

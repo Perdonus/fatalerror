@@ -1,26 +1,48 @@
 package com.shield.antivirus.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ReportProblem
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.collectAsState
 import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ThreatSeverity
-import com.shield.antivirus.ui.theme.*
+import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldEmptyState
+import com.shield.antivirus.ui.components.ShieldPanel
+import com.shield.antivirus.ui.components.ShieldScreenScaffold
+import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.ShieldStatusChip
+import com.shield.antivirus.ui.theme.criticalTone
+import com.shield.antivirus.ui.theme.safeTone
+import com.shield.antivirus.ui.theme.signalTone
+import com.shield.antivirus.ui.theme.warningTone
 import com.shield.antivirus.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,153 +57,132 @@ fun ScanResultsScreen(
         viewModel.loadResult(scanId)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Scan Results", fontWeight = FontWeight.Bold, color = TextPrimary) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, null, tint = TextSecondary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
-            )
-        },
-        containerColor = DarkBg
-    ) { padding ->
-        result?.let { r ->
+    ShieldBackdrop {
+        ShieldScreenScaffold(
+            title = "Scan report",
+            subtitle = "Local result #$scanId",
+            onBack = onBack
+        ) { padding ->
+            val current = result
+            if (current == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                return@ShieldScreenScaffold
+            }
+
+            val accent = if (current.threatsFound > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Summary Card
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (r.threatsFound == 0) ShieldGreen.copy(alpha = 0.1f)
-                            else ShieldRed.copy(alpha = 0.1f)
-                        ),
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Column(
-                            Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                if (r.threatsFound == 0) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                                null,
-                                tint = if (r.threatsFound == 0) ShieldGreen else ShieldRed,
-                                modifier = Modifier.size(64.dp)
+                    ShieldPanel(accent = accent) {
+                        ShieldSectionHeader(
+                            eyebrow = "Summary",
+                            title = if (current.threatsFound == 0) "Device baseline is clean" else "Threats require manual action",
+                            subtitle = "${current.totalScanned} packages checked during the ${current.scanType.lowercase()} scan."
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ShieldStatusChip(
+                                label = if (current.threatsFound == 0) "CLEAN" else "${current.threatsFound} THREATS",
+                                icon = if (current.threatsFound == 0) Icons.Filled.Verified else Icons.Filled.Warning,
+                                color = accent
                             )
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                if (r.threatsFound == 0) "Device is Clean!" else "${r.threatsFound} Threat(s) Found",
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (r.threatsFound == 0) ShieldGreen else ShieldRed
-                            )
-                            Text(
-                                "${r.totalScanned} apps scanned • ${r.scanType} Scan",
-                                fontSize = 13.sp, color = TextSecondary
-                            )
-                            Text(
-                                SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
-                                    .format(Date(r.completedAt)),
-                                fontSize = 12.sp, color = TextSecondary
+                            ShieldStatusChip(
+                                label = formatResultsTime(current.completedAt),
+                                icon = Icons.Filled.Security,
+                                color = MaterialTheme.colorScheme.signalTone
                             )
                         }
                     }
                 }
 
-                if (r.threats.isEmpty()) {
+                if (current.threats.isEmpty()) {
                     item {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = DarkCard),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Shield, null, tint = ShieldGreen, modifier = Modifier.size(32.dp))
-                                Spacer(Modifier.width(16.dp))
-                                Column {
-                                    Text("All Clear!", fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                    Text("No malware detected on your device.", fontSize = 13.sp, color = TextSecondary)
-                                }
-                            }
-                        }
+                        ShieldEmptyState(
+                            icon = Icons.Filled.Security,
+                            title = "No malicious packages detected",
+                            subtitle = "Keep realtime protection enabled and re-run a quick sweep after installing new apps."
+                        )
                     }
                 } else {
                     item {
-                        Text("Detected Threats", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = TextPrimary)
+                        ShieldSectionHeader(
+                            eyebrow = "Findings",
+                            title = "Detected packages",
+                            subtitle = "Review severity and uninstall suspicious apps from system settings if confirmed."
+                        )
                     }
-                    items(r.threats) { threat ->
+                    items(current.threats, key = { it.packageName + it.threatName }) { threat ->
                         ThreatCard(threat)
+                    }
+                    item {
+                        ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
+                            Text(
+                                text = "Recommended next step",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Verify package source, remove side-loaded apps first, then rerun a full scan to confirm the device state.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
-        } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = ShieldGreen)
         }
     }
 }
 
 @Composable
 private fun ThreatCard(threat: ThreatInfo) {
-    val sevColor = when (threat.severity) {
-        ThreatSeverity.CRITICAL -> ShieldRed
-        ThreatSeverity.HIGH -> ShieldOrange
-        ThreatSeverity.MEDIUM -> ShieldYellow
-        ThreatSeverity.LOW -> Color(0xFF90CAF9)
+    val accent = when (threat.severity) {
+        ThreatSeverity.CRITICAL -> MaterialTheme.colorScheme.criticalTone
+        ThreatSeverity.HIGH -> MaterialTheme.colorScheme.warningTone
+        ThreatSeverity.MEDIUM -> MaterialTheme.colorScheme.tertiary
+        ThreatSeverity.LOW -> MaterialTheme.colorScheme.signalTone
     }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = DarkCard),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(sevColor)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(threat.severity.name, color = sevColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(threat.appName, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
-            Text(threat.packageName, fontSize = 11.sp, color = TextSecondary)
-            Spacer(Modifier.height(8.dp))
-            Divider(color = DarkCardAlt)
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column {
-                    Text("Threat", fontSize = 11.sp, color = TextSecondary)
-                    Text(threat.threatName, color = ShieldRed, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("Engines", fontSize = 11.sp, color = TextSecondary)
-                    Text("${threat.detectionCount}/${threat.totalEngines}", color = ShieldOrange, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {},
-                    modifier = Modifier.weight(1f).height(40.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ShieldRed),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, ShieldRed.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(8.dp)
-                ) { Text("Uninstall", fontSize = 13.sp) }
-                OutlinedButton(
-                    onClick = {},
-                    modifier = Modifier.weight(1f).height(40.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A3D5E)),
-                    shape = RoundedCornerShape(8.dp)
-                ) { Text("Ignore", fontSize = 13.sp) }
-            }
+    ShieldPanel(accent = accent) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                text = threat.appName,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+            ShieldStatusChip(
+                label = threat.severity.name,
+                icon = if (threat.severity == ThreatSeverity.CRITICAL) Icons.Filled.ReportProblem else Icons.Filled.Warning,
+                color = accent
+            )
         }
+        Text(
+            text = threat.threatName,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = threat.packageName,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "${threat.detectionCount}/${threat.totalEngines} engines flagged this package via ${threat.detectionEngine}.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
+
+private fun formatResultsTime(timestamp: Long): String =
+    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(timestamp))

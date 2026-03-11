@@ -1,25 +1,59 @@
 package com.shield.antivirus.ui.screens
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.shield.antivirus.ui.theme.*
+import androidx.compose.runtime.collectAsState
+import com.shield.antivirus.data.model.ScanResult
+import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldEmptyState
+import com.shield.antivirus.ui.components.ShieldPanel
+import com.shield.antivirus.ui.components.ShieldScreenScaffold
+import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.ShieldStatusChip
+import com.shield.antivirus.ui.theme.criticalTone
+import com.shield.antivirus.ui.theme.safeTone
+import com.shield.antivirus.ui.theme.signalTone
+import com.shield.antivirus.ui.theme.warningTone
 import com.shield.antivirus.viewmodel.ScanViewModel
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+
+enum class HistoryFilter {
+    ALL,
+    CLEAN,
+    THREATS
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,105 +64,164 @@ fun HistoryScreen(
 ) {
     val results by viewModel.allResults.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(HistoryFilter.ALL) }
+
+    val filteredResults = remember(results, filter) {
+        when (filter) {
+            HistoryFilter.ALL -> results
+            HistoryFilter.CLEAN -> results.filter { it.threatsFound == 0 }
+            HistoryFilter.THREATS -> results.filter { it.threatsFound > 0 }
+        }
+    }
 
     if (showClearDialog) {
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear History") },
-            text = { Text("Delete all scan history? This cannot be undone.") },
+            title = { Text("Clear scan history") },
+            text = { Text("Delete all locally stored scan results from this device?") },
             confirmButton = {
-                TextButton(onClick = { viewModel.clearHistory(); showClearDialog = false }) {
-                    Text("Delete", color = ShieldRed)
+                TextButton(
+                    onClick = {
+                        viewModel.clearHistory()
+                        showClearDialog = false
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.criticalTone)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
                     Text("Cancel")
                 }
-            },
-            containerColor = DarkCard
+            }
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Scan History", fontWeight = FontWeight.Bold, color = TextPrimary) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = TextSecondary) }
-                },
-                actions = {
-                    if (results.isNotEmpty()) {
-                        IconButton(onClick = { showClearDialog = true }) {
-                            Icon(Icons.Filled.Delete, "Clear", tint = ShieldRed)
-                        }
+    ShieldBackdrop {
+        ShieldScreenScaffold(
+            title = "Scan Timeline",
+            subtitle = "Local database history",
+            onBack = onBack,
+            actions = {
+                if (results.isNotEmpty()) {
+                    IconButton(onClick = { showClearDialog = true }) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear history")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
-            )
-        },
-        containerColor = DarkBg
-    ) { padding ->
-        if (results.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.History, null, tint = TextSecondary, modifier = Modifier.size(64.dp))
-                    Spacer(Modifier.height(12.dp))
-                    Text("No scan history yet", color = TextSecondary, fontSize = 16.sp)
-                    Text("Run a scan to see results here", color = TextSecondary, fontSize = 13.sp)
                 }
             }
-        } else {
+        ) { padding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = padding.calculateTopPadding() + 8.dp,
+                    bottom = padding.calculateBottomPadding() + 24.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(results) { result ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable { onViewResult(result.id) },
-                        colors = CardDefaults.cardColors(containerColor = DarkCard),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(48.dp)
-                                    .background(
-                                        if (result.threatsFound > 0) ShieldRed.copy(alpha = 0.15f)
-                                        else ShieldGreen.copy(alpha = 0.15f),
-                                        RoundedCornerShape(12.dp)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    if (result.threatsFound > 0) Icons.Filled.Warning else Icons.Filled.CheckCircle,
-                                    null,
-                                    tint = if (result.threatsFound > 0) ShieldRed else ShieldGreen,
-                                    modifier = Modifier.size(28.dp)
-                                )
+                item {
+                    ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
+                        ShieldSectionHeader(
+                            eyebrow = "Forensics",
+                            title = "Incident timeline",
+                            subtitle = if (results.isEmpty()) {
+                                "This device has not produced any local scan evidence yet."
+                            } else {
+                                "${results.size} scans recorded, ${results.sumOf { it.threatsFound }} threats total."
                             }
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("${result.scanType} Scan", fontWeight = FontWeight.SemiBold, color = TextPrimary, fontSize = 15.sp)
-                                Text(
-                                    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
-                                        .format(Date(result.completedAt)),
-                                    fontSize = 12.sp, color = TextSecondary
-                                )
-                                Text("${result.totalScanned} apps scanned", fontSize = 12.sp, color = TextSecondary)
-                            }
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    if (result.threatsFound > 0) "${result.threatsFound} threats" else "Clean",
-                                    color = if (result.threatsFound > 0) ShieldRed else ShieldGreen,
-                                    fontSize = 13.sp, fontWeight = FontWeight.Medium
-                                )
-                                Icon(Icons.Filled.ChevronRight, null, tint = TextSecondary, modifier = Modifier.size(20.dp))
-                            }
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ShieldStatusChip(
+                                label = "${results.size} SCANS",
+                                icon = Icons.Filled.History,
+                                color = MaterialTheme.colorScheme.signalTone
+                            )
+                            ShieldStatusChip(
+                                label = "${results.sumOf { it.threatsFound }} THREATS",
+                                icon = Icons.Filled.Warning,
+                                color = if (results.sumOf { it.threatsFound } > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
+                            )
                         }
+                    }
+                }
+
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HistoryFilter.values().forEach { option ->
+                            FilterChip(
+                                selected = filter == option,
+                                onClick = { filter = option },
+                                label = {
+                                    Text(
+                                        when (option) {
+                                            HistoryFilter.ALL -> "All"
+                                            HistoryFilter.CLEAN -> "Clean"
+                                            HistoryFilter.THREATS -> "Threats"
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (filteredResults.isEmpty()) {
+                    item {
+                        ShieldEmptyState(
+                            icon = Icons.Filled.Security,
+                            title = if (results.isEmpty()) "No scans yet" else "Nothing in this filter",
+                            subtitle = if (results.isEmpty()) {
+                                "Run a scan to start building a local investigation timeline."
+                            } else {
+                                "Switch filters or trigger another sweep to refresh the timeline."
+                            }
+                        )
+                    }
+                } else {
+                    items(filteredResults, key = { it.id }) { result ->
+                        HistoryCard(result = result, onClick = { onViewResult(result.id) })
                     }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun HistoryCard(result: ScanResult, onClick: () -> Unit) {
+    val accent = if (result.threatsFound > 0) MaterialTheme.colorScheme.warningTone else MaterialTheme.colorScheme.safeTone
+    ShieldPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        accent = accent
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                text = "${result.scanType} scan",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+            ShieldStatusChip(
+                label = if (result.threatsFound > 0) "${result.threatsFound} THREATS" else "CLEAN",
+                icon = if (result.threatsFound > 0) Icons.Filled.Warning else Icons.Filled.Security,
+                color = accent
+            )
+        }
+        Text(
+            text = "${result.totalScanned} packages checked",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = formatHistoryTime(result.completedAt),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatHistoryTime(timestamp: Long): String =
+    SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(timestamp))

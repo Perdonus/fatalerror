@@ -1,28 +1,61 @@
 package com.shield.antivirus.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.calculateBottomPadding
+import androidx.compose.foundation.layout.calculateTopPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.shield.antivirus.ui.theme.*
+import androidx.compose.runtime.collectAsState
+import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldPanel
+import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
+import com.shield.antivirus.ui.components.ShieldScreenScaffold
+import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.ShieldStatusChip
+import com.shield.antivirus.ui.components.shieldTextFieldColors
+import com.shield.antivirus.ui.theme.criticalTone
+import com.shield.antivirus.ui.theme.safeTone
+import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: AuthViewModel,
@@ -32,7 +65,7 @@ fun SettingsScreen(
     val userName by viewModel.userName.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
     val vtApiKey by viewModel.vtApiKey.collectAsState()
-    val realtimeProt by viewModel.realtimeProtection.collectAsState()
+    val realtimeProtection by viewModel.realtimeProtection.collectAsState()
     val scanOnInstall by viewModel.scanOnInstall.collectAsState()
 
     var apiKeyInput by remember(vtApiKey) { mutableStateOf(vtApiKey) }
@@ -42,177 +75,212 @@ fun SettingsScreen(
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            title = { Text("Sign Out") },
-            text = { Text("Are you sure you want to sign out?") },
+            title = { Text("Sign out") },
+            text = { Text("Clear the local encrypted session and return to the auth screen?") },
             confirmButton = {
-                TextButton(onClick = { viewModel.logout(); onLogout() }) {
-                    Text("Sign Out", color = ShieldRed)
+                TextButton(
+                    onClick = {
+                        viewModel.logout()
+                        showLogoutDialog = false
+                        onLogout()
+                    }
+                ) {
+                    Text("Sign out", color = MaterialTheme.colorScheme.criticalTone)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) { Text("Cancel") }
-            },
-            containerColor = DarkCard
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold, color = TextPrimary) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = TextSecondary) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkSurface)
-            )
-        },
-        containerColor = DarkBg
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Account
-            SettingsSection("Account") {
-                SettingsInfoRow(Icons.Filled.Person, "Name", userName.ifEmpty { "—" })
-                SettingsInfoRow(Icons.Filled.Email, "Email", userEmail.ifEmpty { "—" })
-            }
-
-            // VirusTotal API
-            SettingsSection("VirusTotal API") {
-                Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
-                    Text(
-                        "Enter your VirusTotal API key to enable real threat detection. Get a free key at virustotal.com",
-                        fontSize = 12.sp, color = TextSecondary
+    ShieldBackdrop {
+        ShieldScreenScaffold(
+            title = "Control Settings",
+            subtitle = "Protection and cloud intel",
+            onBack = onBack
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = padding.calculateTopPadding(),
+                        bottom = padding.calculateBottomPadding()
                     )
-                    Spacer(Modifier.height(12.dp))
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                ShieldPanel(accent = MaterialTheme.colorScheme.primary) {
+                    ShieldSectionHeader(
+                        eyebrow = "Operator profile",
+                        title = userName.ifBlank { "Unassigned operator" },
+                        subtitle = userEmail.ifBlank { "No email synced" }
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ShieldStatusChip(
+                            label = if (realtimeProtection) "REALTIME ON" else "REALTIME OFF",
+                            icon = Icons.Filled.Security,
+                            color = if (realtimeProtection) MaterialTheme.colorScheme.safeTone else MaterialTheme.colorScheme.criticalTone
+                        )
+                        ShieldStatusChip(
+                            label = if (scanOnInstall) "INSTALL WATCH" else "MANUAL WATCH",
+                            icon = Icons.Filled.Tune,
+                            color = MaterialTheme.colorScheme.signalTone
+                        )
+                    }
+                }
+
+                ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
+                    Text(
+                        text = "Account",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    SettingsInfoRow(icon = Icons.Filled.Person, label = "Name", value = userName.ifBlank { "Not set" })
+                    SettingsInfoRow(icon = Icons.Filled.Email, label = "Email", value = userEmail.ifBlank { "Not set" })
+                }
+
+                ShieldPanel(accent = MaterialTheme.colorScheme.tertiary) {
+                    Text(
+                        text = "Cloud intel",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Optional VirusTotal key. Local heuristics still run without it.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     OutlinedTextField(
                         value = apiKeyInput,
                         onValueChange = { apiKeyInput = it },
-                        label = { Text("API Key") },
-                        leadingIcon = { Icon(Icons.Filled.Key, null, tint = ShieldGreen) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("VirusTotal API key") },
+                        leadingIcon = { Icon(Icons.Filled.Key, contentDescription = null) },
                         trailingIcon = {
-                            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                                Icon(if (apiKeyVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, null, tint = TextSecondary)
+                            TextButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                                Text(if (apiKeyVisible) "Hide" else "Show")
                             }
                         },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = shieldTextFieldColors()
                     )
-                    Spacer(Modifier.height(8.dp))
                     Button(
                         onClick = { viewModel.saveVtApiKey(apiKeyInput.trim()) },
-                        colors = ButtonDefaults.buttonColors(containerColor = ShieldGreen),
-                        shape = RoundedCornerShape(10.dp)
+                        modifier = Modifier.height(50.dp),
+                        colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.tertiary),
+                        shape = MaterialTheme.shapes.medium
                     ) {
-                        Text("Save API Key", color = Color.Black, fontWeight = FontWeight.SemiBold)
+                        Text("Save cloud intel key")
                     }
                 }
-            }
 
-            // Protection Settings
-            SettingsSection("Protection") {
-                SettingsToggleRow(
-                    icon = Icons.Filled.Shield,
-                    title = "Real-time Protection",
-                    subtitle = "Monitor device 24/7",
-                    checked = realtimeProt,
-                    onToggle = viewModel::setRealtimeProtection
-                )
-                SettingsToggleRow(
-                    icon = Icons.Filled.InstallMobile,
-                    title = "Scan on App Install",
-                    subtitle = "Check new apps automatically",
-                    checked = scanOnInstall,
-                    onToggle = viewModel::setScanOnInstall
-                )
-            }
+                ShieldPanel(accent = MaterialTheme.colorScheme.primary) {
+                    Text(
+                        text = "Protection switches",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    SettingsToggleRow(
+                        icon = Icons.Filled.Security,
+                        title = "Realtime protection",
+                        subtitle = "Keep continuous local monitoring active.",
+                        checked = realtimeProtection,
+                        onToggle = viewModel::setRealtimeProtection
+                    )
+                    SettingsToggleRow(
+                        icon = Icons.Filled.SettingsSuggest,
+                        title = "Scan on install",
+                        subtitle = "Inspect new packages immediately after install.",
+                        checked = scanOnInstall,
+                        onToggle = viewModel::setScanOnInstall
+                    )
+                }
 
-            // About
-            SettingsSection("About") {
-                SettingsInfoRow(Icons.Filled.Info, "Version", "1.0.0")
-                SettingsInfoRow(Icons.Filled.BugReport, "Database", "VirusTotal v3")
-                SettingsInfoRow(Icons.Filled.CloudDone, "Engine", "AI-assisted + VT")
-            }
+                ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
+                    Text(
+                        text = "Build info",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    SettingsInfoRow(icon = Icons.Filled.Tune, label = "UI system", value = "Material 3 Expressive")
+                    SettingsInfoRow(icon = Icons.Filled.Security, label = "Session store", value = "EncryptedSharedPreferences")
+                    SettingsInfoRow(icon = Icons.Filled.Key, label = "Backend", value = "sosiskibot.ru")
+                }
 
-            // Logout
-            Button(
-                onClick = { showLogoutDialog = true },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ShieldRed.copy(alpha = 0.15f)),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Filled.Logout, null, tint = ShieldRed)
-                Spacer(Modifier.width(8.dp))
-                Text("Sign Out", color = ShieldRed, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = { showLogoutDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.criticalTone),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Icon(Icons.Filled.Logout, contentDescription = null)
+                    Text("  Sign out and clear session")
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SettingsSection(title: String, content: @Composable () -> Unit) {
-    Column {
-        Text(title.uppercase(), fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = DarkCard),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingsInfoRow(icon: ImageVector, label: String, value: String) {
+private fun SettingsInfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = ShieldGreen, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(14.dp))
-        Text(label, color = TextSecondary, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Text(value, color = TextPrimary, fontSize = 14.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Column {
+                Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
 @Composable
 private fun SettingsToggleRow(
-    icon: ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     subtitle: String,
     checked: Boolean,
     onToggle: (Boolean) -> Unit
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, null, tint = ShieldGreen, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = TextSecondary, fontSize = 12.sp)
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Switch(
             checked = checked,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.Black,
-                checkedTrackColor = ShieldGreen,
-                uncheckedTrackColor = DarkCardAlt
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
             )
         )
     }

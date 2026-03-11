@@ -135,7 +135,12 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             ScanResultsScreen(
                 viewModel = vm,
                 scanId = scanId,
-                onBack = { navController.navigate(Screen.Home.route) { popUpTo(0) } }
+                onBack = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route)
+                        launchSingleTop = true
+                    }
+                }
             )
         }
         composable(Screen.History.route) {
@@ -153,7 +158,8 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 onBack = { navController.popBackStack() },
                 onLogout = {
                     navController.navigate(Screen.Login.route) {
-                        popUpTo(0) { inclusive = true }
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )

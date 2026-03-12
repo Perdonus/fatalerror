@@ -13,6 +13,18 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 
 object PackageUtils {
+    private val QUICK_RISK_PERMISSIONS = setOf(
+        "android.permission.BIND_ACCESSIBILITY_SERVICE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.QUERY_ALL_PACKAGES",
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.SEND_SMS",
+        "android.permission.READ_CALL_LOG",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_PHONE_STATE"
+    )
 
     fun getAllInstalledApps(context: Context, includeSystem: Boolean = false): List<AppInfo> {
         val pm = context.packageManager
@@ -102,4 +114,20 @@ object PackageUtils {
     }
 
     fun getUserApps(context: Context): List<AppInfo> = getAllInstalledApps(context, false)
+
+    fun getHybridQuickApps(context: Context): List<AppInfo> {
+        val pm = context.packageManager
+        return getAllInstalledApps(context, includeSystem = true).filter { app ->
+            if (!app.isSystemApp) {
+                true
+            } else {
+                val hasRiskPermission = app.requestedPermissions.any { it in QUICK_RISK_PERMISSIONS }
+                val isUpdatedSystemApp = runCatching {
+                    val info = pm.getApplicationInfo(app.packageName, 0)
+                    (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+                }.getOrDefault(false)
+                hasRiskPermission || app.isDebuggable || app.usesCleartextTraffic || isUpdatedSystemApp
+            }
+        }
+    }
 }

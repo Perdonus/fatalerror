@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
@@ -203,7 +203,12 @@ fun ScanScreen(
                             subtitle = "Текущие совпадения"
                         )
                     }
-                    items(progress?.threats.orEmpty(), key = { it.packageName + it.threatName }) { threat ->
+                    itemsIndexed(
+                        items = progress?.threats.orEmpty(),
+                        key = { index, threat ->
+                            "${threat.packageName}|${threat.threatName}|${threat.detectionEngine}|$index"
+                        }
+                    ) { _, threat ->
                         val threatColor = when (threat.severity) {
                             ThreatSeverity.CRITICAL -> MaterialTheme.colorScheme.criticalTone
                             ThreatSeverity.HIGH -> MaterialTheme.colorScheme.warningTone

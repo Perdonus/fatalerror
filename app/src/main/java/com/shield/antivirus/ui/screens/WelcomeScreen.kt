@@ -1,13 +1,13 @@
 package com.shield.antivirus.ui.screens
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -21,7 +21,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.shield.antivirus.R
 import com.shield.antivirus.ui.components.ShieldBackdrop
-import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.WelcomeEdgeDecorations
 import com.shield.antivirus.ui.components.shieldBottomInsets
@@ -46,16 +45,17 @@ fun WelcomeScreen(
                 contentDescription = null,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .fillMaxWidth(0.72f)
-                    .alpha(0.28f),
+                    .fillMaxWidth(0.62f)
+                    .alpha(0.96f),
                 contentScale = ContentScale.Fit
             )
-            ShieldPanel(
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .shieldBottomInsets(),
-                accent = MaterialTheme.colorScheme.primary
+                    .shieldBottomInsets()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (!guestAvailable) {
                     Text(

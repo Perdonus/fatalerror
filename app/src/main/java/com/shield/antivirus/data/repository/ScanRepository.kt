@@ -231,13 +231,13 @@ class ScanRepository(private val context: Context) {
 
             val allApps = withContext(Dispatchers.IO) {
                 when (normalizedType) {
-                    "QUICK" -> PackageUtils.getUserApps(context).take(30)
-                    "FULL" -> PackageUtils.getUserApps(context)
+                    "QUICK" -> PackageUtils.getHybridQuickApps(context)
+                    "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
                     "SELECTIVE" -> {
-                        val userApps = PackageUtils.getUserApps(context)
-                        if (selectedPackages.isEmpty()) userApps else userApps.filter { it.packageName in selectedPackages }
+                        val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = true)
+                        if (selectedPackages.isEmpty()) installedApps else installedApps.filter { it.packageName in selectedPackages }
                     }
-                    else -> PackageUtils.getUserApps(context)
+                    else -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
                 }
             }
 

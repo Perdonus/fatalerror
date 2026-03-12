@@ -28,7 +28,7 @@ data class HomeUiState(
     val lastScanTime: Long = 0L,
     val recentResults: List<ScanResult> = emptyList(),
     val isProtectionActive: Boolean = true,
-    val totalThreatsEver: Int = 0,
+    val lastScanThreatCount: Int = 0,
     val totalScans: Int = 0,
     val isGuest: Boolean = false,
     val guestScanUsed: Boolean = false,
@@ -106,12 +106,13 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                 val scanTooOld = snapshot.activeScanType.isNotBlank() &&
                     snapshot.activeScanStartedAt > 0L &&
                     System.currentTimeMillis() - snapshot.activeScanStartedAt > 30L * 60L * 1000L
-                val installedApps = PackageUtils.getUserApps(context)
+                val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = true)
                 val appsForSelection = installedApps.map {
                     HomeInstalledApp(appName = it.appName, packageName = it.packageName)
                 }
                 val startOfDay = startOfCurrentDay()
                 val todayResults = results.filter { it.completedAt >= startOfDay }
+                val latestResult = results.maxByOrNull { it.completedAt }
                 HomeUiState(
                     userName = snapshot.name,
                     isLoggedIn = snapshot.isLoggedIn,
@@ -120,7 +121,7 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                     lastScanTime = snapshot.lastScan,
                     recentResults = if (snapshot.isGuest) emptyList() else results.take(4),
                     isProtectionActive = snapshot.protection && !snapshot.isGuest,
-                    totalThreatsEver = if (snapshot.isGuest) 0 else results.sumOf { it.threatsFound },
+                    lastScanThreatCount = if (snapshot.isGuest) 0 else (latestResult?.threatsFound ?: 0),
                     totalScans = if (snapshot.isGuest) 0 else results.size,
                     isGuest = snapshot.isGuest,
                     guestScanUsed = snapshot.guestScanUsed,

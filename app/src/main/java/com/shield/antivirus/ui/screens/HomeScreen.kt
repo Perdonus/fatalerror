@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,15 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.shield.antivirus.R
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldLoadingState
 import com.shield.antivirus.ui.components.ShieldMetricTile
@@ -144,7 +139,7 @@ private fun HomeContent(
     val statusColor = when {
         state.isGuest -> MaterialTheme.colorScheme.signalTone
         !state.isProtectionActive -> MaterialTheme.colorScheme.criticalTone
-        state.totalThreatsEver > 0 -> MaterialTheme.colorScheme.warningTone
+        state.lastScanThreatCount > 0 -> MaterialTheme.colorScheme.warningTone
         else -> MaterialTheme.colorScheme.safeTone
     }
 
@@ -230,52 +225,13 @@ private fun HomeContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        modifier = Modifier.size(186.dp),
-                        shape = CircleShape,
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
-                        )
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.23f),
-                                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
-                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.05f)
-                                        )
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.shield_logo_transparent),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(24.dp),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
                 ShieldPanel(accent = statusColor) {
                     ShieldSectionHeader(
                         eyebrow = if (state.isGuest) "Гость" else "Статус",
                         title = when {
                             state.isGuest -> "Только просмотр"
                             !state.isProtectionActive -> "Защита выключена"
-                            state.totalThreatsEver > 0 -> "Нужна проверка"
+                            state.lastScanThreatCount > 0 -> "Нужна проверка"
                             else -> "Устройство защищено"
                         },
                         subtitle = when {
@@ -304,34 +260,6 @@ private fun HomeContent(
                         style = MaterialTheme.typography.displayLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    ShieldMetricTile(
-                        modifier = Modifier.weight(1f),
-                        title = "Приложений",
-                        value = state.installedAppsCount.toString(),
-                        support = "В пуле сканирования",
-                        icon = Icons.Filled.Security,
-                        accent = MaterialTheme.colorScheme.primary
-                    )
-                    ShieldMetricTile(
-                        modifier = Modifier.weight(1f),
-                        title = "Угроз",
-                        value = state.totalThreatsEver.toString(),
-                        support = if (state.totalThreatsEver == 0) "Пока чисто" else "Есть совпадения",
-                        icon = Icons.Filled.BugReport,
-                        accent = if (state.totalThreatsEver == 0) {
-                            MaterialTheme.colorScheme.safeTone
-                        } else {
-                            MaterialTheme.colorScheme.warningTone
-                        }
                     )
                 }
             }
@@ -514,6 +442,34 @@ private fun HomeContent(
                 }
             }
 
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ShieldMetricTile(
+                        modifier = Modifier.weight(1f),
+                        title = "Приложений",
+                        value = state.installedAppsCount.toString(),
+                        support = "В пуле сканирования",
+                        icon = Icons.Filled.Security,
+                        accent = MaterialTheme.colorScheme.primary
+                    )
+                    ShieldMetricTile(
+                        modifier = Modifier.weight(1f),
+                        title = "Угроз",
+                        value = state.lastScanThreatCount.toString(),
+                        support = if (state.lastScanThreatCount == 0) "По последнему скану: чисто" else "По последнему скану есть риски",
+                        icon = Icons.Filled.BugReport,
+                        accent = if (state.lastScanThreatCount == 0) {
+                            MaterialTheme.colorScheme.safeTone
+                        } else {
+                            MaterialTheme.colorScheme.warningTone
+                        }
+                    )
+                }
+            }
+
             if (state.isGuest) {
                 item {
                     ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
@@ -548,85 +504,6 @@ private fun HomeContent(
                         ) {
                             Text("Вернуться в аккаунт")
                         }
-                    }
-                }
-            }
-
-            item {
-                ShieldSectionHeader(
-                    eyebrow = "История",
-                    title = "Последние проверки",
-                    subtitle = if (state.recentResults.isEmpty()) "Пока пусто" else "Свежие результаты"
-                )
-            }
-
-            if (state.isGuest) {
-                item {
-                    ShieldPanel(accent = MaterialTheme.colorScheme.outline) {
-                        Text(
-                            text = "История доступна после входа",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Структура экрана сохранена, но просмотр отчётов заблокирован в гостевом режиме.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Button(
-                            onClick = onOpenLogin,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.signalTone),
-                            shape = MaterialTheme.shapes.medium
-                        ) {
-                            Text("Войти")
-                        }
-                    }
-                }
-            } else if (state.recentResults.isEmpty()) {
-                item {
-                    ShieldPanel(accent = MaterialTheme.colorScheme.surfaceVariant) {
-                        Text(
-                            text = "История пуста",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Запустите быструю, глубокую или выборочную проверку",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                items(state.recentResults, key = { it.id }) { result ->
-                    val accent = if (result.threatsFound > 0) {
-                        MaterialTheme.colorScheme.warningTone
-                    } else {
-                        MaterialTheme.colorScheme.safeTone
-                    }
-                    ShieldPanel(accent = accent) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = scanTypeLabel(result.scanType),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold
-                            )
-                            ShieldStatusChip(
-                                label = if (result.threatsFound > 0) "Угроз: ${result.threatsFound}" else "Чисто",
-                                icon = if (result.threatsFound > 0) Icons.Filled.BugReport else Icons.Filled.Security,
-                                color = accent
-                            )
-                        }
-                        Text(
-                            text = "${result.totalScanned} пакетов • ${formatAbsoluteTime(result.completedAt)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -819,7 +696,7 @@ private fun calculateProtectionScore(state: HomeUiState): Int {
     var score = 44
     if (state.isProtectionActive) score += 28 else score -= 18
     if (state.lastScanTime > System.currentTimeMillis() - 86_400_000L) score += 18
-    if (state.totalThreatsEver == 0) score += 10 else score -= (state.totalThreatsEver * 4).coerceAtMost(28)
+    if (state.lastScanThreatCount == 0) score += 10 else score -= (state.lastScanThreatCount * 4).coerceAtMost(28)
     if (state.totalScans > 2) score += 6
     return score.coerceIn(7, 99)
 }
@@ -833,17 +710,6 @@ private fun formatTime(timestamp: Long): String {
         delta < 86_400_000L -> "${delta / 3_600_000L} ч назад"
         else -> SimpleDateFormat("dd MMM, HH:mm", Locale("ru")).format(Date(timestamp))
     }
-}
-
-private fun formatAbsoluteTime(timestamp: Long): String =
-    SimpleDateFormat("dd MMM, HH:mm", Locale("ru")).format(Date(timestamp))
-
-private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
-    "QUICK" -> "Быстрая"
-    "FULL" -> "Глубокая"
-    "SELECTIVE" -> "Выборочная"
-    "APK" -> "Проверка APK"
-    else -> scanType
 }
 
 private fun isValidApkSelection(context: Context, uri: Uri): Boolean {

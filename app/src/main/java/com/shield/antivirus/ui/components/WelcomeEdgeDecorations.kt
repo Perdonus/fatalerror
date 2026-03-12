@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LoadingIndicatorDefaults
@@ -82,7 +83,7 @@ fun WelcomeEdgeDecorations(
             var dragX by remember(index) { mutableFloatStateOf(0f) }
             var dragY by remember(index) { mutableFloatStateOf(0f) }
             var manualRotation by remember(index) { mutableFloatStateOf(0f) }
-            var useContainedPolygons by rememberSaveable(index) { mutableStateOf(spec.useContainedPolygons) }
+            var useContainedStyle by rememberSaveable(index) { mutableStateOf(spec.useContainedPolygons) }
 
             val color = when (spec.colorSlot % 4) {
                 0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
@@ -97,7 +98,7 @@ fun WelcomeEdgeDecorations(
                     .offset(x = spec.offsetX, y = spec.offsetY)
                     .size(spec.size)
                     .clickable {
-                        useContainedPolygons = !useContainedPolygons
+                        useContainedStyle = !useContainedStyle
                         manualRotation += 24f
                     }
                     .pointerInput(index) {
@@ -114,15 +115,19 @@ fun WelcomeEdgeDecorations(
                         rotationZ = rotation + manualRotation
                     }
             ) {
-                LoadingIndicator(
-                    modifier = Modifier.fillMaxSize(),
-                    color = color,
-                    polygons = if (useContainedPolygons) {
-                        LoadingIndicatorDefaults.ContainedIndicatorPolygons
-                    } else {
-                        LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
-                    }
-                )
+                if (useContainedStyle) {
+                    ContainedLoadingIndicator(
+                        modifier = Modifier.fillMaxSize(),
+                        color = color,
+                        containerColor = color.copy(alpha = 0.20f)
+                    )
+                } else {
+                    LoadingIndicator(
+                        modifier = Modifier.fillMaxSize(),
+                        color = color,
+                        polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
+                    )
+                }
             }
         }
     }

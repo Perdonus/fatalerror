@@ -44,7 +44,14 @@ class DeepScanWorker(
                 )
             )
             NotificationHelper.createChannels(applicationContext)
-            setForeground(createForegroundInfo(scanType, lastProgress))
+            runCatching { setForeground(createForegroundInfo(scanType, lastProgress)) }
+                .onFailure { error ->
+                    AppLogger.logError(
+                        tag = "deep_scan_worker",
+                        message = "setForeground failed at start",
+                        error = error
+                    )
+                }
 
             repo.startScan(
                 scanType = scanType,
@@ -53,7 +60,15 @@ class DeepScanWorker(
                 manageNotifications = false
             ).collect { progress ->
                 lastProgress = progress
-                setForeground(createForegroundInfo(scanType, progress))
+                runCatching { setForeground(createForegroundInfo(scanType, progress)) }
+                    .onFailure { error ->
+                        AppLogger.logError(
+                            tag = "deep_scan_worker",
+                            message = "setForeground failed during progress",
+                            error = error,
+                            metadata = mapOf("scan_type" to scanType)
+                        )
+                    }
                 setProgress(progress.toWorkData(scanType))
             }
 

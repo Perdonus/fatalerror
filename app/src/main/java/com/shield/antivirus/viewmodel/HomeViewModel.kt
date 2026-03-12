@@ -8,10 +8,12 @@ import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.repository.ScanRepository
 import com.shield.antivirus.util.PackageUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -54,6 +56,13 @@ class HomeViewModel(private val context: Context) : ViewModel() {
 
     private fun loadData() {
         viewModelScope.launch {
+            val installedApps = withContext(Dispatchers.IO) {
+                PackageUtils.getAllInstalledApps(context, includeSystem = true)
+            }
+            val appsForSelection = installedApps.map {
+                HomeInstalledApp(appName = it.appName, packageName = it.packageName)
+            }
+
             val primarySnapshotFlow = combine(
                 prefs.isLoggedIn,
                 prefs.userName,
@@ -106,10 +115,6 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                 val scanTooOld = snapshot.activeScanType.isNotBlank() &&
                     snapshot.activeScanStartedAt > 0L &&
                     System.currentTimeMillis() - snapshot.activeScanStartedAt > 30L * 60L * 1000L
-                val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = true)
-                val appsForSelection = installedApps.map {
-                    HomeInstalledApp(appName = it.appName, packageName = it.packageName)
-                }
                 val startOfDay = startOfCurrentDay()
                 val todayResults = results.filter { it.completedAt >= startOfDay }
                 val latestResult = results.maxByOrNull { it.completedAt }

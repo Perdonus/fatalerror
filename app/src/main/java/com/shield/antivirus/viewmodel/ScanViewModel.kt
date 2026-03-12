@@ -41,6 +41,8 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     private val _progress = MutableStateFlow<ScanProgress?>(null)
     val progress: StateFlow<ScanProgress?> = _progress.asStateFlow()
+    private val _actionLoading = MutableStateFlow(false)
+    val actionLoading: StateFlow<Boolean> = _actionLoading.asStateFlow()
 
     private val _guestLimitReached = MutableStateFlow(false)
     val guestLimitReached: StateFlow<Boolean> = _guestLimitReached.asStateFlow()
@@ -68,6 +70,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         scanJob?.cancel()
         workObserverJob?.cancel()
         scanJob = viewModelScope.launch {
+            _actionLoading.value = true
             AppLogger.log(
                 tag = "scan_view_model",
                 message = "startScan called",
@@ -102,6 +105,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     scannedCount = 0,
                     totalCount = 1
                 )
+                _actionLoading.value = false
                 return@launch
             }
 
@@ -120,6 +124,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     scannedCount = 0,
                     totalCount = 1
                 )
+                _actionLoading.value = false
                 return@launch
             }
             if (guest) {
@@ -158,13 +163,14 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     scannedCount = 0,
                     totalCount = 1
                 )
+                _actionLoading.value = false
                 return@launch
             }
 
             _guestLimitReached.value = false
             _progress.value = ScanProgress(totalCount = 1)
 
-            if (!guest && normalizedType != "QUICK") {
+            if (!guest && normalizedType == "FULL") {
                 val existingWorkId = prefs.activeDeepScanWorkId.first()
                     .takeIf { it.isNotBlank() }
                     ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
@@ -198,6 +204,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     apkUriString = apkUri
                 ).collect { progress ->
                     _progress.value = progress
+                    _actionLoading.value = false
                 }
             } catch (error: ScanAlreadyRunningException) {
                 AppLogger.logError(
@@ -210,6 +217,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     scannedCount = 0,
                     totalCount = 1
                 )
+                _actionLoading.value = false
             } catch (error: Exception) {
                 AppLogger.logError(
                     tag = "scan_view_model",
@@ -221,6 +229,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     scannedCount = 0,
                     totalCount = 1
                 )
+                _actionLoading.value = false
             }
         }
     }
@@ -240,6 +249,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     _progress.value = _progress.value?.copy(
                         currentApp = "Глубокая проверка была прервана. Запустите её заново."
                     )
+                    _actionLoading.value = false
                     break
                 }
                 val data = if (info.state.isFinished) info.outputData else info.progress
@@ -247,18 +257,24 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                 val scannedCount = data.getInt(DeepScanWorker.KEY_SCANNED_COUNT, _progress.value?.scannedCount ?: 0)
                 val savedId = data.getLong(DeepScanWorker.KEY_SAVED_ID, 0L)
                 val errorMessage = data.getString(DeepScanWorker.KEY_ERROR_MESSAGE).orEmpty()
+                val isComplete = data.getBoolean(DeepScanWorker.KEY_IS_COMPLETE, false) && savedId > 0L
                 _progress.value = ScanProgress(
                     currentApp = if (errorMessage.isNotBlank()) errorMessage else data.getString(DeepScanWorker.KEY_CURRENT_APP).orEmpty(),
                     scannedCount = scannedCount,
                     totalCount = totalCount.coerceAtLeast(1),
                     threats = _progress.value?.threats.orEmpty(),
-                    isComplete = data.getBoolean(DeepScanWorker.KEY_IS_COMPLETE, info.state.isFinished),
+                    isComplete = isComplete,
                     savedId = savedId
                 )
+                _actionLoading.value = false
                 if (info.state.isFinished) {
                     prefs.clearActiveDeepScan()
                     if (savedId > 0L) {
                         _currentResult.value = repo.getResultById(savedId)
+                    } else if (errorMessage.isBlank()) {
+                        _progress.value = _progress.value?.copy(
+                            currentApp = "Серверная проверка завершилась без сохранённого отчёта. Повторите запуск."
+                        )
                     }
                     AppLogger.log(
                         tag = "scan_view_model",
@@ -273,12 +289,14 @@ class ScanViewModel(private val context: Context) : ViewModel() {
     }
 
     fun cancelScan() {
+        _actionLoading.value = true
         scanJob?.cancel()
         workObserverJob?.cancel()
         DeepScanWorker.cancel(context.applicationContext)
         viewModelScope.launch {
             prefs.clearActiveDeepScan()
             prefs.clearActiveScan()
+            _actionLoading.value = false
         }
         _progress.value = null
         AppLogger.log(tag = "scan_view_model", message = "Scan cancelled by user")

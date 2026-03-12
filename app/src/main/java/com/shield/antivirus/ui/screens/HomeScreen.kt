@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -46,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,10 +55,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
 import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldBlockingLoadingOverlay
 import com.shield.antivirus.ui.components.ShieldLoadingState
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
@@ -149,6 +153,7 @@ private fun HomeContent(
     var guestIntroLoading by rememberSaveable(state.isGuest) { mutableStateOf(state.isGuest) }
     var showAppPicker by rememberSaveable { mutableStateOf(false) }
     var modeMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var actionOverlay by rememberSaveable { mutableStateOf(false) }
 
     val apkPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) {
@@ -180,7 +185,7 @@ private fun HomeContent(
 
     ShieldScreenScaffold(
         title = "ShieldSecurity",
-        subtitle = if (state.isGuest) "Гость" else state.userName.takeIf { it.isNotBlank() },
+        subtitle = null,
         leadingContent = {
             IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenHistory) {
                 Icon(Icons.Filled.History, contentDescription = "История")
@@ -209,18 +214,22 @@ private fun HomeContent(
                 onDismiss = { showAppPicker = false },
                 onSelected = { selected ->
                     showAppPicker = false
+                    actionOverlay = true
                     onStartScan("SELECTIVE", selected.packageName, null)
                 }
             )
         }
 
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(padding)
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             item {
                 ShieldPanel(accent = statusColor) {
                     Text(
@@ -320,16 +329,12 @@ private fun HomeContent(
             item {
                 ModeWideCard(
                     title = "Глубокая",
-                    subtitle = when {
-                        state.isGuest -> "Недоступно в гостевом режиме"
-                        fullLimitReached -> "Лимит сегодня исчерпан (1/1)"
-                        else -> "Серверная проверка"
-                    },
                     icon = Icons.Filled.Security,
                     accent = MaterialTheme.colorScheme.tertiary,
                     enabled = !state.isGuest && !fullLimitReached && !scanLocked,
                     onAction = {
                         modeMessage = null
+                        actionOverlay = true
                         when {
                             scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
                             state.isGuest -> onOpenLogin()
@@ -348,12 +353,12 @@ private fun HomeContent(
                     ModeGridCard(
                         modifier = Modifier.weight(1f),
                         title = "Быстрая",
-                        subtitle = if (state.isGuest) "Локальная" else "Локальная",
                         icon = Icons.Filled.FlashOn,
                         accent = MaterialTheme.colorScheme.primary,
                         enabled = !scanLocked,
                         onAction = {
                             modeMessage = null
+                            actionOverlay = true
                             when {
                                 scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "QUICK" })
                                 else -> onStartScan("QUICK", null, null)
@@ -363,16 +368,12 @@ private fun HomeContent(
                     ModeGridCard(
                         modifier = Modifier.weight(1f),
                         title = "Выборочная",
-                        subtitle = when {
-                            state.isGuest -> "Нужен вход"
-                            selectiveLimitReached -> "Лимит 3/3"
-                            else -> "Выбрать"
-                        },
                         icon = Icons.Filled.TrackChanges,
                         accent = MaterialTheme.colorScheme.signalTone,
                         enabled = !state.isGuest && !selectiveLimitReached && !scanLocked,
                         onAction = {
                             modeMessage = null
+                            actionOverlay = true
                             when {
                                 scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "SELECTIVE" })
                                 state.isGuest -> onOpenLogin()
@@ -424,6 +425,7 @@ private fun HomeContent(
                         Button(
                             onClick = {
                                 modeMessage = null
+                                actionOverlay = true
                                 when {
                                     scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "APK" })
                                     state.isGuest -> onOpenLogin()
@@ -485,6 +487,25 @@ private fun HomeContent(
                     }
                 }
             }
+            }
+
+            LaunchedEffect(actionOverlay, state.isScanActive) {
+                if (actionOverlay && state.isScanActive) {
+                    delay(220)
+                    actionOverlay = false
+                }
+            }
+            LaunchedEffect(actionOverlay) {
+                if (actionOverlay) {
+                    delay(650)
+                    actionOverlay = false
+                }
+            }
+
+            ShieldBlockingLoadingOverlay(
+                visible = actionOverlay,
+                dimmed = true
+            )
         }
     }
 }
@@ -492,7 +513,6 @@ private fun HomeContent(
 @Composable
 private fun ModeWideCard(
     title: String,
-    subtitle: String,
     icon: ImageVector,
     accent: Color,
     enabled: Boolean,
@@ -533,11 +553,6 @@ private fun ModeWideCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
             IconButton(
                 onClick = onAction,
@@ -563,7 +578,6 @@ private fun ModeWideCard(
 @Composable
 private fun ModeGridCard(
     title: String,
-    subtitle: String,
     icon: ImageVector,
     accent: Color,
     enabled: Boolean,
@@ -578,7 +592,7 @@ private fun ModeGridCard(
     }
 
     Card(
-        modifier = modifier.aspectRatio(1.02f),
+        modifier = modifier.heightIn(min = 166.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         shape = MaterialTheme.shapes.large
     ) {
@@ -602,11 +616,6 @@ private fun ModeGridCard(
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.weight(1f))
             Box(
@@ -643,6 +652,7 @@ private fun SelectInstalledAppDialog(
     onDismiss: () -> Unit,
     onSelected: (HomeInstalledApp) -> Unit
 ) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Выбор приложения") },
@@ -661,25 +671,50 @@ private fun SelectInstalledAppDialog(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(apps, key = { it.packageName }) { app ->
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(MaterialTheme.shapes.medium)
                                 .clickable { onSelected(app) }
                                 .padding(vertical = 10.dp, horizontal = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = app.appName,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = app.packageName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            val iconBitmap = remember(app.packageName) {
+                                runCatching {
+                                    context.packageManager
+                                        .getApplicationIcon(app.packageName)
+                                        .toBitmap(48, 48)
+                                        .asImageBitmap()
+                                }.getOrNull()
+                            }
+                            if (iconBitmap != null) {
+                                Image(
+                                    bitmap = iconBitmap,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.Description,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = app.appName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = app.packageName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

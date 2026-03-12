@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldBlockingLoadingOverlay
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
@@ -60,6 +61,7 @@ fun ScanScreen(
 ) {
     val progress by viewModel.progress.collectAsState()
     val guestLimitReached by viewModel.guestLimitReached.collectAsState()
+    val actionLoading by viewModel.actionLoading.collectAsState()
     val keepRunningInBackground = scanType.uppercase() != "QUICK"
 
     LaunchedEffect(scanType, selectedPackage, apkUri) {
@@ -94,7 +96,6 @@ fun ScanScreen(
     ShieldBackdrop {
         ShieldScreenScaffold(
             title = scanTypeLabel(scanType),
-            subtitle = scanPhase(progress),
             onBack = {
                 if (!keepRunningInBackground) {
                     viewModel.cancelScan()
@@ -102,13 +103,16 @@ fun ScanScreen(
                 onCancel()
             }
         ) { padding ->
-            LazyColumn(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(padding)
             ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 if (guestLimitReached) {
                     item {
                         ShieldPanel(accent = MaterialTheme.colorScheme.warningTone) {
@@ -141,8 +145,7 @@ fun ScanScreen(
                     ShieldPanel(accent = accent) {
                         ShieldSectionHeader(
                             eyebrow = "Проверка",
-                            title = if (progress?.isComplete == true) "Готово" else "Идёт сканирование",
-                            subtitle = scanPhase(progress)
+                            title = if (progress?.isComplete == true) "Готово" else "Идёт сканирование"
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
@@ -200,8 +203,7 @@ fun ScanScreen(
                     item {
                         ShieldSectionHeader(
                             eyebrow = "Найдено",
-                            title = "Подозрительные приложения",
-                            subtitle = "Текущие совпадения"
+                            title = "Подозрительные приложения"
                         )
                     }
                     itemsIndexed(
@@ -265,6 +267,12 @@ fun ScanScreen(
                         Text(if (keepRunningInBackground) "  Остановить глубокую проверку" else "  Остановить")
                     }
                 }
+                }
+
+                ShieldBlockingLoadingOverlay(
+                    visible = actionLoading && progress?.scannedCount == 0,
+                    dimmed = true
+                )
             }
         }
     }

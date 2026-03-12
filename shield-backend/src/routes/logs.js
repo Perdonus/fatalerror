@@ -17,6 +17,15 @@ function sanitizeSegment(value, fallback) {
     return normalized || fallback;
 }
 
+function sanitizeEmailSegment(value, fallback) {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._@-]/g, '_')
+        .slice(0, 120);
+    return normalized || fallback;
+}
+
 function normalizeItems(value, limit) {
     if (!Array.isArray(value)) return [];
     return value.slice(0, limit).map((item) => {
@@ -25,6 +34,12 @@ function normalizeItems(value, limit) {
         }
         return { value: String(item || '') };
     });
+}
+
+async function writeJsonLines(filePath, records) {
+    if (!records.length) return;
+    const lines = records.map((item) => JSON.stringify(item)).join('\n') + '\n';
+    await fs.writeFile(filePath, lines, 'utf8');
 }
 
 router.post('/client', auth, async (req, res) => {
@@ -36,25 +51,45 @@ router.post('/client', auth, async (req, res) => {
         if (events.length === 0 && crashes.length === 0) {
             return res.status(400).json({ error: 'events or crashes required' });
         }
+        if (!req.userId || !req.userEmail) {
+            return res.status(403).json({ error: 'Registered user is required for client log upload' });
+        }
 
-        const userId = sanitizeSegment(req.userId, 'unknown_user');
+        const userEmail = sanitizeEmailSegment(req.userEmail, 'unknown_email');
         const sessionId = sanitizeSegment(body.sessionId || req.sessionId, 'unknown_session');
-        const dayKey = new Date().toISOString().slice(0, 10);
-        const runDir = path.join(LOG_ROOT, userId, sessionId, dayKey);
-        await fs.mkdir(runDir, { recursive: true });
+        const iso = new Date().toISOString();
+        const dayKey = iso.slice(0, 10);
+        const hourKey = iso.slice(11, 13);
+        const runDir = path.join(
+            LOG_ROOT,
+            userEmail,
+            dayKey,
+            `hour-${hourKey}`,
+            sessionId
+        );
 
         const batchId = `${Date.now()}-${crypto.randomUUID()}`;
-        const filePath = path.join(runDir, `client-batch-${batchId}.json`);
+        const batchDir = path.join(runDir, `batch-${batchId}`);
+        await fs.mkdir(batchDir, { recursive: true });
+
+        const metaPath = path.join(batchDir, 'meta.json');
+        const eventsPath = path.join(batchDir, 'events.jsonl');
+        const crashesPath = path.join(batchDir, 'crashes.jsonl');
         const payload = {
             received_at: Date.now(),
             user_id: req.userId,
+            user_email: req.userEmail,
             session_id: body.sessionId || req.sessionId || null,
             app_version: body.appVersion || null,
             device: body.device || null,
-            events,
-            crashes
+            counts: {
+                events: events.length,
+                crashes: crashes.length
+            }
         };
-        await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+        await fs.writeFile(metaPath, JSON.stringify(payload, null, 2), 'utf8');
+        await writeJsonLines(eventsPath, events);
+        await writeJsonLines(crashesPath, crashes);
 
         return res.json({
             success: true,
@@ -62,7 +97,8 @@ router.post('/client', auth, async (req, res) => {
                 events: events.length,
                 crashes: crashes.length
             },
-            batch_id: batchId
+            batch_id: batchId,
+            stored_under: path.join(userEmail, dayKey, `hour-${hourKey}`, sessionId, `batch-${batchId}`)
         });
     } catch (error) {
         console.error('Client log ingest error:', error);

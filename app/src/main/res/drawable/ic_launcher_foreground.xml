@@ -2,15 +2,15 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <inset
-            android:insetLeft="22dp"
-            android:insetTop="22dp"
-            android:insetRight="22dp"
-            android:insetBottom="22dp">
+            android:insetLeft="10dp"
+            android:insetTop="10dp"
+            android:insetRight="10dp"
+            android:insetBottom="10dp">
             <scale
-                android:drawable="@drawable/shield_logo_transparent"
+                android:drawable="@drawable/ic_brand_emblem"
                 android:scaleGravity="center"
-                android:scaleHeight="72%"
-                android:scaleWidth="72%" />
+                android:scaleHeight="92%"
+                android:scaleWidth="92%" />
         </inset>
     </item>
 </layer-list>

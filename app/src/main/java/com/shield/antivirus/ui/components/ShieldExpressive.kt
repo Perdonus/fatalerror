@@ -381,7 +381,7 @@ fun ShieldBottomFormPanel(
 fun ShieldSectionHeader(
     eyebrow: String,
     title: String,
-    subtitle: String,
+    subtitle: String? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -397,9 +397,9 @@ fun ShieldSectionHeader(
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground
         )
-        if (subtitle.isNotBlank()) {
+        if (!subtitle.isNullOrBlank()) {
             Text(
-                text = subtitle,
+                text = subtitle.orEmpty(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -606,137 +606,47 @@ fun ShieldModeCard(
 
 @Composable
 fun ShieldLoadingState(
-    title: String,
-    subtitle: String,
+    title: String = "",
+    subtitle: String = "",
     modifier: Modifier = Modifier
 ) {
-    val transition = rememberInfiniteTransition(label = "shieldLoading")
-    val haloScale by transition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1.12f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "haloScale"
-    )
-    val haloAlpha by transition.animateFloat(
-        initialValue = 0.14f,
-        targetValue = 0.34f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "haloAlpha"
-    )
-    val orbitRotation by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "orbitRotation"
-    )
-    val dotPulseA by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, delayMillis = 0, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dotPulseA"
-    )
-    val dotPulseB by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, delayMillis = 180, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dotPulseB"
-    )
-    val dotPulseC by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, delayMillis = 360, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dotPulseC"
-    )
-
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.size(132.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(116.dp)
-                    .graphicsLayer {
-                        scaleX = haloScale
-                        scaleY = haloScale
-                    }
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = haloAlpha))
-            )
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(84.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 6.dp
-            )
-            Box(
-                modifier = Modifier
-                    .size(84.dp)
-                    .graphicsLayer { rotationZ = orbitRotation }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.tertiary)
-                )
-            }
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LoadingPulseDot(alpha = dotPulseA)
-            LoadingPulseDot(alpha = dotPulseB)
-            LoadingPulseDot(alpha = dotPulseC)
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        CircularProgressIndicator(
+            modifier = Modifier.size(64.dp),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 5.dp
         )
     }
 }
 
 @Composable
-private fun LoadingPulseDot(alpha: Float) {
+fun ShieldBlockingLoadingOverlay(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    dimmed: Boolean = true
+) {
+    if (!visible) return
     Box(
-        modifier = Modifier
-            .size(8.dp)
-            .clip(CircleShape)
+        modifier = modifier
+            .fillMaxSize()
             .background(
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha.coerceIn(0.2f, 1f))
-            )
-    )
+                if (dimmed) {
+                    MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f)
+                } else {
+                    Color.Transparent
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(58.dp),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 5.dp
+        )
+    }
 }
 
 @Composable

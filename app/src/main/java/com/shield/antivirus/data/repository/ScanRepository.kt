@@ -270,12 +270,24 @@ class ScanRepository(private val context: Context) {
 
             val accessToken = withContext(Dispatchers.IO) { sessionManager.getValidAccessToken() }
             val useServerDeepScan = normalizedType != "QUICK" && !accessToken.isNullOrBlank()
+            if (normalizedType != "QUICK" && accessToken.isNullOrBlank()) {
+                emit(
+                    ScanProgress(
+                        currentApp = "Для этого режима нужен вход в аккаунт и активная сессия.",
+                        scannedCount = 0,
+                        totalCount = 1
+                    )
+                )
+                return@flow
+            }
             val maxServerChecks = when (normalizedType) {
-                "FULL" -> 10
-                "SELECTIVE" -> 20
+                "FULL" -> 6
+                "SELECTIVE" -> 12
                 else -> 0
             }
             var serverChecksUsed = 0
+            var serverChecksFailed = 0
+            var serverChecksSucceeded = 0
 
             val total = allApps.size
             AppLogger.log(
@@ -329,11 +341,13 @@ class ScanRepository(private val context: Context) {
 
                 val threatBatch = if (shouldUseServerForApp) {
                     serverChecksUsed++
+                    var requestFailed = false
                     val serverThreats = runCatching {
                         withContext(Dispatchers.IO) {
                             checkWithServerDeepScan(app, accessToken.orEmpty(), normalizedType)
                         }
                     }.onFailure { error ->
+                        requestFailed = true
                         AppLogger.logError(
                             tag = "scan_repository",
                             message = "Server deep scan failed for app",
@@ -344,6 +358,11 @@ class ScanRepository(private val context: Context) {
                             )
                         )
                     }.getOrElse { emptyList() }
+                    if (requestFailed) {
+                        serverChecksFailed++
+                    } else {
+                        serverChecksSucceeded++
+                    }
                     mergeThreats(localThreat, serverThreats)
                 } else {
                     buildList {
@@ -385,9 +404,19 @@ class ScanRepository(private val context: Context) {
                 syncScanToCloud(entity, threats)
             }
 
+            val completionMessage = if (
+                useServerDeepScan &&
+                serverChecksUsed > 0 &&
+                serverChecksSucceeded == 0 &&
+                serverChecksFailed >= serverChecksUsed
+            ) {
+                "Серверный анализ недоступен, применены локальные проверки."
+            } else {
+                ""
+            }
             emit(
                 ScanProgress(
-                    currentApp = "",
+                    currentApp = completionMessage,
                     scannedCount = total,
                     totalCount = total,
                     threats = threats.toList(),
@@ -401,7 +430,10 @@ class ScanRepository(private val context: Context) {
                 metadata = mapOf(
                     "scan_type" to normalizedType,
                     "total_scanned" to total.toString(),
-                    "threats_found" to threats.size.toString()
+                    "threats_found" to threats.size.toString(),
+                    "server_checks_used" to serverChecksUsed.toString(),
+                    "server_checks_failed" to serverChecksFailed.toString(),
+                    "server_checks_succeeded" to serverChecksSucceeded.toString()
                 )
             )
         } finally {
@@ -462,6 +494,18 @@ class ScanRepository(private val context: Context) {
             }
 
             if (job?.nextAction.equals("upload_apk", ignoreCase = true) && apkFile.exists()) {
+                if (!apkFile.canRead()) {
+                    AppLogger.log(
+                        tag = "scan_repository",
+                        message = "APK cannot be read for deep upload",
+                        level = "WARN",
+                        metadata = mapOf(
+                            "scan_id" to scanId,
+                            "package" to app.packageName
+                        )
+                    )
+                    return emptyList()
+                }
                 val uploadResponse = ApiClient.executeShieldCall { api ->
                     api.uploadDeepScanApk(
                         token = "Bearer $accessToken",
@@ -485,7 +529,7 @@ class ScanRepository(private val context: Context) {
                 }
             }
 
-            repeat(24) { attempt ->
+            repeat(16) { attempt ->
                 delay(if (attempt < 3) 450L else 900L)
                 val pollResponse = ApiClient.executeShieldCall { api ->
                     api.getDeepScan("Bearer $accessToken", scanId)

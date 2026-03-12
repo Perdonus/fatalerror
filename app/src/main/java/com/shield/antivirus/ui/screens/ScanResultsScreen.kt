@@ -39,6 +39,7 @@ import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldEmptyState
+import com.shield.antivirus.ui.components.ShieldMarkdownCards
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldSectionHeader
@@ -84,17 +85,13 @@ fun ScanResultsScreen(
                 ) {
                     when {
                         explainState.isLoading -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center
                             ) {
                                 CircularProgressIndicator(strokeWidth = 2.dp)
-                                Text(
-                                    text = "Собираем объяснение по этому отчёту",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
                         }
                         !explainState.error.isNullOrBlank() -> {
@@ -119,10 +116,9 @@ fun ScanResultsScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
-                            Text(
-                                text = explainState.explanation.orEmpty(),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
+                            ShieldMarkdownCards(
+                                markdown = explainState.explanation.orEmpty(),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -132,7 +128,6 @@ fun ScanResultsScreen(
 
         ShieldScreenScaffold(
             title = "Результат",
-            subtitle = "Проверка #$scanId",
             onBack = onBack
         ) { padding ->
             val current = result
@@ -160,8 +155,7 @@ fun ScanResultsScreen(
                     ShieldPanel(accent = accent) {
                         ShieldSectionHeader(
                             eyebrow = "Итог",
-                            title = if (current.threatsFound == 0) "Угроз не найдено" else "Найдены угрозы",
-                            subtitle = "${scanTypeLabel(current.scanType)} • ${current.totalScanned} пакетов"
+                            title = if (current.threatsFound == 0) "Угроз не найдено" else "Найдены угрозы"
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
@@ -190,12 +184,7 @@ fun ScanResultsScreen(
                     item {
                         ShieldSectionHeader(
                             eyebrow = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники" else "Угрозы",
-                            title = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники проверки" else "Список совпадений",
-                            subtitle = if (current.threats.any { !it.summary.isNullOrBlank() }) {
-                                "Сводка по каждому движку и этапу"
-                            } else {
-                                "Проверьте отмеченные приложения"
-                            }
+                            title = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники проверки" else "Список совпадений"
                         )
                     }
                     itemsIndexed(

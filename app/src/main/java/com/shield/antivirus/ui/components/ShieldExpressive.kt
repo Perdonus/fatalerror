@@ -141,6 +141,7 @@ fun ShieldScreenScaffold(
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets.safeDrawing.only(
             WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom

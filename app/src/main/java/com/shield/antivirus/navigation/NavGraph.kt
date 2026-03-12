@@ -101,7 +101,8 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
 
     NavHost(
         navController = navController,
-        startDestination = startDestination
+        startDestination = startDestination,
+        modifier = Modifier.fillMaxSize()
     ) {
         composable(Screen.Welcome.route) {
             WelcomeScreen(

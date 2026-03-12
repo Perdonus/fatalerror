@@ -1,5 +1,5 @@
 const AIH_BASE_URL = (process.env.AIH_BASE_URL || 'https://sosiskibot.ru/api/v1').replace(/\/$/, '');
-const AIH_TIMEOUT_MS = parseInt(process.env.AIH_TIMEOUT_MS || '15000', 10);
+const AIH_TIMEOUT_MS = parseInt(process.env.AIH_TIMEOUT_MS || '45000', 10);
 const AIH_DEFAULT_MODEL = String(process.env.AIH_MODEL || 'gpt-5.2').trim() || 'gpt-5.2';
 
 function isAiConfigured() {

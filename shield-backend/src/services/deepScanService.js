@@ -754,13 +754,28 @@ function isUserInDevMode(user) {
 }
 
 async function getUserDevMode(userId, db = pool) {
-    const [rows] = await db.query(
-        `SELECT id, email, is_dev_mode
-         FROM users
-         WHERE id = ?
-         LIMIT 1`,
-        [userId]
-    );
+    let rows;
+    try {
+        [rows] = await db.query(
+            `SELECT id, email, is_dev_mode
+             FROM users
+             WHERE id = ?
+             LIMIT 1`,
+            [userId]
+        );
+    } catch (error) {
+        if (String(error?.code || '') === 'ER_BAD_FIELD_ERROR') {
+            [rows] = await db.query(
+                `SELECT id, email
+                 FROM users
+                 WHERE id = ?
+                 LIMIT 1`,
+                [userId]
+            );
+        } else {
+            throw error;
+        }
+    }
     if (rows.length === 0) {
         return {
             exists: false,

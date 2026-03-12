@@ -48,6 +48,12 @@ android {
         compose = true
         buildConfig = true
     }
+    lint {
+        // GitHub Actions release builds currently fail due to an internal lint crash
+        // (`AndroidLintWorkAction`), so we skip release lint gating in CI.
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 dependencies {

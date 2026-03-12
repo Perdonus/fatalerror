@@ -1,246 +1,124 @@
 package com.shield.antivirus.ui.components
 
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.min
-import kotlin.math.sin
-import kotlin.random.Random
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WelcomeEdgeDecorations(
     modifier: Modifier = Modifier,
     parallaxX: Float = 0f,
     parallaxY: Float = 0f
 ) {
-    val seed = remember { (System.nanoTime() and 0x7FFFFFFF).toInt() }
-    val initialState = remember(seed) {
-        val random = Random(seed)
-        EdgeDecorSpecs.map {
-            ShapeInitialState(
-                type = WelcomeShapeType.entries[random.nextInt(WelcomeShapeType.entries.size)],
-                rotation = random.nextFloat() * 360f
-            )
-        }
-    }
+    val transition = rememberInfiniteTransition(label = "welcome_shapes")
 
     Box(modifier = modifier.fillMaxSize()) {
-        EdgeDecorSpecs.forEachIndexed { index, spec ->
-            EdgeDecorativeShape(
-                spec = spec,
-                initial = initialState[index],
-                parallaxX = parallaxX,
-                parallaxY = parallaxY,
+        WelcomeShapeSpecs.forEachIndexed { index, spec ->
+            val driftX by transition.animateFloat(
+                initialValue = -spec.oscillationX,
+                targetValue = spec.oscillationX,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = spec.durationMs,
+                        easing = FastOutSlowInEasing
+                    ),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "shape_drift_x_$index"
+            )
+            val driftY by transition.animateFloat(
+                initialValue = -spec.oscillationY,
+                targetValue = spec.oscillationY,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = spec.durationMs + 1300,
+                        easing = FastOutSlowInEasing
+                    ),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "shape_drift_y_$index"
+            )
+            val rotation by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f * spec.spinDirection,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = spec.durationMs * 2,
+                        easing = LinearEasing
+                    ),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "shape_rotation_$index"
+            )
+
+            val color = when (spec.colorSlot % 4) {
+                0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
+                1 -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.58f)
+                2 -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
+                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            }
+
+            Box(
                 modifier = Modifier
                     .align(spec.alignment)
                     .offset(x = spec.offsetX, y = spec.offsetY)
-            )
+                    .size(spec.size)
+                    .graphicsLayer {
+                        translationX = driftX + parallaxX.coerceIn(-1f, 1f) * (spec.parallaxFactor * 26f)
+                        translationY = driftY + parallaxY.coerceIn(-1f, 1f) * (spec.parallaxFactor * 20f)
+                        rotationZ = rotation
+                    }
+            ) {
+                LoadingIndicator(
+                    modifier = Modifier.fillMaxSize(),
+                    color = color,
+                    polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
+                )
+            }
         }
     }
 }
 
-@Composable
-private fun EdgeDecorativeShape(
-    spec: EdgeDecorSpec,
-    initial: ShapeInitialState,
-    parallaxX: Float,
-    parallaxY: Float,
-    modifier: Modifier = Modifier
-) {
-    val colors = MaterialTheme.colorScheme
-    val scope = rememberCoroutineScope()
-    var currentType by remember { mutableStateOf(initial.type) }
-    val manualRotation = remember { Animatable(initial.rotation) }
-
-    val autoTransition = rememberInfiniteTransition(label = "edgeDecorAuto")
-    val autoRotation by autoTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f * spec.spinDirection,
-        animationSpec = infiniteRepeatable(
-            animation = tween(spec.spinDurationMillis, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "edgeDecorAutoRotation"
-    )
-
-    val baseColor = when (spec.colorSlot % 4) {
-        0 -> colors.primaryContainer
-        1 -> colors.secondaryContainer
-        2 -> colors.tertiaryContainer
-        else -> colors.surfaceContainerHighest
-    }
-    val outlineColor = colors.outlineVariant.copy(alpha = 0.45f)
-
-    Box(
-        modifier = modifier
-            .size(spec.size)
-            .graphicsLayer {
-                rotationZ = autoRotation + manualRotation.value
-                translationX = parallaxX.coerceIn(-1f, 1f) * (spec.parallaxFactor * 24f)
-                translationY = parallaxY.coerceIn(-1f, 1f) * (spec.parallaxFactor * 18f)
-            }
-            .clip(currentType.toShape())
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        baseColor.copy(alpha = 0.86f),
-                        baseColor.copy(alpha = 0.56f),
-                        colors.surface.copy(alpha = 0.3f)
-                    )
-                )
-            )
-            .border(width = 1.dp, color = outlineColor, shape = currentType.toShape())
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = {
-                        currentType = currentType.next()
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                var tracker = VelocityTracker()
-                detectDragGestures(
-                    onDragStart = {
-                        tracker = VelocityTracker()
-                        scope.launch { manualRotation.stop() }
-                    },
-                    onDragCancel = {
-                        scope.launch { manualRotation.stop() }
-                    },
-                    onDragEnd = {
-                        val velocity = tracker.calculateVelocity()
-                        val spinVelocity = ((velocity.x + velocity.y * 0.35f) * 0.02f)
-                            .coerceIn(-960f, 960f)
-                        scope.launch {
-                            manualRotation.animateDecay(
-                                initialVelocity = spinVelocity,
-                                animationSpec = exponentialDecay(frictionMultiplier = 2.1f)
-                            )
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        tracker.addPosition(change.uptimeMillis, change.position)
-                        change.consume()
-                        val deltaRotation = (dragAmount.x + dragAmount.y * 0.35f) * 0.5f
-                        scope.launch {
-                            manualRotation.snapTo(manualRotation.value + deltaRotation)
-                        }
-                    }
-                )
-            }
-    )
-}
-
-private data class EdgeDecorSpec(
+private data class WelcomeShapeSpec(
     val alignment: Alignment,
     val size: Dp,
     val offsetX: Dp = 0.dp,
     val offsetY: Dp = 0.dp,
-    val spinDurationMillis: Int,
+    val durationMs: Int,
     val spinDirection: Float,
     val colorSlot: Int,
-    val parallaxFactor: Float
+    val parallaxFactor: Float,
+    val oscillationX: Float,
+    val oscillationY: Float
 )
 
-private data class ShapeInitialState(
-    val type: WelcomeShapeType,
-    val rotation: Float
-)
-
-private enum class WelcomeShapeType {
-    Circle,
-    Square,
-    Diamond,
-    Star;
-
-    fun next(): WelcomeShapeType = when (this) {
-        Circle -> Square
-        Square -> Diamond
-        Diamond -> Star
-        Star -> Circle
-    }
-}
-
-private fun WelcomeShapeType.toShape(): Shape = when (this) {
-    WelcomeShapeType.Circle -> CircleShape
-    WelcomeShapeType.Square -> RoundedCornerShape(16.dp)
-    WelcomeShapeType.Diamond -> DiamondShape
-    WelcomeShapeType.Star -> StarShape
-}
-
-private val DiamondShape = androidx.compose.foundation.shape.GenericShape { size, _ ->
-    moveTo(size.width * 0.5f, 0f)
-    lineTo(size.width, size.height * 0.5f)
-    lineTo(size.width * 0.5f, size.height)
-    lineTo(0f, size.height * 0.5f)
-    close()
-}
-
-private val StarShape = androidx.compose.foundation.shape.GenericShape { size, _ ->
-    val outerRadius = min(size.width, size.height) * 0.5f
-    val innerRadius = outerRadius * 0.46f
-    val centerX = size.width * 0.5f
-    val centerY = size.height * 0.5f
-
-    for (point in 0 until 10) {
-        val radius = if (point % 2 == 0) outerRadius else innerRadius
-        val angle = Math.toRadians((-90.0 + point * 36.0))
-        val x = centerX + cos(angle).toFloat() * radius
-        val y = centerY + sin(angle).toFloat() * radius
-        if (point == 0) {
-            moveTo(x, y)
-        } else {
-            lineTo(x, y)
-        }
-    }
-    close()
-}
-
-private val EdgeDecorSpecs = listOf(
-    EdgeDecorSpec(Alignment.TopStart, size = 68.dp, offsetX = (-26).dp, offsetY = 30.dp, spinDurationMillis = 26000, spinDirection = 1f, colorSlot = 0, parallaxFactor = 1.0f),
-    EdgeDecorSpec(Alignment.TopStart, size = 44.dp, offsetX = 42.dp, offsetY = 8.dp, spinDurationMillis = 32000, spinDirection = -1f, colorSlot = 3, parallaxFactor = 0.85f),
-    EdgeDecorSpec(Alignment.TopEnd, size = 82.dp, offsetX = 26.dp, offsetY = 16.dp, spinDurationMillis = 29000, spinDirection = -1f, colorSlot = 1, parallaxFactor = 1.1f),
-    EdgeDecorSpec(Alignment.TopEnd, size = 52.dp, offsetX = (-42).dp, offsetY = 64.dp, spinDurationMillis = 34000, spinDirection = 1f, colorSlot = 2, parallaxFactor = 0.9f),
-    EdgeDecorSpec(Alignment.CenterStart, size = 56.dp, offsetX = (-24).dp, offsetY = (-22).dp, spinDurationMillis = 28000, spinDirection = 1f, colorSlot = 2, parallaxFactor = 0.8f),
-    EdgeDecorSpec(Alignment.CenterStart, size = 40.dp, offsetX = 18.dp, offsetY = 82.dp, spinDurationMillis = 36000, spinDirection = -1f, colorSlot = 0, parallaxFactor = 0.6f),
-    EdgeDecorSpec(Alignment.CenterEnd, size = 72.dp, offsetX = 24.dp, offsetY = (-16).dp, spinDurationMillis = 27000, spinDirection = -1f, colorSlot = 1, parallaxFactor = 1.0f),
-    EdgeDecorSpec(Alignment.CenterEnd, size = 48.dp, offsetX = (-18).dp, offsetY = 110.dp, spinDurationMillis = 35000, spinDirection = 1f, colorSlot = 3, parallaxFactor = 0.65f),
-    EdgeDecorSpec(Alignment.BottomStart, size = 80.dp, offsetX = (-22).dp, offsetY = (-46).dp, spinDurationMillis = 25000, spinDirection = 1f, colorSlot = 1, parallaxFactor = 1.15f),
-    EdgeDecorSpec(Alignment.BottomStart, size = 46.dp, offsetX = 54.dp, offsetY = (-14).dp, spinDurationMillis = 33000, spinDirection = -1f, colorSlot = 2, parallaxFactor = 0.75f),
-    EdgeDecorSpec(Alignment.BottomEnd, size = 64.dp, offsetX = 22.dp, offsetY = (-64).dp, spinDurationMillis = 30000, spinDirection = -1f, colorSlot = 0, parallaxFactor = 0.95f),
-    EdgeDecorSpec(Alignment.BottomEnd, size = 42.dp, offsetX = (-48).dp, offsetY = (-18).dp, spinDurationMillis = 37000, spinDirection = 1f, colorSlot = 3, parallaxFactor = 0.7f)
+private val WelcomeShapeSpecs = listOf(
+    WelcomeShapeSpec(Alignment.TopStart, 58.dp, (-20).dp, 20.dp, 12000, 1f, 0, 1.0f, 20f, 16f),
+    WelcomeShapeSpec(Alignment.TopEnd, 64.dp, 18.dp, 40.dp, 13800, -1f, 1, 0.9f, 18f, 14f),
+    WelcomeShapeSpec(Alignment.CenterStart, 54.dp, (-18).dp, (-26).dp, 13200, 1f, 2, 0.8f, 16f, 20f),
+    WelcomeShapeSpec(Alignment.CenterEnd, 70.dp, 16.dp, 12.dp, 14500, -1f, 3, 1.05f, 20f, 18f),
+    WelcomeShapeSpec(Alignment.Center, 48.dp, 0.dp, (-148).dp, 15800, 1f, 0, 0.55f, 12f, 10f),
+    WelcomeShapeSpec(Alignment.BottomStart, 68.dp, (-14).dp, (-38).dp, 14100, -1f, 1, 0.95f, 22f, 14f),
+    WelcomeShapeSpec(Alignment.BottomEnd, 62.dp, 24.dp, (-64).dp, 12600, 1f, 2, 1.1f, 18f, 20f),
+    WelcomeShapeSpec(Alignment.BottomCenter, 52.dp, 0.dp, (-20).dp, 13400, -1f, 3, 0.7f, 16f, 12f)
 )

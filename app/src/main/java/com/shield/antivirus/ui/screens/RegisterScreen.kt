@@ -3,15 +3,19 @@ package com.shield.antivirus.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -41,6 +45,7 @@ import com.shield.antivirus.ui.components.shieldTextFieldColors
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.viewmodel.AuthViewModel
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RegisterScreen(
     viewModel: AuthViewModel,
@@ -237,9 +242,12 @@ fun RegisterScreen(
                         shape = MaterialTheme.shapes.medium
                     ) {
                         if (uiState.isLoading) {
-                            CircularProgressIndicator(
+                            LoadingIndicator(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .padding(vertical = 2.dp),
                                 color = MaterialTheme.colorScheme.onTertiary,
-                                strokeWidth = 2.dp
+                                polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
                             )
                         } else {
                             Text(if (uiState.requiresCode) "Подтвердить" else "Получить код")

@@ -1,10 +1,12 @@
 package com.shield.antivirus.navigation
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -47,6 +49,13 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
     val prefs = UserPreferences(context)
     val scope = rememberCoroutineScope()
     var guestEntryPending by remember { mutableStateOf(false) }
+    var lastNavigationAt by remember { mutableLongStateOf(0L) }
+    fun throttledNavigate(action: () -> Unit) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNavigationAt < 420L) return
+        lastNavigationAt = now
+        action()
+    }
     val sessionState by produceState<SessionGateState?>(initialValue = null, context) {
         combine(
             prefs.isLoggedIn,
@@ -97,16 +106,26 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
         composable(Screen.Welcome.route) {
             WelcomeScreen(
                 guestAvailable = true,
-                onLoginClick = { navController.navigate(Screen.Login.route) },
-                onRegisterClick = { navController.navigate(Screen.Register.route) },
+                onLoginClick = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Login.route)
+                    }
+                },
+                onRegisterClick = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Register.route)
+                    }
+                },
                 onGuestClick = {
                     guestEntryPending = true
                     scope.launch {
                         prefs.enterGuestMode()
                         ProtectionServiceController.stop(context)
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.Welcome.route) { inclusive = true }
-                            launchSingleTop = true
+                        throttledNavigate {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Welcome.route) { inclusive = true }
+                                launchSingleTop = true
+                            }
                         }
                     }
                 }
@@ -123,7 +142,11 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                         launchSingleTop = true
                     }
                 },
-                onNavigateRegister = { navController.navigate(Screen.Register.route) }
+                onNavigateRegister = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Register.route)
+                    }
+                }
             )
         }
         composable(Screen.Register.route) {
@@ -137,7 +160,11 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                         launchSingleTop = true
                     }
                 },
-                onNavigateLogin = { navController.navigate(Screen.Login.route) }
+                onNavigateLogin = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Login.route)
+                    }
+                }
             )
         }
         composable(
@@ -178,16 +205,50 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 viewModel = vm,
                 sessionGateIsGuest = gate.isGuest || guestEntryPending,
                 onStartScan = { type, selectedPackage, apkUri ->
-                    navController.navigate(Screen.Scan.createRoute(type, selectedPackage, apkUri))
+                    throttledNavigate {
+                        if (gate.isGuest && !type.equals("QUICK", ignoreCase = true)) {
+                            navController.safeNavigate(Screen.Login.route)
+                        } else {
+                            navController.navigate(Screen.Scan.createRoute(type, selectedPackage, apkUri)) {
+                                launchSingleTop = true
+                            }
+                        }
+                    }
                 },
                 onOpenActiveScan = { type ->
-                    navController.navigate(Screen.Scan.createRoute(type))
+                    throttledNavigate {
+                        navController.navigate(Screen.Scan.createRoute(type)) {
+                            launchSingleTop = true
+                        }
+                    }
                 },
-                onOpenHistory = { navController.navigate(Screen.History.route) },
-                onOpenLatestReport = { id -> navController.navigate(Screen.Results.createRoute(id)) },
-                onOpenSettings = { navController.navigate(Screen.Settings.route) },
-                onOpenLogin = { navController.navigate(Screen.Login.route) },
-                onOpenRegister = { navController.navigate(Screen.Register.route) }
+                onOpenHistory = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.History.route)
+                    }
+                },
+                onOpenLatestReport = { id ->
+                    throttledNavigate {
+                        navController.navigate(Screen.Results.createRoute(id)) {
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onOpenSettings = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Settings.route)
+                    }
+                },
+                onOpenLogin = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Login.route)
+                    }
+                },
+                onOpenRegister = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Register.route)
+                    }
+                }
             )
         }
         composable(
@@ -236,6 +297,11 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             ScanResultsScreen(
                 viewModel = vm,
                 scanId = scanId,
+                onOpenLogin = {
+                    throttledNavigate {
+                        navController.safeNavigate(Screen.Login.route)
+                    }
+                },
                 onBack = {
                     scope.launch {
                         val shouldExitGuestMode = vm.shouldExitGuestModeAfterResult()
@@ -264,7 +330,13 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             HistoryScreen(
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
-                onViewResult = { id -> navController.navigate(Screen.Results.createRoute(id)) }
+                onViewResult = { id ->
+                    throttledNavigate {
+                        navController.navigate(Screen.Results.createRoute(id)) {
+                            launchSingleTop = true
+                        }
+                    }
+                }
             )
         }
         composable(Screen.Settings.route) {
@@ -286,6 +358,14 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
                 }
             )
         }
+    }
+}
+
+private fun NavHostController.safeNavigate(route: String) {
+    if (currentDestination?.route == route) return
+    navigate(route) {
+        launchSingleTop = true
+        restoreState = true
     }
 }
 

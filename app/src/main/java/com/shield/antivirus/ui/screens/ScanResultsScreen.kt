@@ -17,7 +17,9 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -43,6 +45,7 @@ import com.shield.antivirus.ui.components.ShieldMarkdownCards
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldSectionHeader
+import com.shield.antivirus.ui.components.ShieldLoadingState
 import com.shield.antivirus.ui.components.ShieldStatusChip
 import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.ui.theme.safeTone
@@ -53,11 +56,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ScanResultsScreen(
     viewModel: ScanViewModel,
     scanId: Long,
+    onOpenLogin: () -> Unit,
     onBack: () -> Unit
 ) {
     val result by viewModel.currentResult.collectAsState()
@@ -91,7 +95,11 @@ fun ScanResultsScreen(
                                     .padding(vertical = 24.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                CircularProgressIndicator(strokeWidth = 2.dp)
+                                LoadingIndicator(
+                                    modifier = Modifier.padding(6.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
+                                )
                             }
                         }
                         !explainState.error.isNullOrBlank() -> {
@@ -132,9 +140,7 @@ fun ScanResultsScreen(
         ) { padding ->
             val current = result
             if (current == null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                ShieldLoadingState(modifier = Modifier.fillMaxSize())
                 return@ShieldScreenScaffold
             }
 
@@ -195,6 +201,8 @@ fun ScanResultsScreen(
                     ) { _, threat ->
                         ThreatCard(
                             threat = threat,
+                            isGuest = isGuest,
+                            onLogin = onOpenLogin,
                             onExplain = {
                                 showExplainSheet = true
                                 viewModel.explainThreat(threat)
@@ -210,6 +218,8 @@ fun ScanResultsScreen(
 @Composable
 private fun ThreatCard(
     threat: ThreatInfo,
+    isGuest: Boolean,
+    onLogin: () -> Unit,
     onExplain: () -> Unit
 ) {
     val accent = when (threat.severity) {
@@ -234,8 +244,8 @@ private fun ThreatCard(
                 overflow = TextOverflow.Ellipsis
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onExplain) {
-                    Text("Объяснить")
+                TextButton(onClick = if (isGuest) onLogin else onExplain) {
+                    Text(if (isGuest) "Войти" else "Объяснить")
                 }
                 ShieldStatusChip(
                     label = null,

@@ -325,7 +325,7 @@ class ScanRepository(private val context: Context) {
                 }
 
                 val localThreat = runCatching {
-                    withContext(Dispatchers.IO) { localThreatDetector.scan(app) }
+                    withContext(Dispatchers.IO) { localThreatDetector.scan(app, quickMode = normalizedType == "QUICK") }
                 }.onFailure { error ->
                     AppLogger.logError(
                         tag = "scan_repository",

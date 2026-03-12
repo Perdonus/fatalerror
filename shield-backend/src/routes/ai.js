@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const { explainScan, isAiConfigured } = require('../services/aiExplainService');
 
-router.post('/explain-scan', async (req, res) => {
+router.post('/explain-scan', auth, async (req, res) => {
     if (!isAiConfigured()) {
         return res.status(503).json({ error: 'AI service is not configured' });
     }

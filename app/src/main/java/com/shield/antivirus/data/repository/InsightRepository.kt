@@ -20,9 +20,12 @@ class InsightRepository(context: Context) {
     ): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
             val token = sessionManager.getValidAccessToken()
+            if (isGuest || token.isNullOrBlank()) {
+                throw IllegalStateException("Функция доступна только после входа в аккаунт")
+            }
             val response = ApiClient.executeShieldCall { api ->
                 api.explainScan(
-                    token = token?.let { "Bearer $it" },
+                    token = "Bearer $token",
                     request = ExplainScanRequest(
                         summary = ExplainSummaryPayload(
                             verdict = when {
@@ -83,9 +86,12 @@ class InsightRepository(context: Context) {
         runCatching {
             val latest = recentResults.firstOrNull()
             val token = sessionManager.getValidAccessToken()
+            if (isGuest || token.isNullOrBlank()) {
+                throw IllegalStateException("Функция доступна только после входа в аккаунт")
+            }
             val response = ApiClient.executeShieldCall { api ->
                 api.explainScan(
-                    token = token?.let { "Bearer $it" },
+                    token = "Bearer $token",
                     request = ExplainScanRequest(
                         summary = ExplainSummaryPayload(
                             verdict = verdict,

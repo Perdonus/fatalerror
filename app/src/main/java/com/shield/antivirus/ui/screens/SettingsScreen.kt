@@ -1,5 +1,7 @@
 package com.shield.antivirus.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +49,10 @@ import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.theme.criticalTone
+import com.shield.antivirus.util.AppLogger
 import com.shield.antivirus.viewmodel.AuthViewModel
+import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun SettingsScreen(
@@ -70,6 +75,30 @@ fun SettingsScreen(
     var devKeyError by remember { mutableStateOf<String?>(null) }
     var versionTapCount by rememberSaveable { mutableIntStateOf(0) }
     var isDevMenuUnlocked by rememberSaveable { mutableStateOf(false) }
+    var exportInProgress by rememberSaveable { mutableStateOf(false) }
+    var pendingLogZip by remember { mutableStateOf<File?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val exportLogsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val zip = pendingLogZip
+        if (uri == null || zip == null || !zip.exists()) {
+            pendingLogZip = null
+            exportInProgress = false
+            return@rememberLauncherForActivityResult
+        }
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                zip.inputStream().use { input -> input.copyTo(output) }
+            } ?: error("Не удалось открыть файл для записи")
+        }.onSuccess {
+            Toast.makeText(context, "Логи сохранены", Toast.LENGTH_SHORT).show()
+        }.onFailure {
+            Toast.makeText(context, "Ошибка экспорта логов: ${it.message}", Toast.LENGTH_LONG).show()
+        }
+        pendingLogZip = null
+        exportInProgress = false
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -205,6 +234,39 @@ fun SettingsScreen(
                             }
                         }
                     )
+                    Button(
+                        onClick = {
+                            if (exportInProgress) return@Button
+                            exportInProgress = true
+                            scope.launch {
+                                try {
+                                    val file = AppLogger.exportLogsSnapshot()
+                                    if (file == null) {
+                                        exportInProgress = false
+                                        Toast.makeText(
+                                            context,
+                                            "Логи пока не найдены",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        pendingLogZip = file
+                                        exportLogsLauncher.launch(file.name)
+                                    }
+                                } catch (error: Exception) {
+                                    exportInProgress = false
+                                    Toast.makeText(
+                                        context,
+                                        "Ошибка подготовки логов: ${error.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !exportInProgress
+                    ) {
+                        Text(if (exportInProgress) "Подготовка логов..." else "Экспорт логов")
+                    }
                 }
 
                 ShieldPanel(accent = MaterialTheme.colorScheme.primary) {

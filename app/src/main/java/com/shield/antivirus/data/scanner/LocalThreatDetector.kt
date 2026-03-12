@@ -26,7 +26,17 @@ class LocalThreatDetector(context: Context) {
         }
     }
 
-    fun scan(app: AppInfo): ThreatInfo? {
+    private val trustedOfficialPrefixes = listOf(
+        "com.google.android.",
+        "com.android.",
+        "com.samsung.",
+        "com.miui.",
+        "com.xiaomi.",
+        "com.huawei.",
+        "com.oneplus."
+    )
+
+    fun scan(app: AppInfo, quickMode: Boolean = false): ThreatInfo? {
         if (app.isSystemApp) return null
 
         val normalizedPackage = app.packageName.lowercase()
@@ -84,10 +94,22 @@ class LocalThreatDetector(context: Context) {
         val hasBehaviorRedFlags = app.isDebuggable || app.usesCleartextTraffic
         val untrustedInstaller = installer.isBlank() || !hasTrustedInstaller
         val hasStrongSignal = matchedCombos.isNotEmpty() || hasAccessibilityOverlay || hasSmsTriad || hasInstallerQueryCombo
+        val hasQuickStrongSignal = hasAccessibilityOverlay || hasInstallerQueryCombo
+        val looksOfficialPackage = trustedOfficialPrefixes.any { normalizedPackage.startsWith(it) }
+        val isTrustedOfficialApp = hasTrustedInstaller && looksOfficialPackage
 
         // Keyword-only hits from official apps often produce false positives.
         if (!hasStrongSignal && keywordHits.isNotEmpty() && hasTrustedInstaller && !hasBehaviorRedFlags) {
             return null
+        }
+
+        if (quickMode) {
+            if (isTrustedOfficialApp && !hasBehaviorRedFlags && keywordHits.isEmpty()) {
+                return null
+            }
+            if (!hasQuickStrongSignal && !hasBehaviorRedFlags) {
+                return null
+            }
         }
 
         val score = buildRiskScore(
@@ -96,13 +118,14 @@ class LocalThreatDetector(context: Context) {
             comboCount = matchedCombos.size,
             hasStrongSignal = hasStrongSignal,
             untrustedInstaller = untrustedInstaller,
-            hasBehaviorRedFlags = hasBehaviorRedFlags
+            hasBehaviorRedFlags = hasBehaviorRedFlags,
+            quickMode = quickMode
         )
-        if (score < 7) return null
+        if (score < if (quickMode) 12 else 7) return null
 
         val severity = when {
-            score >= 14 -> ThreatSeverity.HIGH
-            score >= 10 -> ThreatSeverity.MEDIUM
+            score >= if (quickMode) 18 else 14 -> ThreatSeverity.HIGH
+            score >= if (quickMode) 14 else 10 -> ThreatSeverity.MEDIUM
             else -> ThreatSeverity.LOW
         }
 
@@ -143,15 +166,25 @@ class LocalThreatDetector(context: Context) {
         comboCount: Int,
         hasStrongSignal: Boolean,
         untrustedInstaller: Boolean,
-        hasBehaviorRedFlags: Boolean
+        hasBehaviorRedFlags: Boolean,
+        quickMode: Boolean
     ): Int {
         var score = 0
-        score += (keywordHits.coerceAtMost(2) * 1)
-        score += (riskyPermissionCount.coerceAtMost(4) * 1)
-        score += (comboCount * 5)
-        if (hasStrongSignal) score += 3
-        if (hasBehaviorRedFlags) score += 2
-        if (untrustedInstaller && (hasStrongSignal || hasBehaviorRedFlags || keywordHits > 0)) score += 1
+        if (quickMode) {
+            score += keywordHits.coerceAtMost(1)
+            score += riskyPermissionCount.coerceAtMost(2)
+            score += comboCount * 4
+            if (hasStrongSignal) score += 2
+            if (hasBehaviorRedFlags) score += 3
+            if (untrustedInstaller && (hasStrongSignal || hasBehaviorRedFlags)) score += 1
+        } else {
+            score += (keywordHits.coerceAtMost(2) * 1)
+            score += (riskyPermissionCount.coerceAtMost(4) * 1)
+            score += (comboCount * 5)
+            if (hasStrongSignal) score += 3
+            if (hasBehaviorRedFlags) score += 2
+            if (untrustedInstaller && (hasStrongSignal || hasBehaviorRedFlags || keywordHits > 0)) score += 1
+        }
         return score
     }
 }

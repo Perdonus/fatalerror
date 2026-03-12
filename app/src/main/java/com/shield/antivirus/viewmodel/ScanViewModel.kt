@@ -15,8 +15,8 @@ import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.data.repository.ScanRepository
 import com.shield.antivirus.util.AppLogger
 import com.shield.antivirus.worker.DeepScanWorker
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 data class ScanExplainUiState(
@@ -237,8 +238,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
     private fun observeDeepScan(workId: UUID) {
         workObserverJob?.cancel()
         workObserverJob = viewModelScope.launch {
-            while (true) {
-                val info = runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull()
+            workManager.getWorkInfoByIdFlow(workId).collect { info ->
                 if (info == null) {
                     AppLogger.log(
                         tag = "scan_view_model",
@@ -250,7 +250,8 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                         currentApp = "Глубокая проверка была прервана. Запустите её заново."
                     )
                     _actionLoading.value = false
-                    break
+                    workObserverJob?.cancel()
+                    return@collect
                 }
                 val data = if (info.state.isFinished) info.outputData else info.progress
                 val totalCount = data.getInt(DeepScanWorker.KEY_TOTAL_COUNT, _progress.value?.totalCount ?: 1)
@@ -281,9 +282,8 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                         message = "Deep scan finished",
                         metadata = mapOf("saved_id" to savedId.toString())
                     )
-                    break
+                    workObserverJob?.cancel()
                 }
-                delay(400)
             }
         }
     }
@@ -379,7 +379,9 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         prefs.isGuest.first() && !prefs.isLoggedIn.first() && prefs.guestScanUsed.first()
 
     private suspend fun isWorkReusable(workId: UUID): Boolean {
-        val info = runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull() ?: return false
+        val info = withContext(Dispatchers.IO) {
+            runCatching { workManager.getWorkInfoById(workId).get() }.getOrNull()
+        } ?: return false
         return info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED
     }
 

@@ -23,11 +23,15 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 object AppLogger {
     private const val LOG_ROOT_DIR = "logs"
@@ -158,6 +162,24 @@ object AppLogger {
         return allOk
     }
 
+    suspend fun exportLogsSnapshot(): File? {
+        val context = appContext ?: return null
+        val root = resolveLogRoot(context)
+        if (!root.exists()) return null
+
+        val exportDir = File(context.cacheDir, "log_exports").apply { mkdirs() }
+        val fileName = "shield-logs-${System.currentTimeMillis()}.zip"
+        val output = File(exportDir, fileName)
+
+        lock.withLock {
+            if (output.exists()) {
+                output.delete()
+            }
+            zipDirectory(root, output)
+        }
+        return output.takeIf { it.exists() && it.length() > 0L }
+    }
+
     private suspend fun appendEvent(event: ClientLogEvent) {
         val context = appContext ?: return
         val targetFile = resolveSessionFile(context, EVENTS_FILE)
@@ -264,6 +286,19 @@ object AppLogger {
             ExistingWorkPolicy.KEEP,
             request
         )
+    }
+
+    private fun zipDirectory(sourceDir: File, targetZip: File) {
+        ZipOutputStream(FileOutputStream(targetZip)).use { zip ->
+            sourceDir.walkTopDown()
+                .filter { it.isFile }
+                .forEach { file ->
+                    val relative = file.relativeTo(sourceDir).invariantSeparatorsPath
+                    zip.putNextEntry(ZipEntry(relative))
+                    FileInputStream(file).use { input -> input.copyTo(zip) }
+                    zip.closeEntry()
+                }
+        }
     }
 
     private fun sanitize(value: String): String {

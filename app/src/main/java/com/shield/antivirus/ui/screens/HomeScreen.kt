@@ -336,8 +336,8 @@ private fun HomeContent(
                         modeMessage = null
                         actionOverlay = true
                         when {
-                            scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
                             state.isGuest -> onOpenLogin()
+                            scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
                             fullLimitReached -> modeMessage = "Дневной лимит: глубокая проверка доступна 1 раз в сутки"
                             else -> onStartScan("FULL", null, null)
                         }
@@ -375,8 +375,8 @@ private fun HomeContent(
                             modeMessage = null
                             actionOverlay = true
                             when {
-                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "SELECTIVE" })
                                 state.isGuest -> onOpenLogin()
+                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "SELECTIVE" })
                                 selectiveLimitReached -> {
                                     modeMessage = "Дневной лимит: выборочная проверка доступна 3 раза в сутки"
                                 }
@@ -427,8 +427,8 @@ private fun HomeContent(
                                 modeMessage = null
                                 actionOverlay = true
                                 when {
-                                    scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "APK" })
                                     state.isGuest -> onOpenLogin()
+                                    scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "APK" })
                                     apkLimitReached -> {
                                         modeMessage = "Дневной лимит: проверка APK доступна 3 раза в сутки"
                                     }

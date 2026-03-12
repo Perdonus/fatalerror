@@ -79,6 +79,12 @@ interface ShieldApi {
         @Path("id") id: String
     ): Response<DeepScanPollResponse>
 
+    @POST("api/scans/deep/full-report")
+    suspend fun getDeepScanFullReport(
+        @Header("Authorization") token: String,
+        @Body request: DeepScanFullReportRequest
+    ): Response<DeepScanFullReportResponse>
+
     @Headers("Content-Type: application/vnd.android.package-archive")
     @POST("api/scans/deep/{id}/apk")
     suspend fun uploadDeepScanApk(

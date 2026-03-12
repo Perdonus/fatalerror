@@ -33,8 +33,8 @@ jobs:
       - name: Check backend sources
         run: npm run check
 
-  android-debug:
-    name: Android Debug APK
+  android-release:
+    name: Android Release APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -60,11 +60,11 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Assemble debug APK
+      - name: Assemble release APK
         shell: bash
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --stacktrace --no-daemon --console=plain 2>&1 | tee gradle-build.log
+          ./gradlew assembleRelease --stacktrace --no-daemon --console=plain 2>&1 | tee gradle-build.log
 
       - name: Surface Gradle failure
         if: failure()
@@ -81,27 +81,27 @@ jobs:
           name: android-gradle-log
           path: gradle-build.log
 
-      - name: Upload debug APK
+      - name: Upload release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: shield-antivirus-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: shield-antivirus-release-apk
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: ignore
 
-      - name: Publish debug APK branch
+      - name: Publish release APK branch
         if: success()
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          APK_PATH="$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)"
+          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
           test -n "${APK_PATH}"
 
           rm -rf /tmp/apk-publish
           mkdir -p /tmp/apk-publish
-          cp "${APK_PATH}" /tmp/apk-publish/shield-antivirus-debug.apk
+          cp "${APK_PATH}" /tmp/apk-publish/shield-antivirus-release.apk
           cat > /tmp/apk-publish/BUILD_INFO.txt <<EOF
           Repository: ${GITHUB_REPOSITORY}
           Commit: ${GITHUB_SHA}
@@ -112,7 +112,7 @@ jobs:
           cd /tmp/apk-publish
           git init
           git checkout -b apk-builds
-          git add shield-antivirus-debug.apk BUILD_INFO.txt
+          git add shield-antivirus-release.apk BUILD_INFO.txt
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish APK for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin apk-builds

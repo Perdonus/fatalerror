@@ -211,6 +211,30 @@ data class DeepScanPollResponse(
     val error: String? = null
 )
 
+data class DeepScanFullReportRequest(
+    val ids: List<String>
+)
+
+data class DeepScanFullReportResponse(
+    val success: Boolean,
+    @SerializedName("generated_at") val generatedAt: Long? = null,
+    val reports: List<DeepScanFullReportItem>? = emptyList(),
+    val error: String? = null
+)
+
+data class DeepScanFullReportItem(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("app_name") val appName: String? = null,
+    @SerializedName("package_name") val packageName: String? = null,
+    @SerializedName("scan_mode") val scanMode: String? = null,
+    val status: String? = null,
+    @SerializedName("generated_at") val generatedAt: Long? = null,
+    @SerializedName("final_verdict") val finalVerdict: String? = null,
+    @SerializedName("final_risk_score") val finalRiskScore: Int? = null,
+    @SerializedName("file_name") val fileName: String? = null,
+    val markdown: String? = null
+)
+
 // ---- Purchases ----
 data class SavePurchaseRequest(
     @SerializedName("product_id")      val productId: String,

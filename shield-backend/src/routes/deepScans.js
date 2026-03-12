@@ -5,7 +5,8 @@ const {
     createDeepScanJob,
     getDeepScanJob,
     attachDeepScanApk,
-    getUserDeepScanLimits
+    getUserDeepScanLimits,
+    getDeepScanFullReports
 } = require('../services/deepScanService');
 
 router.post('/start', auth, async (req, res) => {
@@ -70,6 +71,43 @@ router.get('/limits', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('Deep scan limits error:', error);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/full-report', auth, async (req, res) => {
+    try {
+        const ids = req.body?.ids;
+        const hasValidId = Array.isArray(ids) && ids.some((id) => String(id || '').trim().length > 0);
+        if (!hasValidId) {
+            return res.status(400).json({
+                error: 'ids must be a non-empty array'
+            });
+        }
+        const normalizedIds = ids
+            .map((value) => String(value || '').trim())
+            .filter(Boolean);
+        const allValid = normalizedIds.length > 0 && normalizedIds.every((value) => /^[a-zA-Z0-9-]{20,64}$/.test(value));
+        if (!allValid) {
+            return res.status(400).json({
+                error: 'ids contains invalid scan identifiers'
+            });
+        }
+
+        const reports = await getDeepScanFullReports(normalizedIds, req.userId);
+        if (!Array.isArray(reports) || reports.length === 0) {
+            return res.status(404).json({
+                error: 'No deep scan reports found for current user'
+            });
+        }
+
+        return res.json({
+            success: true,
+            generated_at: Date.now(),
+            reports
+        });
+    } catch (error) {
+        console.error('Deep scan full-report error:', error);
         return res.status(500).json({ error: 'Server error' });
     }
 });

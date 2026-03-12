@@ -1,5 +1,6 @@
 package com.shield.antivirus.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
@@ -21,10 +23,14 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,12 +40,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldBlockingLoadingOverlay
 import com.shield.antivirus.ui.components.ShieldEmptyState
 import com.shield.antivirus.ui.components.ShieldMarkdownCards
 import com.shield.antivirus.ui.components.ShieldPanel
@@ -64,13 +73,25 @@ fun ScanResultsScreen(
     onOpenLogin: () -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val result by viewModel.currentResult.collectAsState()
     val isGuest by viewModel.isGuest.collectAsState()
+    val isDeveloperMode by viewModel.isDeveloperMode.collectAsState()
     val explainState by viewModel.explainState.collectAsState()
+    val reportDownloadState by viewModel.reportDownloadState.collectAsState()
     var showExplainSheet by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(scanId) {
         viewModel.loadResult(scanId)
+    }
+    LaunchedEffect(reportDownloadState.nonce) {
+        val state = reportDownloadState
+        if (state.nonce == 0L) return@LaunchedEffect
+        val text = state.error ?: state.message
+        if (!text.isNullOrBlank()) {
+            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+        }
+        viewModel.clearReportDownloadState()
     }
 
     ShieldBackdrop {
@@ -150,20 +171,28 @@ fun ScanResultsScreen(
                 MaterialTheme.colorScheme.safeTone
             }
 
-            LazyColumn(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(padding)
             ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
                 item {
                     ShieldPanel(accent = accent) {
                         ShieldSectionHeader(
                             eyebrow = "Итог",
                             title = if (current.threatsFound == 0) "Угроз не найдено" else "Найдены угрозы"
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShieldStatusChip(
                                 label = if (current.threatsFound == 0) "Чисто" else "Угроз: ${current.threatsFound}",
                                 icon = if (current.threatsFound == 0) Icons.Filled.CheckCircle else Icons.Filled.Warning,
@@ -174,6 +203,21 @@ fun ScanResultsScreen(
                                 icon = Icons.Filled.Security,
                                 color = MaterialTheme.colorScheme.signalTone
                             )
+                            }
+                            if (isDeveloperMode) {
+                                IconButton(
+                                    onClick = { viewModel.downloadCurrentFullReport() },
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.signalTone.copy(alpha = 0.16f))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Download,
+                                        contentDescription = "Скачать полный отчёт",
+                                        tint = MaterialTheme.colorScheme.signalTone
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -210,6 +254,11 @@ fun ScanResultsScreen(
                         )
                     }
                 }
+            }
+                ShieldBlockingLoadingOverlay(
+                    visible = reportDownloadState.isLoading,
+                    dimmed = true
+                )
             }
         }
     }

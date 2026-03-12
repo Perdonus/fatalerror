@@ -66,43 +66,49 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                 HomeInstalledApp(appName = it.appName, packageName = it.packageName)
             }
 
-            val primarySnapshotFlow = combine(
-                combine(
-                    prefs.isLoggedIn,
-                    prefs.userName,
-                    prefs.lastScanTime,
-                    prefs.realtimeProtection,
-                    prefs.isGuest
-                ) { isLoggedIn, name, lastScan, protection, isGuest ->
+            val primarySnapshotFlow = prefs.isLoggedIn
+                .combine(prefs.userName) { isLoggedIn, name ->
+                    Pair(isLoggedIn, name)
+                }
+                .combine(prefs.lastScanTime) { pair, lastScan ->
+                    Triple(pair.first, pair.second, lastScan)
+                }
+                .combine(prefs.realtimeProtection) { triple, protection ->
                     PrimarySnapshot(
-                        isLoggedIn = isLoggedIn,
-                        name = name,
-                        lastScan = lastScan,
+                        isLoggedIn = triple.first,
+                        name = triple.second,
+                        lastScan = triple.third,
                         protection = protection,
-                        isGuest = isGuest,
+                        isGuest = false,
                         isDeveloperMode = false
                     )
-                },
-                prefs.isDeveloperMode
-            ) { snapshot, isDeveloperMode ->
-                snapshot.copy(isDeveloperMode = isDeveloperMode)
-            }
+                }
+                .combine(prefs.isGuest) { snapshot, isGuest ->
+                    snapshot.copy(isGuest = isGuest)
+                }
+                .combine(prefs.isDeveloperMode) { snapshot, isDeveloperMode ->
+                    snapshot.copy(isDeveloperMode = isDeveloperMode)
+                }
 
-            val activeScanSnapshotFlow = combine(
-                prefs.guestScanUsed,
-                prefs.activeScanType,
-                prefs.activeScanCurrentApp,
-                prefs.activeScanProgress,
-                prefs.activeScanStartedAt
-            ) { guestScanUsed, activeScanType, activeScanCurrentApp, activeScanProgress, activeScanStartedAt ->
-                ActiveScanSnapshot(
-                    guestScanUsed = guestScanUsed,
-                    activeScanType = activeScanType,
-                    activeScanCurrentApp = activeScanCurrentApp,
-                    activeScanProgress = activeScanProgress,
-                    activeScanStartedAt = activeScanStartedAt
-                )
-            }
+            val activeScanSnapshotFlow = prefs.guestScanUsed
+                .combine(prefs.activeScanType) { guestScanUsed, activeScanType ->
+                    Pair(guestScanUsed, activeScanType)
+                }
+                .combine(prefs.activeScanCurrentApp) { pair, activeScanCurrentApp ->
+                    Triple(pair.first, pair.second, activeScanCurrentApp)
+                }
+                .combine(prefs.activeScanProgress) { triple, activeScanProgress ->
+                    ActiveScanSnapshot(
+                        guestScanUsed = triple.first,
+                        activeScanType = triple.second,
+                        activeScanCurrentApp = triple.third,
+                        activeScanProgress = activeScanProgress,
+                        activeScanStartedAt = 0L
+                    )
+                }
+                .combine(prefs.activeScanStartedAt) { snapshot, activeScanStartedAt ->
+                    snapshot.copy(activeScanStartedAt = activeScanStartedAt)
+                }
 
             combine(
                 primarySnapshotFlow,

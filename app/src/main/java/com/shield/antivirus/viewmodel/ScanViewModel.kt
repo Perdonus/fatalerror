@@ -34,6 +34,13 @@ data class ScanExplainUiState(
     val error: String? = null
 )
 
+data class ScanReportDownloadState(
+    val isLoading: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+    val nonce: Long = 0L
+)
+
 class ScanViewModel(private val context: Context) : ViewModel() {
     private val repo = ScanRepository(context)
     private val insightRepo = InsightRepository(context)
@@ -50,6 +57,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     val isGuest = prefs.isGuest.stateIn(viewModelScope, SharingStarted.Lazily, false)
     val guestScanUsed = prefs.guestScanUsed.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    val isDeveloperMode = prefs.isDeveloperMode.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     val allResults: StateFlow<List<ScanResult>> = repo.getAllResults()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -59,6 +67,8 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     private val _explainState = MutableStateFlow(ScanExplainUiState())
     val explainState: StateFlow<ScanExplainUiState> = _explainState.asStateFlow()
+    private val _reportDownloadState = MutableStateFlow(ScanReportDownloadState())
+    val reportDownloadState: StateFlow<ScanReportDownloadState> = _reportDownloadState.asStateFlow()
 
     private var scanJob: Job? = null
     private var workObserverJob: Job? = null
@@ -365,6 +375,45 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     fun clearExplanation() {
         _explainState.value = ScanExplainUiState()
+    }
+
+    fun downloadCurrentFullReport() {
+        viewModelScope.launch {
+            val current = _currentResult.value
+            if (current == null) {
+                _reportDownloadState.value = ScanReportDownloadState(
+                    error = "Сначала откройте результат проверки",
+                    nonce = System.currentTimeMillis()
+                )
+                return@launch
+            }
+            val isDev = prefs.isDeveloperMode.first()
+            if (!isDev) {
+                _reportDownloadState.value = ScanReportDownloadState(
+                    error = "Доступно только в режиме разработчика",
+                    nonce = System.currentTimeMillis()
+                )
+                return@launch
+            }
+            _reportDownloadState.value = ScanReportDownloadState(isLoading = true)
+            repo.downloadFullServerReport(current)
+                .onSuccess { path ->
+                    _reportDownloadState.value = ScanReportDownloadState(
+                        message = "Отчёт сохранён: $path",
+                        nonce = System.currentTimeMillis()
+                    )
+                }
+                .onFailure { error ->
+                    _reportDownloadState.value = ScanReportDownloadState(
+                        error = error.message ?: "Не удалось скачать полный отчёт",
+                        nonce = System.currentTimeMillis()
+                    )
+                }
+        }
+    }
+
+    fun clearReportDownloadState() {
+        _reportDownloadState.value = ScanReportDownloadState()
     }
 
     fun clearHistory() {

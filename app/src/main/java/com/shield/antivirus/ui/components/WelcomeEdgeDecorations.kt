@@ -29,7 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -175,7 +174,7 @@ fun WelcomeEdgeDecorations(
                         LoadingIndicator(
                             modifier = Modifier.fillMaxSize(),
                             color = color,
-                            polygons = LoadingIndicatorDefaults.ContainedIndicatorPolygons
+                            polygons = LoadingIndicatorDefaults.DeterminateIndicatorPolygons
                         )
                     }
                     WelcomeFigureStyle.ContainerIndeterminate -> {
@@ -191,7 +190,7 @@ fun WelcomeEdgeDecorations(
                             modifier = Modifier.fillMaxSize(),
                             containerColor = color.copy(alpha = 0.22f),
                             indicatorColor = color,
-                            polygons = LoadingIndicatorDefaults.ContainedIndicatorPolygons
+                            polygons = LoadingIndicatorDefaults.DeterminateIndicatorPolygons
                         )
                     }
                 }

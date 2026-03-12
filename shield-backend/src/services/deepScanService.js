@@ -105,6 +105,217 @@ function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
+function normalizeFindingsList(findings) {
+    if (!Array.isArray(findings)) {
+        return [];
+    }
+    return findings
+        .filter((item) => item && typeof item === 'object')
+        .map((item) => ({
+            type: item.type || null,
+            severity: item.severity || 'low',
+            title: item.title || 'Signal',
+            detail: item.detail || '',
+            source: item.source || 'Shield Rules',
+            score: Number(item.score || 0),
+            evidence: item.evidence && typeof item.evidence === 'object' ? item.evidence : {}
+        }));
+}
+
+function formatTimestamp(value) {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 'n/a';
+    }
+    return new Date(parsed).toISOString();
+}
+
+function formatVerdict(value) {
+    const verdict = String(value || '').toLowerCase();
+    switch (verdict) {
+        case 'malicious': return 'malicious';
+        case 'suspicious': return 'suspicious';
+        case 'low_risk': return 'low_risk';
+        case 'clean': return 'clean';
+        default: return 'unknown';
+    }
+}
+
+function groupFindingsBySource(findings) {
+    const sourceMap = new Map();
+    normalizeFindingsList(findings).forEach((finding) => {
+        const source = String(finding.source || 'Shield Rules');
+        const bucket = sourceMap.get(source) || [];
+        bucket.push(finding);
+        sourceMap.set(source, bucket);
+    });
+    return Array.from(sourceMap.entries()).map(([source, items]) => ({
+        source,
+        count: items.length,
+        maxSeverity: items.reduce((acc, item) => {
+            return severityRank(item.severity) > severityRank(acc) ? item.severity : acc;
+        }, 'low'),
+        findings: items
+    }));
+}
+
+function serializeEvidence(evidence) {
+    if (!evidence || typeof evidence !== 'object' || Object.keys(evidence).length === 0) {
+        return null;
+    }
+    try {
+        return JSON.stringify(evidence);
+    } catch (_) {
+        return null;
+    }
+}
+
+function renderFindingsSection(title, findings) {
+    const normalized = normalizeFindingsList(findings);
+    const lines = [`## ${title}`];
+    if (normalized.length === 0) {
+        lines.push('- Сигналы не обнаружены.');
+        lines.push('');
+        return lines;
+    }
+    normalized.forEach((finding, index) => {
+        lines.push(`${index + 1}. [${String(finding.severity || 'low').toUpperCase()}] ${finding.title}`);
+        lines.push(`   - Тип: ${finding.type || 'n/a'}`);
+        lines.push(`   - Источник: ${finding.source || 'Shield Rules'}`);
+        lines.push(`   - Детали: ${finding.detail || 'n/a'}`);
+        if (Number(finding.score || 0) > 0) {
+            lines.push(`   - Балл: ${Number(finding.score)}`);
+        }
+        const evidence = serializeEvidence(finding.evidence);
+        if (evidence) {
+            lines.push(`   - Evidence: ${evidence}`);
+        }
+    });
+    lines.push('');
+    return lines;
+}
+
+function buildDeepScanFullReportPayload(row) {
+    const request = parseJson(row.request_json, {});
+    const summary = parseJson(row.summary_json, {});
+    const finalFindings = normalizeFindingsList(parseJson(row.findings_json, []));
+    const metadata = summary?.metadata && typeof summary.metadata === 'object' ? summary.metadata : {};
+    const stages = metadata?.stages && typeof metadata.stages === 'object' ? metadata.stages : {};
+    const heuristicsStage = stages.heuristics || {};
+    const staticStage = stages.static_analysis || {};
+    const mergedStage = stages.merged_before_triage || {};
+    const deterministicStage = stages.deterministic_triage || {};
+    const aiStage = stages.ai_triage || {};
+    const finalStage = stages.final || {};
+    const triage = summary?.triage || metadata?.triage || {};
+
+    const groupedFinal = groupFindingsBySource(finalFindings);
+    const lines = [];
+    lines.push('# Shield Deep Scan Full Report');
+    lines.push('');
+    lines.push(`- Generated at: ${new Date().toISOString()}`);
+    lines.push(`- Scan ID: ${row.id}`);
+    lines.push(`- Status: ${row.status}`);
+    lines.push(`- App: ${row.app_name || request.app_name || request.appName || 'n/a'}`);
+    lines.push(`- Package: ${row.package_name || request.package_name || request.packageName || 'n/a'}`);
+    lines.push(`- Mode: ${normalizeScanMode(row.scan_mode || request.scan_mode || request.scanMode)}`);
+    lines.push(`- SHA-256: ${row.sha256 || request.sha256 || request.uploaded_apk_sha256 || 'n/a'}`);
+    lines.push(`- Started: ${formatTimestamp(row.started_at)}`);
+    lines.push(`- Completed: ${formatTimestamp(row.completed_at)}`);
+    lines.push(`- Final verdict: ${formatVerdict(row.verdict || summary?.verdict || finalStage.verdict)}`);
+    lines.push(`- Final risk score: ${Number(row.risk_score ?? summary?.risk_score ?? finalStage.risk_score ?? 0)}`);
+    lines.push('');
+
+    lines.push('## Stage: Heuristics + Metadata');
+    lines.push(`- Verdict: ${formatVerdict(heuristicsStage.verdict)}`);
+    lines.push(`- Risk score: ${Number(heuristicsStage.risk_score || 0)}`);
+    lines.push(`- Findings: ${normalizeFindingsList(heuristicsStage.findings).length}`);
+    lines.push('');
+    lines.push(...renderFindingsSection('Heuristics Findings', heuristicsStage.findings));
+
+    lines.push('## Stage: APK Static Analysis');
+    lines.push(`- Analyzer ok: ${Boolean(staticStage.ok)}`);
+    lines.push(`- Risk bonus: ${Number(staticStage.risk_bonus || 0)}`);
+    lines.push(`- Sources: ${(Array.isArray(staticStage.sources) ? staticStage.sources : []).join(', ') || 'n/a'}`);
+    if (staticStage.error) {
+        lines.push(`- Error: ${String(staticStage.error)}`);
+    }
+    lines.push('');
+    lines.push(...renderFindingsSection('Static Analysis Findings', staticStage.findings));
+
+    lines.push('## Stage: Merge Before Triage');
+    lines.push(`- Verdict: ${formatVerdict(mergedStage.verdict)}`);
+    lines.push(`- Risk score: ${Number(mergedStage.risk_score || 0)}`);
+    lines.push(`- Findings: ${normalizeFindingsList(mergedStage.findings).length}`);
+    lines.push('');
+    lines.push(...renderFindingsSection('Merged Findings', mergedStage.findings));
+
+    lines.push('## Stage: Deterministic Filter');
+    lines.push(`- Applied: ${Boolean(deterministicStage.applied)}`);
+    lines.push(`- Reason: ${deterministicStage.reason || 'n/a'}`);
+    lines.push(`- Before verdict/risk: ${formatVerdict(deterministicStage.before?.verdict)} / ${Number(deterministicStage.before?.risk_score || 0)}`);
+    lines.push(`- After verdict/risk: ${formatVerdict(deterministicStage.after?.verdict)} / ${Number(deterministicStage.after?.risk_score || 0)}`);
+    lines.push('');
+
+    lines.push('## Stage: AI Filter');
+    lines.push(`- Configured: ${Boolean(aiStage.configured)}`);
+    lines.push(`- Attempted: ${Boolean(aiStage.attempted)}`);
+    lines.push(`- Applied: ${Boolean(aiStage.applied)}`);
+    lines.push(`- Model: ${aiStage.model || triage?.ai?.model || 'n/a'}`);
+    lines.push(`- report_to_user: ${aiStage.report_to_user ?? triage?.ai?.report_to_user ?? 'n/a'}`);
+    lines.push(`- benign_probability: ${Number(aiStage.benign_probability ?? triage?.ai?.benign_probability ?? 0)}`);
+    lines.push(`- Reason: ${aiStage.reason || triage?.reason || triage?.ai?.reason || 'n/a'}`);
+    if (aiStage.user_summary || triage?.ai?.user_summary) {
+        lines.push(`- user_summary: ${aiStage.user_summary || triage?.ai?.user_summary}`);
+    }
+    if (aiStage.error) {
+        lines.push(`- Error: ${String(aiStage.error)}`);
+    }
+    lines.push('');
+
+    lines.push('## Stage: Final User-Facing Result');
+    lines.push(`- Verdict: ${formatVerdict(finalStage.verdict || row.verdict || summary?.verdict)}`);
+    lines.push(`- Risk score: ${Number(finalStage.risk_score ?? row.risk_score ?? summary?.risk_score ?? 0)}`);
+    lines.push(`- Findings shown to user: ${finalFindings.length}`);
+    lines.push('');
+    if (groupedFinal.length === 0) {
+        lines.push('- После фильтрации пользователю не показываются угрозы для этого пакета.');
+    } else {
+        groupedFinal.forEach((group, index) => {
+            lines.push(`${index + 1}. ${group.source} (${group.maxSeverity}, ${group.count})`);
+            group.findings.forEach((finding) => {
+                lines.push(`   - [${String(finding.severity || 'low').toUpperCase()}] ${finding.title}: ${finding.detail}`);
+            });
+        });
+    }
+    lines.push('');
+    lines.push('## VirusTotal');
+    lines.push(`- Status: ${summary?.virus_total?.status || row.vt_status || 'n/a'}`);
+    lines.push(`- malicious/suspicious/harmless: ${Number(row.vt_malicious || 0)}/${Number(row.vt_suspicious || 0)}/${Number(row.vt_harmless || 0)}`);
+    lines.push('');
+    lines.push('## Recommendations');
+    const recommendations = Array.isArray(summary?.recommendations) ? summary.recommendations : [];
+    if (recommendations.length === 0) {
+        lines.push('- n/a');
+    } else {
+        recommendations.forEach((item) => lines.push(`- ${String(item)}`));
+    }
+    lines.push('');
+
+    return {
+        scan_id: row.id,
+        app_name: row.app_name || request.app_name || request.appName || null,
+        package_name: row.package_name || request.package_name || request.packageName || null,
+        scan_mode: normalizeScanMode(row.scan_mode || request.scan_mode || request.scanMode),
+        status: row.status,
+        generated_at: nowMs(),
+        final_verdict: formatVerdict(row.verdict || summary?.verdict || finalStage.verdict),
+        final_risk_score: Number(row.risk_score ?? summary?.risk_score ?? finalStage.risk_score ?? 0),
+        file_name: `shield-full-report-${row.id}.md`,
+        markdown: lines.join('\n')
+    };
+}
+
 function findingScore(finding) {
     const explicit = Number(finding?.score);
     if (Number.isFinite(explicit) && explicit > 0) {
@@ -947,6 +1158,33 @@ async function getDeepScanJob(id, userId) {
     };
 }
 
+async function getDeepScanFullReports(ids, userId) {
+    const normalizedIds = Array.from(
+        new Set((Array.isArray(ids) ? ids : [])
+            .map((value) => String(value || '').trim())
+            .filter((value) => /^[a-zA-Z0-9-]{20,64}$/.test(value)))
+    ).slice(0, 80);
+    if (normalizedIds.length === 0) {
+        return [];
+    }
+
+    const placeholders = normalizedIds.map(() => '?').join(',');
+    const [rows] = await pool.query(
+        `SELECT id, user_id, package_name, app_name, sha256, scan_mode, status, verdict, risk_score,
+                vt_status, vt_malicious, vt_suspicious, vt_harmless,
+                request_json, summary_json, findings_json, created_at, started_at, completed_at, updated_at
+         FROM deep_scan_jobs
+         WHERE user_id = ? AND id IN (${placeholders})`,
+        [userId, ...normalizedIds]
+    );
+
+    const rowMap = new Map(rows.map((row) => [row.id, row]));
+    return normalizedIds
+        .map((id) => rowMap.get(id))
+        .filter(Boolean)
+        .map((row) => buildDeepScanFullReportPayload(row));
+}
+
 async function attachDeepScanApk(id, userId, buffer, originalName = 'sample.apk') {
     if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
         return { error: 'APK payload is empty' };
@@ -1100,6 +1338,27 @@ async function runDeepScanJob(jobId) {
             ...heuristics.recommendations,
             ...(apkAnalysis.ok ? ['Сверьте совпадения по источникам и удалите APK, если приложение установлено в обход магазина.'] : [])
         ])).slice(0, 6);
+        const stageBreakdown = {
+            heuristics: {
+                verdict: heuristics.verdict,
+                risk_score: heuristics.riskScore,
+                findings: normalizeFindingsList(heuristics.findings),
+                metadata: heuristics.metadata || {}
+            },
+            static_analysis: {
+                ok: Boolean(apkAnalysis.ok),
+                risk_bonus: Number(apkAnalysis.risk_bonus || 0),
+                findings: normalizeFindingsList(apkAnalysis.findings || []),
+                metadata: apkAnalysis.metadata || {},
+                sources: Array.isArray(apkAnalysis.sources) ? apkAnalysis.sources : [],
+                error: apkAnalysis.error || null
+            },
+            merged_before_triage: {
+                verdict: baseVerdict,
+                risk_score: baseCombinedScore,
+                findings: normalizeFindingsList(mergedFindings)
+            }
+        };
         let triaged = applyDeterministicTriage({
             verdict: baseVerdict,
             riskScore: baseCombinedScore,
@@ -1107,10 +1366,38 @@ async function runDeepScanJob(jobId) {
             recommendations: baseRecommendations,
             vt
         });
+        stageBreakdown.deterministic_triage = {
+            applied: Boolean(triaged?.triage?.applied),
+            source: triaged?.triage?.source || 'deterministic',
+            reason: triaged?.triage?.reason || null,
+            benign_probability: Number(triaged?.triage?.benign_probability || 0),
+            before: {
+                verdict: baseVerdict,
+                risk_score: baseCombinedScore,
+                findings_count: mergedFindings.length
+            },
+            after: {
+                verdict: triaged.verdict,
+                risk_score: triaged.riskScore,
+                findings_count: Array.isArray(triaged.findings) ? triaged.findings.length : 0
+            }
+        };
 
         const hasDangerSignals = Array.isArray(triaged.findings) && triaged.findings.length > 0;
+        stageBreakdown.ai_triage = {
+            configured: isAiConfigured(),
+            attempted: false,
+            applied: false,
+            model: null,
+            reason: null,
+            report_to_user: true,
+            benign_probability: 0,
+            user_summary: null,
+            error: null
+        };
         if (isAiConfigured() && hasDangerSignals) {
             try {
+                stageBreakdown.ai_triage.attempted = true;
                 const aiTriage = await triageDeepScanFindings({
                     normalized,
                     vt,
@@ -1119,6 +1406,20 @@ async function runDeepScanJob(jobId) {
                     findings: triaged.findings
                 });
                 triaged = applyAiTriageDecision(triaged, aiTriage);
+                stageBreakdown.ai_triage = {
+                    configured: true,
+                    attempted: true,
+                    applied: Boolean(triaged?.triage?.ai?.applied),
+                    model: aiTriage.model || null,
+                    reason: aiTriage.reason || triaged?.triage?.reason || null,
+                    report_to_user: aiTriage.reportToUser ?? triaged?.triage?.ai?.report_to_user ?? true,
+                    benign_probability: Number(aiTriage.benignProbability || 0),
+                    user_summary: aiTriage.userSummary || null,
+                    suggested_verdict: aiTriage.suggestedVerdict || null,
+                    suppress_types: Array.isArray(aiTriage.suppressTypes) ? aiTriage.suppressTypes : [],
+                    result_verdict: triaged.verdict,
+                    result_risk_score: triaged.riskScore
+                };
             } catch (error) {
                 triaged = {
                     ...triaged,
@@ -1134,9 +1435,26 @@ async function runDeepScanJob(jobId) {
                         }
                     }
                 };
+                stageBreakdown.ai_triage = {
+                    configured: true,
+                    attempted: true,
+                    applied: false,
+                    model: null,
+                    reason: 'ai_unavailable_fallback',
+                    report_to_user: true,
+                    benign_probability: 0,
+                    user_summary: null,
+                    error: String(error?.message || error || 'AI triage error').slice(0, 255)
+                };
                 console.error('Deep scan AI triage fallback:', error?.message || error);
             }
         }
+        stageBreakdown.final = {
+            verdict: triaged.verdict,
+            risk_score: triaged.riskScore,
+            findings_count: Array.isArray(triaged.findings) ? triaged.findings.length : 0,
+            findings: normalizeFindingsList(triaged.findings || [])
+        };
 
         const sourceSummaries = buildSourceSummaries(triaged.findings, vt);
         const completedAt = nowMs();
@@ -1149,7 +1467,8 @@ async function runDeepScanJob(jobId) {
                 ...heuristics.metadata,
                 static_analysis: apkAnalysis.metadata || {},
                 next_action: 'poll',
-                triage: triaged.triage
+                triage: triaged.triage,
+                stages: stageBreakdown
             },
             sources: sourceSummaries,
             virus_total: vt,
@@ -1202,6 +1521,7 @@ async function runDeepScanJob(jobId) {
 module.exports = {
     createDeepScanJob,
     getDeepScanJob,
+    getDeepScanFullReports,
     attachDeepScanApk,
     getUserDeepScanLimits,
     resumePendingDeepScans

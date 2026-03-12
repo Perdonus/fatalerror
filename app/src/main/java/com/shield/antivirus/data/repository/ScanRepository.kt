@@ -1,14 +1,19 @@
 package com.shield.antivirus.data.repository
 
 import android.content.Context
+import android.content.ContentValues
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import com.google.gson.Gson
 import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.local.AppDatabase
 import com.shield.antivirus.data.model.AppInfo
 import com.shield.antivirus.data.model.DeepScanFinding
+import com.shield.antivirus.data.model.DeepScanFullReportRequest
 import com.shield.antivirus.data.model.DeepScanJob
 import com.shield.antivirus.data.model.DeepScanStartRequest
 import com.shield.antivirus.data.model.SaveScanRequest
@@ -84,6 +89,64 @@ class ScanRepository(private val context: Context) {
 
     suspend fun getRecentResults() = withContext(Dispatchers.IO) {
         dao.getRecentResults().map { it.toDomain() }
+    }
+
+    suspend fun downloadFullServerReport(result: ScanResult): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val token = sessionManager.getValidAccessToken()
+                ?: throw IllegalStateException("Требуется вход в аккаунт")
+            val reportIds = result.threats
+                .mapNotNull { it.serverScanId?.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+            if (reportIds.isEmpty()) {
+                throw IllegalStateException("Для этого отчёта нет серверных deep-scan данных")
+            }
+
+            val response = ApiClient.executeShieldCall { api ->
+                api.getDeepScanFullReport(
+                    token = "Bearer $token",
+                    request = DeepScanFullReportRequest(ids = reportIds)
+                )
+            }
+            if (!response.isSuccessful) {
+                throw IllegalStateException("Сервер вернул ${response.code()}")
+            }
+            val body = response.body() ?: throw IllegalStateException("Пустой ответ сервера")
+            val reports = body.reports.orEmpty().filter { !it.markdown.isNullOrBlank() }
+            if (reports.isEmpty()) {
+                throw IllegalStateException("Сервер не вернул полный отчёт по deep-scan")
+            }
+
+            val generatedAt = System.currentTimeMillis()
+            val header = buildString {
+                appendLine("# Shield Full Report")
+                appendLine()
+                appendLine("- generated_at: $generatedAt")
+                appendLine("- local_scan_id: ${result.id}")
+                appendLine("- scan_type: ${result.scanType}")
+                appendLine("- deep_reports_count: ${reports.size}")
+                appendLine()
+            }
+            val payload = buildString {
+                append(header)
+                reports.forEachIndexed { index, report ->
+                    appendLine("---")
+                    appendLine()
+                    appendLine("## App ${index + 1}")
+                    appendLine("- scan_id: ${report.scanId}")
+                    appendLine("- app: ${report.appName ?: "n/a"}")
+                    appendLine("- package: ${report.packageName ?: "n/a"}")
+                    appendLine("- mode: ${report.scanMode ?: "n/a"}")
+                    appendLine()
+                    appendLine(report.markdown.orEmpty())
+                    appendLine()
+                }
+            }
+
+            val fileName = "shield-full-report-${result.id}-${generatedAt}.md"
+            saveReportToDownloads(fileName, payload)
+        }
     }
 
     suspend fun getDailyLaunchCount(scanType: String): Int = withContext(Dispatchers.IO) {
@@ -278,7 +341,14 @@ class ScanRepository(private val context: Context) {
 
             val allApps = withContext(Dispatchers.IO) {
                 when (normalizedType) {
-                    "QUICK" -> PackageUtils.getHybridQuickApps(context)
+                    "QUICK" -> {
+                        if (selectedPackages.isEmpty()) {
+                            PackageUtils.getHybridQuickApps(context)
+                        } else {
+                            PackageUtils.getAllInstalledApps(context, includeSystem = true)
+                                .filter { it.packageName in selectedPackages }
+                        }
+                    }
                     "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
                     "SELECTIVE" -> {
                         val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = true)
@@ -828,7 +898,8 @@ class ScanRepository(private val context: Context) {
                     detectionEngine = source,
                     detectionCount = items.size,
                     totalEngines = filteredFindings.size.coerceAtLeast(items.size),
-                    summary = items.joinToString(separator = "\n") { it.detail }
+                    summary = items.joinToString(separator = "\n") { it.detail },
+                    serverScanId = job.id
                 )
             }
             .sortedByDescending { threatRank(it.severity) }
@@ -847,9 +918,40 @@ class ScanRepository(private val context: Context) {
                 detectionEngine = fallbackSource?.source ?: "Shield Deep",
                 detectionCount = fallbackSource?.findingCount ?: findings.size.coerceAtLeast(if (score > 0) 1 else 0),
                 totalEngines = job.summary?.sources?.size ?: 1,
-                summary = job.summary?.recommendations.orEmpty().joinToString(separator = "\n")
+                summary = job.summary?.recommendations.orEmpty().joinToString(separator = "\n"),
+                serverScanId = job.id
             )
         )
+    }
+
+    private fun saveReportToDownloads(fileName: String, content: String): String {
+        val mimeType = "text/markdown"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/ShieldSecurity")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Не удалось создать файл отчёта")
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                writer.write(content)
+            } ?: throw IllegalStateException("Не удалось открыть поток записи отчёта")
+
+            val doneValues = ContentValues().apply {
+                put(MediaStore.Downloads.IS_PENDING, 0)
+            }
+            context.contentResolver.update(uri, doneValues, null, null)
+            return uri.toString()
+        }
+
+        val fallbackDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: context.filesDir
+        val targetDir = File(fallbackDir, "ShieldSecurity").apply { mkdirs() }
+        val file = File(targetDir, fileName)
+        file.writeText(content, Charsets.UTF_8)
+        return file.absolutePath
     }
 
     private fun filterDeepFindingsForDisplay(findings: List<DeepScanFinding>, score: Int): List<DeepScanFinding> {

@@ -129,8 +129,37 @@ data class ExplainResultPayload(
 data class ExplainScanResponse(
     val success: Boolean,
     val explanation: String?,
+    @SerializedName("structured_v1") val structuredV1: ExplainStructuredV1Payload? = null,
     val title: String? = null,
     val error: String? = null
+)
+
+data class ExplainStructuredV1Payload(
+    val title: String? = null,
+    val summary: String? = null,
+    val verdict: String? = null,
+    @SerializedName("confirmed_by_data") val confirmedByData: List<String>? = emptyList(),
+    val confirmed: List<String>? = emptyList(),
+    val evidence: List<String>? = emptyList(),
+    @SerializedName("actions_now") val actionsNow: List<String>? = emptyList(),
+    @SerializedName("what_to_do_now") val whatToDoNow: List<String>? = emptyList(),
+    val actions: List<String>? = emptyList(),
+    val recommendations: List<String>? = emptyList(),
+    @SerializedName("what_else_check") val whatElseCheck: List<String>? = emptyList(),
+    @SerializedName("what_else_to_check") val whatElseToCheck: List<String>? = emptyList(),
+    val checks: List<String>? = emptyList(),
+    @SerializedName("extra_checks") val extraChecks: List<String>? = emptyList(),
+    val sections: List<ExplainStructuredSection>? = emptyList()
+)
+
+data class ExplainStructuredSection(
+    val key: String? = null,
+    val title: String? = null,
+    val text: String? = null,
+    val summary: String? = null,
+    val lines: List<String>? = emptyList(),
+    val bullets: List<String>? = emptyList(),
+    val items: List<String>? = emptyList()
 )
 
 data class RemoteScan(

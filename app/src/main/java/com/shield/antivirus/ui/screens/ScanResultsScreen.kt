@@ -108,6 +108,8 @@ fun ScanResultsScreen(
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val renderedExplanation = explainState.explanation?.trim().orEmpty()
+                    val hasExplanation = renderedExplanation.isNotBlank()
                     when {
                         explainState.isLoading -> {
                             Box(
@@ -123,6 +125,20 @@ fun ScanResultsScreen(
                                 )
                             }
                         }
+                        hasExplanation -> {
+                            if (!explainState.title.isNullOrBlank()) {
+                                Text(
+                                    text = explainState.title.orEmpty(),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                            }
+                            ShieldMarkdownCards(
+                                markdown = renderedExplanation,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                         !explainState.error.isNullOrBlank() -> {
                             if (!explainState.title.isNullOrBlank()) {
                                 Text(
@@ -136,18 +152,6 @@ fun ScanResultsScreen(
                                 text = explainState.error.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.criticalTone
-                            )
-                        }
-                        !explainState.explanation.isNullOrBlank() -> {
-                            Text(
-                                text = explainState.title.orEmpty(),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                            ShieldMarkdownCards(
-                                markdown = explainState.explanation.orEmpty(),
-                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }

@@ -10,6 +10,7 @@ import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.repository.InsightRepository
+import com.shield.antivirus.data.repository.FullReportRateLimitException
 import com.shield.antivirus.data.repository.ScanAlreadyRunningException
 import com.shield.antivirus.data.repository.ScanProgress
 import com.shield.antivirus.data.repository.ScanRepository
@@ -404,8 +405,16 @@ class ScanViewModel(private val context: Context) : ViewModel() {
                     )
                 }
                 .onFailure { error ->
+                    val userMessage = when {
+                        error is FullReportRateLimitException ->
+                            error.message
+                        error.message?.contains("429") == true ->
+                            "Слишком много запросов к полному отчёту. Подождите 1-2 минуты и попробуйте снова."
+                        else ->
+                            error.message
+                    } ?: "Не удалось скачать полный отчёт"
                     _reportDownloadState.value = ScanReportDownloadState(
-                        error = error.message ?: "Не удалось скачать полный отчёт",
+                        error = userMessage,
                         nonce = System.currentTimeMillis()
                     )
                 }

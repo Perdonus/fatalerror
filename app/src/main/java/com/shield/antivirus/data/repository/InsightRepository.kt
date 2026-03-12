@@ -5,6 +5,8 @@ import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.model.ExplainResultPayload
 import com.shield.antivirus.data.model.ExplainScanRequest
 import com.shield.antivirus.data.model.ExplainSummaryPayload
+import com.shield.antivirus.data.model.ExplainStructuredSection
+import com.shield.antivirus.data.model.ExplainStructuredV1Payload
 import com.shield.antivirus.data.model.ScanResult
 import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.data.security.ShieldSessionManager
@@ -61,9 +63,8 @@ class InsightRepository(context: Context) {
             if (!response.isSuccessful) {
                 return@runCatching buildClientFallback(result)
             }
-            val body = response.body()
-            val explanation = body?.explanation?.trim().orEmpty()
-            if (body?.success == true && explanation.isNotBlank()) {
+            val explanation = resolveServerExplanation(response.body())
+            if (!explanation.isNullOrBlank()) {
                 explanation
             } else {
                 buildClientFallback(result)
@@ -122,9 +123,8 @@ class InsightRepository(context: Context) {
                 return@runCatching latest?.let { buildClientFallback(it) }
                     ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
             }
-            val body = response.body()
-            val explanation = body?.explanation?.trim().orEmpty()
-            if (body?.success == true && explanation.isNotBlank()) {
+            val explanation = resolveServerExplanation(response.body())
+            if (!explanation.isNullOrBlank()) {
                 explanation
             } else {
                 latest?.let { buildClientFallback(it) }
@@ -134,6 +134,115 @@ class InsightRepository(context: Context) {
             latest?.let { buildClientFallback(it) }
                 ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
         }
+    }
+
+    private fun resolveServerExplanation(body: com.shield.antivirus.data.model.ExplainScanResponse?): String? {
+        if (body == null) return null
+        val structured = buildStructuredMarkdown(body.structuredV1)
+        if (!structured.isNullOrBlank()) return structured
+        return body.explanation?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun buildStructuredMarkdown(structured: ExplainStructuredV1Payload?): String? {
+        if (structured == null) return null
+
+        val sections = structured.sections
+            .orEmpty()
+            .mapIndexedNotNull { index, section ->
+                val title = resolveStructuredSectionTitle(section, index)
+                val lines = collectSectionLines(section)
+                if (title.isBlank() || lines.isEmpty()) null else title to lines
+            }
+            .toMutableList()
+
+        if (sections.isEmpty()) {
+            val summaryLines = buildList {
+                structured.summary?.trim()?.takeIf { it.isNotBlank() }?.let { add(it) }
+                if (isEmpty()) {
+                    structured.verdict?.trim()?.takeIf { it.isNotBlank() }?.let {
+                        add("Оценка: $it")
+                    }
+                }
+            }
+            val evidenceLines = normalizeStructuredItems(
+                structured.confirmedByData,
+                structured.confirmed,
+                structured.evidence
+            )
+            val actionLines = normalizeStructuredItems(
+                structured.actionsNow,
+                structured.whatToDoNow,
+                structured.actions,
+                structured.recommendations
+            )
+            val checksLines = normalizeStructuredItems(
+                structured.whatElseCheck,
+                structured.whatElseToCheck,
+                structured.checks,
+                structured.extraChecks
+            )
+
+            if (summaryLines.isNotEmpty()) sections += "Итог" to summaryLines
+            if (evidenceLines.isNotEmpty()) sections += "Подтверждено данными" to evidenceLines
+            if (actionLines.isNotEmpty()) sections += "Что делать сейчас" to actionLines
+            if (checksLines.isNotEmpty()) sections += "Что ещё проверить" to checksLines
+        }
+
+        if (sections.isEmpty()) return null
+
+        return sections.joinToString(separator = "\n\n") { (title, lines) ->
+            val preferBullets = title != "Итог"
+            val body = lines
+                .mapNotNull { line -> formatStructuredLine(line, preferBullets) }
+                .joinToString(separator = "\n")
+            "## $title\n$body"
+        }.trim()
+    }
+
+    private fun resolveStructuredSectionTitle(section: ExplainStructuredSection, index: Int): String {
+        val explicit = section.title?.trim().orEmpty()
+        if (explicit.isNotBlank()) return explicit
+        val byKey = when (section.key?.trim()?.lowercase()) {
+            "summary", "result", "conclusion", "final" -> "Итог"
+            "evidence", "confirmed", "facts" -> "Подтверждено данными"
+            "actions", "todo", "next_steps", "mitigation" -> "Что делать сейчас"
+            "checks", "follow_up", "additional_checks" -> "Что ещё проверить"
+            else -> ""
+        }
+        return byKey.ifBlank { "Разбор ${index + 1}" }
+    }
+
+    private fun collectSectionLines(section: ExplainStructuredSection): List<String> {
+        return normalizeStructuredItems(
+            listOfNotNull(section.summary, section.text),
+            section.lines,
+            section.bullets,
+            section.items
+        )
+    }
+
+    private fun normalizeStructuredItems(vararg groups: List<String>?): List<String> {
+        return groups.asSequence()
+            .filterNotNull()
+            .flatMap { it.asSequence() }
+            .flatMap { item ->
+                item.replace("\r\n", "\n")
+                    .replace('\r', '\n')
+                    .split('\n')
+                    .asSequence()
+            }
+            .map { it.trim() }
+            .map { it.removePrefix("-").removePrefix("*").trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+    }
+
+    private fun formatStructuredLine(line: String, preferBullets: Boolean): String? {
+        val value = line.trim()
+        if (value.isBlank()) return null
+        if (value.startsWith("- ") || value.startsWith("* ")) return value
+        return if (preferBullets) "- $value" else value
     }
 
     private fun buildClientFallback(result: ScanResult): String {

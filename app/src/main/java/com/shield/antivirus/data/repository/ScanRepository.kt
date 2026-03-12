@@ -14,6 +14,7 @@ import com.shield.antivirus.data.local.AppDatabase
 import com.shield.antivirus.data.model.AppInfo
 import com.shield.antivirus.data.model.DeepScanFinding
 import com.shield.antivirus.data.model.DeepScanFullReportRequest
+import com.shield.antivirus.data.model.DeepScanFullReportResponse
 import com.shield.antivirus.data.model.DeepScanJob
 import com.shield.antivirus.data.model.DeepScanStartRequest
 import com.shield.antivirus.data.model.SaveScanRequest
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
+import retrofit2.Response
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
@@ -52,6 +54,7 @@ data class ScanProgress(
 )
 
 class ScanAlreadyRunningException(message: String) : IllegalStateException(message)
+class FullReportRateLimitException(message: String) : IllegalStateException(message)
 
 class ScanRepository(private val context: Context) {
     private val dao = AppDatabase.getInstance(context).scanResultDao()
@@ -103,16 +106,17 @@ class ScanRepository(private val context: Context) {
                 throw IllegalStateException("Для этого отчёта нет серверных deep-scan данных")
             }
 
-            val response = ApiClient.executeShieldCall { api ->
-                api.getDeepScanFullReport(
-                    token = "Bearer $token",
-                    request = DeepScanFullReportRequest(ids = reportIds)
-                )
-            }
+            val response = requestFullReportWithRetry(token = token, reportIds = reportIds)
             if (!response.isSuccessful) {
-                throw IllegalStateException("Сервер вернул ${response.code()}")
+                throw mapFullReportHttpException(response.code())
             }
             val body = response.body() ?: throw IllegalStateException("Пустой ответ сервера")
+            if (!body.success) {
+                throw IllegalStateException(
+                    body.error?.takeIf { it.isNotBlank() }
+                        ?: "Сервер не смог сформировать полный отчёт"
+                )
+            }
             val reports = body.reports.orEmpty().filter { !it.markdown.isNullOrBlank() }
             if (reports.isEmpty()) {
                 throw IllegalStateException("Сервер не вернул полный отчёт по deep-scan")
@@ -147,6 +151,71 @@ class ScanRepository(private val context: Context) {
             val fileName = "shield-full-report-${result.id}-${generatedAt}.md"
             saveReportToDownloads(fileName, payload)
         }
+    }
+
+    private suspend fun requestFullReportWithRetry(
+        token: String,
+        reportIds: List<String>
+    ): Response<DeepScanFullReportResponse> {
+        val maxAttempts = 3
+        for (attempt in 1..maxAttempts) {
+            try {
+                val response = ApiClient.executeShieldCall { api ->
+                    api.getDeepScanFullReport(
+                        token = "Bearer $token",
+                        request = DeepScanFullReportRequest(ids = reportIds)
+                    )
+                }
+                if (!shouldRetryFullReport(response.code()) || attempt == maxAttempts) {
+                    return response
+                }
+                val delayMs = fullReportRetryDelayMs(attempt)
+                AppLogger.log(
+                    tag = "scan_repository",
+                    message = "Retrying full report request",
+                    level = "WARN",
+                    metadata = mapOf(
+                        "attempt" to attempt.toString(),
+                        "status_code" to response.code().toString(),
+                        "delay_ms" to delayMs.toString()
+                    )
+                )
+                delay(delayMs)
+            } catch (error: Exception) {
+                if (attempt == maxAttempts) throw error
+                val delayMs = fullReportRetryDelayMs(attempt)
+                AppLogger.logError(
+                    tag = "scan_repository",
+                    message = "Full report request failed, retry scheduled",
+                    error = error,
+                    metadata = mapOf(
+                        "attempt" to attempt.toString(),
+                        "delay_ms" to delayMs.toString()
+                    )
+                )
+                delay(delayMs)
+            }
+        }
+        throw IllegalStateException("Не удалось получить полный отчёт")
+    }
+
+    private fun shouldRetryFullReport(statusCode: Int): Boolean {
+        return statusCode == 429 || statusCode == 408 || statusCode == 425 || statusCode in 500..504
+    }
+
+    private fun fullReportRetryDelayMs(attempt: Int): Long = when (attempt) {
+        1 -> 900L
+        2 -> 1800L
+        else -> 3200L
+    }
+
+    private fun mapFullReportHttpException(statusCode: Int): IllegalStateException = when (statusCode) {
+        429 -> FullReportRateLimitException(
+            "Слишком много запросов к полному отчёту. Подождите 1-2 минуты и попробуйте снова."
+        )
+        401, 403 -> IllegalStateException("Сессия истекла. Войдите в аккаунт и повторите попытку.")
+        404 -> IllegalStateException("Полный отчёт пока недоступен. Попробуйте позже.")
+        else -> IllegalStateException("Сервер вернул ошибку ($statusCode) при получении полного отчёта")
     }
 
     suspend fun getDailyLaunchCount(scanType: String): Int = withContext(Dispatchers.IO) {

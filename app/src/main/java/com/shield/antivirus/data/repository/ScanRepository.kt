@@ -1,6 +1,8 @@
 package com.shield.antivirus.data.repository
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import com.google.gson.Gson
 import com.shield.antivirus.data.api.ApiClient
 import com.shield.antivirus.data.datastore.UserPreferences
@@ -29,6 +31,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import java.io.FileOutputStream
+import java.util.Calendar
+import java.util.zip.ZipFile
 
 data class ScanProgress(
     val currentApp: String = "",
@@ -38,6 +43,8 @@ data class ScanProgress(
     val isComplete: Boolean = false,
     val savedId: Long = 0L
 )
+
+class ScanAlreadyRunningException(message: String) : IllegalStateException(message)
 
 class ScanRepository(private val context: Context) {
     private val dao = AppDatabase.getInstance(context).scanResultDao()
@@ -64,103 +71,287 @@ class ScanRepository(private val context: Context) {
         dao.getRecentResults().map { it.toDomain() }
     }
 
+    suspend fun getDailyLaunchCount(scanType: String): Int = withContext(Dispatchers.IO) {
+        val target = scanType.uppercase()
+        val dayStart = startOfCurrentDay()
+        dao.getAllResults()
+            .first()
+            .count { it.scanType.uppercase() == target && it.completedAt >= dayStart }
+    }
+
     fun startScan(
         scanType: String,
         selectedPackages: List<String> = emptyList(),
+        apkUriString: String? = null,
         manageNotifications: Boolean = true
     ): Flow<ScanProgress> = flow {
-        val allApps = withContext(Dispatchers.IO) {
-            when (scanType) {
-                "QUICK" -> PackageUtils.getUserApps(context).take(30)
-                "FULL" -> PackageUtils.getUserApps(context)
-                "SELECTIVE" -> {
-                    val userApps = PackageUtils.getUserApps(context)
-                    if (selectedPackages.isEmpty()) userApps else userApps.filter { it.packageName in selectedPackages }
-                }
-                else -> PackageUtils.getUserApps(context)
+        val normalizedType = scanType.uppercase()
+        var lockAcquired = false
+        try {
+            lockAcquired = withContext(Dispatchers.IO) {
+                prefs.tryAcquireActiveScan(normalizedType, "Подготовка проверки")
             }
-        }
+            if (!lockAcquired) {
+                throw ScanAlreadyRunningException("Уже идёт проверка. Нажмите «Посмотреть текущую проверку» на главном экране.")
+            }
 
-        val accessToken = withContext(Dispatchers.IO) { sessionManager.getValidAccessToken() }
-        val useServerDeepScan = scanType != "QUICK" && !accessToken.isNullOrBlank()
+            if (normalizedType == "APK") {
+                val token = withContext(Dispatchers.IO) { sessionManager.getValidAccessToken() }
+                if (token.isNullOrBlank()) {
+                    emit(
+                        ScanProgress(
+                            currentApp = "Для проверки APK требуется вход в аккаунт.",
+                            totalCount = 1
+                        )
+                    )
+                    return@flow
+                }
 
-        val total = allApps.size
-        val threats = mutableListOf<ThreatInfo>()
-        val startTime = System.currentTimeMillis()
-        var notifId = 0
+                val apkUri = apkUriString?.takeIf { it.isNotBlank() }
+                if (apkUri.isNullOrBlank()) {
+                    emit(
+                        ScanProgress(
+                            currentApp = "Выберите APK-файл перед запуском проверки.",
+                            totalCount = 1
+                        )
+                    )
+                    return@flow
+                }
 
-        allApps.forEachIndexed { index, app ->
+                emit(
+                    ScanProgress(
+                        currentApp = "Проверка APK-файла",
+                        totalCount = 1
+                    )
+                )
+                withContext(Dispatchers.IO) {
+                    prefs.updateActiveScan(normalizedType, "Проверка APK-файла", 0, 1)
+                }
+
+                val preparedApk = withContext(Dispatchers.IO) { prepareApkForScan(apkUri) }
+                if (preparedApk == null) {
+                    emit(
+                        ScanProgress(
+                            currentApp = "Не удалось открыть выбранный APK-файл.",
+                            totalCount = 1
+                        )
+                    )
+                    return@flow
+                }
+
+                val (apkFile, displayName) = preparedApk
+                try {
+                    if (!isValidApk(apkFile)) {
+                        emit(
+                            ScanProgress(
+                                currentApp = "Выбранный файл не является корректным APK.",
+                                totalCount = 1
+                            )
+                        )
+                        return@flow
+                    }
+
+                    if (manageNotifications) {
+                        NotificationHelper.showScanNotification(context, 12, displayName)
+                    }
+                    withContext(Dispatchers.IO) {
+                        prefs.updateActiveScan(normalizedType, displayName, 0, 1)
+                    }
+
+                    val syntheticPackage = displayName
+                        .removeSuffix(".apk")
+                        .lowercase()
+                        .replace(Regex("[^a-z0-9_]"), "_")
+                        .trim('_')
+                        .ifBlank { "sample" }
+                        .take(32)
+                    val syntheticApp = AppInfo(
+                        packageName = "uploaded.apk.$syntheticPackage",
+                        appName = displayName,
+                        versionName = "?",
+                        versionCode = 0L,
+                        apkPath = apkFile.absolutePath,
+                        installTime = System.currentTimeMillis(),
+                        isSystemApp = false
+                    )
+                    val threats = runCatching {
+                        checkWithServerDeepScan(
+                            app = syntheticApp,
+                            accessToken = token,
+                            scanType = normalizedType
+                        )
+                    }.getOrElse { emptyList() }
+
+                    if (threats.isNotEmpty()) {
+                        val mainThreat = threats.maxByOrNull { threatRank(it.severity) } ?: threats.first()
+                        NotificationHelper.showThreatNotification(
+                            context,
+                            displayName,
+                            mainThreat.threatName,
+                            0
+                        )
+                    }
+
+                    withContext(Dispatchers.IO) {
+                        prefs.updateActiveScan(normalizedType, "Сохранение результата", 1, 1)
+                    }
+                    if (manageNotifications) {
+                        NotificationHelper.cancelScanNotification(context)
+                    }
+                    prefs.updateLastScanTime()
+
+                    val entity = ScanResultEntity(
+                        scanType = normalizedType,
+                        startedAt = System.currentTimeMillis(),
+                        completedAt = System.currentTimeMillis(),
+                        totalScanned = 1,
+                        threatsFound = threats.size,
+                        threatsJson = gson.toJson(threats),
+                        status = "COMPLETED"
+                    )
+                    val savedId = withContext(Dispatchers.IO) { dao.insert(entity) }
+                    withContext(Dispatchers.IO) {
+                        syncScanToCloud(entity, threats)
+                    }
+
+                    emit(
+                        ScanProgress(
+                            scannedCount = 1,
+                            totalCount = 1,
+                            threats = threats,
+                            isComplete = true,
+                            savedId = savedId
+                        )
+                    )
+                    return@flow
+                } finally {
+                    runCatching { apkFile.delete() }
+                }
+            }
+
+            val allApps = withContext(Dispatchers.IO) {
+                when (normalizedType) {
+                    "QUICK" -> PackageUtils.getUserApps(context).take(30)
+                    "FULL" -> PackageUtils.getUserApps(context)
+                    "SELECTIVE" -> {
+                        val userApps = PackageUtils.getUserApps(context)
+                        if (selectedPackages.isEmpty()) userApps else userApps.filter { it.packageName in selectedPackages }
+                    }
+                    else -> PackageUtils.getUserApps(context)
+                }
+            }
+
+            val accessToken = withContext(Dispatchers.IO) { sessionManager.getValidAccessToken() }
+            val useServerDeepScan = normalizedType != "QUICK" && !accessToken.isNullOrBlank()
+            val maxServerChecks = when (normalizedType) {
+                "FULL" -> 10
+                "SELECTIVE" -> 20
+                else -> 0
+            }
+            var serverChecksUsed = 0
+
+            val total = allApps.size
+            val threats = mutableListOf<ThreatInfo>()
+            val startTime = System.currentTimeMillis()
+            var notifId = 0
+
+            allApps.forEachIndexed { index, app ->
+                emit(
+                    ScanProgress(
+                        currentApp = app.appName,
+                        scannedCount = index,
+                        totalCount = total,
+                        threats = threats.toList()
+                    )
+                )
+                withContext(Dispatchers.IO) {
+                    prefs.updateActiveScan(normalizedType, app.appName, index, total.coerceAtLeast(1))
+                }
+
+                if (manageNotifications) {
+                    NotificationHelper.showScanNotification(
+                        context,
+                        (((index + 1).toFloat() / total.coerceAtLeast(1)) * 100).toInt(),
+                        app.appName
+                    )
+                }
+
+                val localThreat = runCatching {
+                    withContext(Dispatchers.IO) { localThreatDetector.scan(app) }
+                }.getOrNull()
+
+                val shouldUseServerForApp = useServerDeepScan &&
+                    serverChecksUsed < maxServerChecks &&
+                    shouldEscalateForServer(app, localThreat, normalizedType, index)
+
+                val threatBatch = if (shouldUseServerForApp) {
+                    serverChecksUsed++
+                    val serverThreats = runCatching {
+                        withContext(Dispatchers.IO) {
+                            checkWithServerDeepScan(app, accessToken.orEmpty(), normalizedType)
+                        }
+                    }.getOrElse { emptyList() }
+                    mergeThreats(localThreat, serverThreats)
+                } else {
+                    buildList {
+                        localThreat?.let { add(it) }
+                    }
+                }
+
+                if (threatBatch.isNotEmpty()) {
+                    threats.addAll(threatBatch)
+                    val mainThreat = threatBatch.maxByOrNull { threatRank(it.severity) } ?: threatBatch.first()
+                    NotificationHelper.showThreatNotification(
+                        context,
+                        app.appName,
+                        mainThreat.threatName,
+                        notifId++
+                    )
+                }
+            }
+
+            withContext(Dispatchers.IO) {
+                prefs.updateActiveScan(normalizedType, "Сохранение результата", total, total.coerceAtLeast(1))
+            }
+            if (manageNotifications) {
+                NotificationHelper.cancelScanNotification(context)
+            }
+            prefs.updateLastScanTime()
+
+            val entity = ScanResultEntity(
+                scanType = normalizedType,
+                startedAt = startTime,
+                completedAt = System.currentTimeMillis(),
+                totalScanned = total,
+                threatsFound = threats.size,
+                threatsJson = gson.toJson(threats),
+                status = "COMPLETED"
+            )
+            val savedId = withContext(Dispatchers.IO) { dao.insert(entity) }
+            withContext(Dispatchers.IO) {
+                syncScanToCloud(entity, threats)
+            }
+
             emit(
                 ScanProgress(
-                    currentApp = app.appName,
-                    scannedCount = index,
+                    currentApp = "",
+                    scannedCount = total,
                     totalCount = total,
-                    threats = threats.toList()
+                    threats = threats.toList(),
+                    isComplete = true,
+                    savedId = savedId
                 )
             )
-
+        } finally {
             if (manageNotifications) {
-                NotificationHelper.showScanNotification(
-                    context,
-                    (((index + 1).toFloat() / total.coerceAtLeast(1)) * 100).toInt(),
-                    app.appName
-                )
+                NotificationHelper.cancelScanNotification(context)
             }
-
-            val localThreat = withContext(Dispatchers.IO) { localThreatDetector.scan(app) }
-
-            val threatBatch = if (useServerDeepScan) {
-                val serverThreats = withContext(Dispatchers.IO) {
-                    checkWithServerDeepScan(app, accessToken.orEmpty(), scanType)
-                }
-                mergeThreats(localThreat, serverThreats)
-            } else {
-                buildList {
-                    localThreat?.let { add(it) }
+            if (lockAcquired) {
+                withContext(Dispatchers.IO) {
+                    prefs.clearActiveScan(normalizedType)
                 }
             }
-
-            if (threatBatch.isNotEmpty()) {
-                threats.addAll(threatBatch)
-                val mainThreat = threatBatch.maxByOrNull { threatRank(it.severity) } ?: threatBatch.first()
-                NotificationHelper.showThreatNotification(
-                    context,
-                    app.appName,
-                    mainThreat.threatName,
-                    notifId++
-                )
-            }
         }
-
-        if (manageNotifications) {
-            NotificationHelper.cancelScanNotification(context)
-        }
-        prefs.updateLastScanTime()
-
-        val entity = ScanResultEntity(
-            scanType = scanType,
-            startedAt = startTime,
-            completedAt = System.currentTimeMillis(),
-            totalScanned = total,
-            threatsFound = threats.size,
-            threatsJson = gson.toJson(threats),
-            status = "COMPLETED"
-        )
-        val savedId = withContext(Dispatchers.IO) { dao.insert(entity) }
-        withContext(Dispatchers.IO) {
-            syncScanToCloud(entity, threats)
-        }
-
-        emit(
-            ScanProgress(
-                currentApp = "",
-                scannedCount = total,
-                totalCount = total,
-                threats = threats.toList(),
-                isComplete = true,
-                savedId = savedId
-            )
-        )
     }.flowOn(Dispatchers.Default)
 
     private suspend fun checkWithServerDeepScan(app: AppInfo, accessToken: String, scanType: String): List<ThreatInfo> {
@@ -211,8 +402,8 @@ class ScanRepository(private val context: Context) {
                 }
             }
 
-            repeat(40) { attempt ->
-                delay(if (attempt == 0) 500L else 1200L)
+            repeat(24) { attempt ->
+                delay(if (attempt < 3) 450L else 900L)
                 val pollResponse = ApiClient.executeShieldCall { api ->
                     api.getDeepScan("Bearer $accessToken", scanId)
                 }
@@ -230,6 +421,100 @@ class ScanRepository(private val context: Context) {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun prepareApkForScan(uriString: String): Pair<File, String>? {
+        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return null
+        val displayName = resolveDisplayName(uri)
+        val tempFile = File.createTempFile("scan_", ".apk", context.cacheDir)
+        return try {
+            val copied = context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                true
+            } ?: false
+            if (!copied || tempFile.length() <= 0L) {
+                tempFile.delete()
+                null
+            } else {
+                tempFile to displayName
+            }
+        } catch (_: Exception) {
+            tempFile.delete()
+            null
+        }
+    }
+
+    private fun resolveDisplayName(uri: Uri): String {
+        val fallback = uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "uploaded.apk"
+        return runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        cursor.getString(0)?.takeIf { it.isNotBlank() } ?: fallback
+                    } else {
+                        fallback
+                    }
+                } ?: fallback
+        }.getOrDefault(fallback)
+    }
+
+    private fun isValidApk(file: File): Boolean {
+        if (!file.exists() || file.length() < 4L) return false
+        val head = runCatching { file.inputStream().use { input -> ByteArray(4).also { input.read(it) } } }
+            .getOrNull() ?: return false
+        val isZipHeader = head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()
+        if (!isZipHeader) return false
+
+        return runCatching {
+            ZipFile(file).use { zip ->
+                val hasManifest = zip.getEntry("AndroidManifest.xml") != null
+                var hasDex = false
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val name = entries.nextElement().name.lowercase()
+                    if (name == "classes.dex" || (name.startsWith("classes") && name.endsWith(".dex"))) {
+                        hasDex = true
+                        break
+                    }
+                }
+                hasManifest && hasDex
+            }
+        }.getOrDefault(false)
+    }
+
+    private fun startOfCurrentDay(): Long = Calendar.getInstance().run {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        timeInMillis
+    }
+
+    private fun shouldEscalateForServer(
+        app: AppInfo,
+        localThreat: ThreatInfo?,
+        scanType: String,
+        index: Int
+    ): Boolean {
+        if (scanType == "SELECTIVE") return true
+        if (localThreat != null) return true
+        if (index < 3) return true
+
+        val permissions = app.requestedPermissions.toSet()
+        val hasAccessibility = permissions.contains("android.permission.BIND_ACCESSIBILITY_SERVICE")
+        val hasOverlay = permissions.contains("android.permission.SYSTEM_ALERT_WINDOW")
+        val hasInstaller = permissions.contains("android.permission.REQUEST_INSTALL_PACKAGES")
+        val hasQueryAll = permissions.contains("android.permission.QUERY_ALL_PACKAGES")
+        val hasSms = permissions.contains("android.permission.READ_SMS") ||
+            permissions.contains("android.permission.RECEIVE_SMS") ||
+            permissions.contains("android.permission.SEND_SMS")
+
+        if (hasAccessibility && hasOverlay) return true
+        if (hasInstaller && hasQueryAll) return true
+        if (hasSms) return true
+        if (app.isDebuggable || app.usesCleartextTraffic) return true
+        if (app.installerPackage.isNullOrBlank()) return true
+        return false
     }
 
     private fun mapDeepScanToThreats(app: AppInfo, job: DeepScanJob): List<ThreatInfo> {

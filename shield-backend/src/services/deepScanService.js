@@ -15,6 +15,12 @@ const VT_API_BASE = (process.env.VT_API_BASE || 'https://www.virustotal.com/api/
 const VT_TIMEOUT_MS = parseInt(process.env.VT_TIMEOUT_MS || '8000', 10);
 const UPLOAD_ROOT = process.env.DEEP_SCAN_UPLOAD_DIR || path.join(process.cwd(), 'storage', 'deep-scans');
 const MAX_UPLOAD_BYTES = parseInt(process.env.DEEP_SCAN_MAX_UPLOAD_BYTES || String(256 * 1024 * 1024), 10);
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const SCAN_MODE_LIMITS = Object.freeze({
+    FULL: 1,
+    SELECTIVE: 3,
+    APK: 3
+});
 const PROCESSING_QUEUE = [];
 const ENQUEUED_IDS = new Set();
 let queueActive = false;
@@ -55,8 +61,160 @@ function verdictRank(verdict) {
     }
 }
 
+function normalizeScanMode(value) {
+    const mode = String(value || 'FULL').trim().toUpperCase();
+    return Object.prototype.hasOwnProperty.call(SCAN_MODE_LIMITS, mode) ? mode : 'FULL';
+}
+
+function getUtcDayWindow(now = nowMs()) {
+    const date = new Date(now);
+    const start = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    return {
+        dayKey: new Date(start).toISOString().slice(0, 10),
+        startAt: start,
+        endAt: start + ONE_DAY_MS
+    };
+}
+
+function parseCsvSet(value, normalizer = (entry) => entry) {
+    return new Set(
+        String(value || '')
+            .split(',')
+            .map((entry) => normalizer(String(entry || '').trim()))
+            .filter(Boolean)
+    );
+}
+
+function isUserInDevMode(user) {
+    if (!user) {
+        return false;
+    }
+    if (String(process.env.DEEP_SCAN_DEV_MODE || '').trim() === '1') {
+        return true;
+    }
+
+    const forcedIds = parseCsvSet(process.env.DEEP_SCAN_DEV_USER_IDS);
+    const forcedEmails = parseCsvSet(process.env.DEEP_SCAN_DEV_USER_EMAILS, (entry) => entry.toLowerCase());
+    if (forcedIds.has(String(user.id || '').trim())) {
+        return true;
+    }
+    if (forcedEmails.has(String(user.email || '').trim().toLowerCase())) {
+        return true;
+    }
+
+    return Number(user.is_dev_mode || 0) === 1;
+}
+
+async function getUserDevMode(userId, db = pool) {
+    const [rows] = await db.query(
+        `SELECT id, email, is_dev_mode
+         FROM users
+         WHERE id = ?
+         LIMIT 1`,
+        [userId]
+    );
+    if (rows.length === 0) {
+        return {
+            exists: false,
+            devMode: false
+        };
+    }
+    return {
+        exists: true,
+        devMode: isUserInDevMode(rows[0])
+    };
+}
+
+async function incrementDailyUsage(connection, userId, scanMode, dayKey, now) {
+    await connection.query(
+        `INSERT INTO deep_scan_daily_usage
+         (user_id, usage_date, scan_mode, launches_count, created_at, updated_at)
+         VALUES (?, ?, ?, 1, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            launches_count = launches_count + 1,
+            updated_at = VALUES(updated_at)`,
+        [userId, dayKey, scanMode, now, now]
+    );
+}
+
+async function consumeDailyUsageWithLimit(connection, userId, scanMode, dayKey, limit, now) {
+    await connection.query(
+        `INSERT INTO deep_scan_daily_usage
+         (user_id, usage_date, scan_mode, launches_count, created_at, updated_at)
+         VALUES (?, ?, ?, 0, ?, ?)
+         ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)`,
+        [userId, dayKey, scanMode, now, now]
+    );
+
+    const [rows] = await connection.query(
+        `SELECT launches_count
+         FROM deep_scan_daily_usage
+         WHERE user_id = ? AND usage_date = ? AND scan_mode = ?
+         FOR UPDATE`,
+        [userId, dayKey, scanMode]
+    );
+    const used = Number(rows[0]?.launches_count || 0);
+    if (used >= limit) {
+        return false;
+    }
+
+    await connection.query(
+        `UPDATE deep_scan_daily_usage
+         SET launches_count = launches_count + 1, updated_at = ?
+         WHERE user_id = ? AND usage_date = ? AND scan_mode = ?`,
+        [now, userId, dayKey, scanMode]
+    );
+    return true;
+}
+
+async function getUserDeepScanLimits(userId) {
+    const now = nowMs();
+    const window = getUtcDayWindow(now);
+    const [{ exists, devMode }, [usageRows]] = await Promise.all([
+        getUserDevMode(userId),
+        pool.query(
+            `SELECT scan_mode, launches_count
+             FROM deep_scan_daily_usage
+             WHERE user_id = ? AND usage_date = ?`,
+            [userId, window.dayKey]
+        )
+    ]);
+
+    if (!exists) {
+        return {
+            error: 'User not found',
+            code: 'USER_NOT_FOUND'
+        };
+    }
+
+    const usageMap = new Map(
+        usageRows.map((row) => [String(row.scan_mode || '').toUpperCase(), Number(row.launches_count || 0)])
+    );
+    const modes = Object.fromEntries(
+        Object.entries(SCAN_MODE_LIMITS).map(([mode, limit]) => {
+            const used = usageMap.get(mode) || 0;
+            return [mode, {
+                limit,
+                used,
+                remaining: Math.max(0, limit - used),
+                enforced: !devMode
+            }];
+        })
+    );
+
+    return {
+        user_id: userId,
+        dev_mode: devMode,
+        timezone: 'UTC',
+        day_key: window.dayKey,
+        day_start_at: window.startAt,
+        day_end_at: window.endAt,
+        modes
+    };
+}
+
 function chooseNextAction(normalized) {
-    const mode = String(normalized.scanMode || 'FULL').toUpperCase();
+    const mode = normalizeScanMode(normalized.scanMode);
     const wantsFullServerAnalysis = mode === 'FULL' || mode === 'SELECTIVE';
     const sensitivePermissions = normalized.permissions.filter((permission) => [
         'android.permission.BIND_ACCESSIBILITY_SERVICE',
@@ -67,16 +225,35 @@ function chooseNextAction(normalized) {
         'android.permission.SEND_SMS'
     ].includes(permission));
 
-    if (wantsFullServerAnalysis) {
+    if (mode === 'APK') {
+        if (normalized.uploadedApkPath) {
+            return {
+                nextAction: 'poll',
+                reason: null
+            };
+        }
         return {
             nextAction: 'upload_apk',
-            reason: 'Полная серверная проверка требует APK для статического анализа.'
+            reason: 'Режим APK требует загрузку APK для статической проверки.'
         };
     }
+
     if (!normalized.sha256) {
         return {
             nextAction: 'upload_apk',
             reason: 'Нет SHA-256. Для полной проверки нужен сам APK.'
+        };
+    }
+    if (wantsFullServerAnalysis) {
+        if (normalized.isDebuggable || normalized.usesCleartextTraffic || !normalized.installerPackage || sensitivePermissions.length > 0) {
+            return {
+                nextAction: 'upload_apk',
+                reason: 'Для этого пакета нужна расширенная статическая проверка APK.'
+            };
+        }
+        return {
+            nextAction: 'poll',
+            reason: 'Сначала выполняем hash+metadata этап без загрузки APK.'
         };
     }
     if ((normalized.isDebuggable || normalized.usesCleartextTraffic) && sensitivePermissions.length > 0) {
@@ -203,13 +380,16 @@ async function lookupVirusTotalByHash(sha256) {
 
 async function createDeepScanJob(userId, payload) {
     const normalized = normalizeDeepScanPayload(payload);
+    normalized.scanMode = normalizeScanMode(normalized.scanMode);
     const validationError = validateDeepScanPayload(normalized);
-    if (validationError) {
+    if (validationError && normalized.scanMode !== 'APK') {
         return { error: validationError };
     }
 
     const id = crypto.randomUUID();
     const now = nowMs();
+    const window = getUtcDayWindow(now);
+    const modeLimit = SCAN_MODE_LIMITS[normalized.scanMode];
     const decision = chooseNextAction(normalized);
     const requestJson = JSON.stringify({
         ...normalized,
@@ -217,23 +397,65 @@ async function createDeepScanJob(userId, payload) {
         upload_reason: decision.reason
     });
     const status = decision.nextAction === 'upload_apk' ? 'AWAITING_UPLOAD' : 'QUEUED';
+    const connection = await pool.getConnection();
 
-    await pool.query(
-        `INSERT INTO deep_scan_jobs
-         (id, user_id, package_name, app_name, sha256, status, request_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            id,
-            userId,
-            normalized.packageName,
-            normalized.appName,
-            normalized.sha256,
-            status,
-            requestJson,
-            now,
-            now
-        ]
-    );
+    try {
+        await connection.beginTransaction();
+        const userMode = await getUserDevMode(userId, connection);
+        if (!userMode.exists) {
+            await connection.rollback();
+            return { error: 'User not found', code: 'USER_NOT_FOUND', status_code: 404 };
+        }
+
+        if (userMode.devMode) {
+            await incrementDailyUsage(connection, userId, normalized.scanMode, window.dayKey, now);
+        } else {
+            const consumed = await consumeDailyUsageWithLimit(
+                connection,
+                userId,
+                normalized.scanMode,
+                window.dayKey,
+                modeLimit,
+                now
+            );
+            if (!consumed) {
+                await connection.rollback();
+                const limits = await getUserDeepScanLimits(userId);
+                return {
+                    error: `Daily limit reached for ${normalized.scanMode} scans`,
+                    code: 'DAILY_LIMIT_REACHED',
+                    status_code: 429,
+                    limits
+                };
+            }
+        }
+
+        await connection.query(
+            `INSERT INTO deep_scan_jobs
+             (id, user_id, package_name, app_name, sha256, scan_mode, status, request_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                userId,
+                normalized.packageName,
+                normalized.appName,
+                normalized.sha256,
+                normalized.scanMode,
+                status,
+                requestJson,
+                now,
+                now
+            ]
+        );
+        await connection.commit();
+    } catch (error) {
+        try {
+            await connection.rollback();
+        } catch (_) {}
+        throw error;
+    } finally {
+        connection.release();
+    }
 
     if (status === 'QUEUED') {
         enqueueDeepScan(id);
@@ -243,6 +465,7 @@ async function createDeepScanJob(userId, payload) {
         id,
         status,
         created_at: now,
+        scan_mode: normalized.scanMode,
         package_name: normalized.packageName,
         app_name: normalized.appName,
         sha256: normalized.sha256,
@@ -253,7 +476,7 @@ async function createDeepScanJob(userId, payload) {
 
 async function getDeepScanJob(id, userId) {
     const [rows] = await pool.query(
-        `SELECT id, user_id, package_name, app_name, sha256, status, verdict, risk_score,
+        `SELECT id, user_id, package_name, app_name, sha256, scan_mode, status, verdict, risk_score,
                 vt_status, vt_malicious, vt_suspicious, vt_harmless,
                 request_json, summary_json, findings_json, error_message,
                 created_at, started_at, completed_at, updated_at
@@ -271,6 +494,7 @@ async function getDeepScanJob(id, userId) {
     return {
         id: row.id,
         status: row.status,
+        scan_mode: normalizeScanMode(row.scan_mode || request.scan_mode || request.scanMode),
         package_name: row.package_name,
         app_name: row.app_name,
         sha256: row.sha256,
@@ -507,5 +731,6 @@ module.exports = {
     createDeepScanJob,
     getDeepScanJob,
     attachDeepScanApk,
+    getUserDeepScanLimits,
     resumePendingDeepScans
 };

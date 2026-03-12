@@ -1,13 +1,7 @@
 package com.shield.antivirus.navigation
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -16,10 +10,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -31,6 +23,7 @@ import androidx.navigation.navDeepLink
 import com.shield.antivirus.data.datastore.PendingAuthFlow
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.ui.components.ShieldBackdrop
+import com.shield.antivirus.ui.components.ShieldLoadingState
 import com.shield.antivirus.ui.screens.HistoryScreen
 import com.shield.antivirus.ui.screens.HomeScreen
 import com.shield.antivirus.ui.screens.LoginScreen
@@ -71,20 +64,13 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
 
     if (sessionState == null) {
         ShieldBackdrop {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    CircularProgressIndicator()
-                    Text(
-                        text = "Загрузка",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
+            ShieldLoadingState(
+                title = "Загружаем сессию",
+                subtitle = "Проверяем режим доступа",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            )
         }
         return
     }
@@ -97,7 +83,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
     }
     val startDestination = when {
         gate.isLoggedIn -> Screen.Home.route
-        gate.isGuest && !gate.guestScanUsed -> Screen.Home.route
+        gate.isGuest -> Screen.Home.route
         gate.pendingAuthFlow == PendingAuthFlow.LOGIN -> Screen.Login.route
         gate.pendingAuthFlow == PendingAuthFlow.REGISTER -> Screen.Register.route
         else -> Screen.Welcome.route
@@ -109,7 +95,7 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
     ) {
         composable(Screen.Welcome.route) {
             WelcomeScreen(
-                guestAvailable = !gate.guestScanUsed,
+                guestAvailable = true,
                 onLoginClick = { navController.navigate(Screen.Login.route) },
                 onRegisterClick = { navController.navigate(Screen.Register.route) },
                 onGuestClick = {
@@ -190,7 +176,12 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             HomeScreen(
                 viewModel = vm,
                 sessionGateIsGuest = gate.isGuest || guestEntryPending,
-                onStartScan = { type -> navController.navigate(Screen.Scan.createRoute(type)) },
+                onStartScan = { type, selectedPackage, apkUri ->
+                    navController.navigate(Screen.Scan.createRoute(type, selectedPackage, apkUri))
+                },
+                onOpenActiveScan = { type ->
+                    navController.navigate(Screen.Scan.createRoute(type))
+                },
                 onOpenHistory = { navController.navigate(Screen.History.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onOpenLogin = { navController.navigate(Screen.Login.route) },
@@ -199,13 +190,33 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
         }
         composable(
             route = Screen.Scan.route,
-            arguments = listOf(navArgument("scanType") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("scanType") { type = NavType.StringType },
+                navArgument("selectedPackage") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("apkUri") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
         ) { backStack ->
             val scanType = backStack.arguments?.getString("scanType") ?: "QUICK"
+            val selectedPackage = backStack.arguments
+                ?.getString("selectedPackage")
+                .orEmpty()
+                .ifBlank { null }
+            val apkUri = backStack.arguments
+                ?.getString("apkUri")
+                .orEmpty()
+                .ifBlank { null }
             val vm: ScanViewModel = viewModel(factory = ScanViewModel.Factory(context))
             ScanScreen(
                 viewModel = vm,
                 scanType = scanType,
+                selectedPackage = selectedPackage,
+                apkUri = apkUri,
                 onScanComplete = { scanId ->
                     navController.navigate(Screen.Results.createRoute(scanId)) {
                         popUpTo(Screen.Scan.route) { inclusive = true }

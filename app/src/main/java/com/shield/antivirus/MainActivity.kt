@@ -8,13 +8,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.graphics.Color
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
+import com.shield.antivirus.data.datastore.ThemeMode
+import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.navigation.NavGraph
 import com.shield.antivirus.ui.theme.ShieldAntivirusTheme
 import com.shield.antivirus.util.ProtectionServiceController
@@ -34,7 +38,14 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermissionIfNeeded()
 
         setContent {
-            ShieldAntivirusTheme {
+            val userPreferences = remember { UserPreferences(applicationContext) }
+            val themeMode by userPreferences.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+            val dynamicColors by userPreferences.dynamicColorsEnabled.collectAsState(initial = true)
+
+            ShieldAntivirusTheme(
+                themeMode = themeMode,
+                dynamicColor = dynamicColors
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = Color.Transparent

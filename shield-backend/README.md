@@ -142,8 +142,26 @@ For Gmail SMTP use:
 Deep scan combines:
 - local server heuristics on package metadata, install source, permission combos, debuggable/cleartext flags
 - VirusTotal file-hash reputation if `VT_API_KEY` is configured and `sha256` is present
+- APK structure checks from the bundled analyzer script
+- `YARA` rules for packers, C2 markers, shell execution, dynamic dex loading, root/evasion strings
+- `APKiD` fingerprints for packers, obfuscators, and anti-analysis markers when `apkid` is installed
+- `Androguard` manifest/DEX analysis for hardcoded endpoints, public IPs, dynamic loaders, shell execution, and accessibility automation markers when installed
+- `Quark-Engine` behavior rules when `quark` and its rule set are installed
 
 If VirusTotal is not configured, deep scan still runs heuristics and returns a result.
+
+### Optional analyzer setup
+
+```bash
+cd /home/fatalerror/shield-backend
+chmod +x scripts/setup_analyzers.sh
+./scripts/setup_analyzers.sh
+```
+
+Then add to `.env`:
+- `APK_ANALYZER_PYTHON=/home/fatalerror/shield-backend/.venv-analyzers/bin/python`
+- `QUARK_RULES_DIR=/root/.quark-engine/quark-rules`
+- `APK_ANALYZER_TIMEOUT_MS=120000`
 
 ## AI scan explain API
 

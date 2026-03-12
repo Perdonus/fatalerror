@@ -1,6 +1,13 @@
 package com.shield.antivirus.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.weight
@@ -18,10 +26,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TrackChanges
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,10 +52,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.shield.antivirus.R
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldLoadingState
 import com.shield.antivirus.ui.components.ShieldMetricTile
@@ -56,18 +73,21 @@ import com.shield.antivirus.ui.theme.criticalTone
 import com.shield.antivirus.ui.theme.safeTone
 import com.shield.antivirus.ui.theme.signalTone
 import com.shield.antivirus.ui.theme.warningTone
+import com.shield.antivirus.viewmodel.HomeInstalledApp
 import com.shield.antivirus.viewmodel.HomeUiState
 import com.shield.antivirus.viewmodel.HomeViewModel
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipInputStream
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     sessionGateIsGuest: Boolean,
-    onStartScan: (String) -> Unit,
+    onStartScan: (scanType: String, selectedPackage: String?, apkUri: String?) -> Unit,
+    onOpenActiveScan: (String) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogin: () -> Unit,
@@ -80,7 +100,7 @@ fun HomeScreen(
         if (sessionGateIsGuest && (current == null || !current.isGuest)) {
             ShieldLoadingState(
                 title = "Готовим режим гостя",
-                subtitle = "Поднимаем одноразовую проверку",
+                subtitle = "Применяем ограничения доступа",
                 modifier = Modifier.fillMaxSize()
             )
             return@ShieldBackdrop
@@ -98,10 +118,12 @@ fun HomeScreen(
         HomeContent(
             state = current,
             onStartScan = onStartScan,
+            onOpenActiveScan = onOpenActiveScan,
             onOpenHistory = onOpenHistory,
             onOpenSettings = onOpenSettings,
             onOpenLogin = onOpenLogin,
-            onOpenRegister = onOpenRegister
+            onOpenRegister = onOpenRegister,
+            onExitGuestMode = { viewModel.exitGuestMode() }
         )
     }
 }
@@ -109,12 +131,16 @@ fun HomeScreen(
 @Composable
 private fun HomeContent(
     state: HomeUiState,
-    onStartScan: (String) -> Unit,
+    onStartScan: (scanType: String, selectedPackage: String?, apkUri: String?) -> Unit,
+    onOpenActiveScan: (String) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogin: () -> Unit,
-    onOpenRegister: () -> Unit
+    onOpenRegister: () -> Unit,
+    onExitGuestMode: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scanLocked = state.isScanActive
     val protectionScore = calculateProtectionScore(state)
     val statusColor = when {
         state.isGuest -> MaterialTheme.colorScheme.signalTone
@@ -123,7 +149,32 @@ private fun HomeContent(
         else -> MaterialTheme.colorScheme.safeTone
     }
 
+    val fullLimitReached = state.fullScansToday >= 1
+    val selectiveLimitReached = state.selectiveScansToday >= 3
+    val apkLimitReached = state.apkScansToday >= 3
+
     var guestIntroLoading by rememberSaveable(state.isGuest) { mutableStateOf(state.isGuest) }
+    var showAppPicker by rememberSaveable { mutableStateOf(false) }
+    var modeMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    val apkPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) {
+            modeMessage = "Файл не выбран"
+        } else {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            if (!isValidApkSelection(context, uri)) {
+                modeMessage = "Выбранный файл не похож на корректный APK."
+                return@rememberLauncherForActivityResult
+            }
+            onStartScan("APK", null, uri.toString())
+        }
+    }
+
     LaunchedEffect(state.isGuest) {
         if (state.isGuest) {
             guestIntroLoading = true
@@ -142,25 +193,34 @@ private fun HomeContent(
             else -> state.userName
         },
         actions = {
-            if (!state.isGuest) {
-                IconButton(onClick = onOpenHistory) {
-                    Icon(Icons.Filled.History, contentDescription = "История")
-                }
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Настройки")
-                }
+            IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenHistory) {
+                Icon(Icons.Filled.History, contentDescription = "История")
+            }
+            IconButton(onClick = if (state.isGuest) onOpenLogin else onOpenSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "Настройки")
             }
         }
     ) { padding ->
         if (state.isGuest && guestIntroLoading) {
             ShieldLoadingState(
                 title = "Готовим режим гостя",
-                subtitle = "Поднимаем одноразовую проверку",
+                subtitle = "Применяем ограничения доступа",
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
             )
             return@ShieldScreenScaffold
+        }
+
+        if (showAppPicker) {
+            SelectInstalledAppDialog(
+                apps = state.installedApps,
+                onDismiss = { showAppPicker = false },
+                onSelected = { selected ->
+                    showAppPicker = false
+                    onStartScan("SELECTIVE", selected.packageName, null)
+                }
+            )
         }
 
         LazyColumn(
@@ -171,27 +231,63 @@ private fun HomeContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier.size(186.dp),
+                        shape = CircleShape,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.23f),
+                                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
+                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.05f)
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.shield_logo_transparent),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
                 ShieldPanel(accent = statusColor) {
                     ShieldSectionHeader(
                         eyebrow = if (state.isGuest) "Гость" else "Статус",
                         title = when {
-                            state.isGuest && state.guestScanUsed -> "Лимит исчерпан"
-                            state.isGuest -> "Одна проверка"
+                            state.isGuest -> "Только просмотр"
                             !state.isProtectionActive -> "Защита выключена"
                             state.totalThreatsEver > 0 -> "Нужна проверка"
                             else -> "Устройство защищено"
                         },
                         subtitle = when {
-                            state.isGuest && state.guestScanUsed -> "Чтобы продолжить, нужен аккаунт"
-                            state.isGuest -> "Доступна только быстрая проверка"
+                            state.isGuest -> "Все проверки заблокированы до входа"
                             else -> "Последняя проверка ${formatTime(state.lastScanTime)}"
                         }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ShieldStatusChip(
                             label = when {
-                                state.isGuest && state.guestScanUsed -> "Лимит исчерпан"
-                                state.isGuest -> "1 запуск"
+                                state.isGuest -> "Запуск заблокирован"
                                 state.isProtectionActive -> "24/7 включена"
                                 else -> "24/7 выключена"
                             },
@@ -204,44 +300,40 @@ private fun HomeContent(
                             color = if (state.isGuest) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.signalTone
                         )
                     }
-                    if (!state.isGuest) {
-                        Text(
-                            text = protectionScore.toString(),
-                            style = MaterialTheme.typography.displayLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        text = if (state.isGuest) "—" else protectionScore.toString(),
+                        style = MaterialTheme.typography.displayLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
-            if (!state.isGuest) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ShieldMetricTile(
-                            modifier = Modifier.weight(1f),
-                            title = "Приложений",
-                            value = state.installedAppsCount.toString(),
-                            support = "В пуле сканирования",
-                            icon = Icons.Filled.Security,
-                            accent = MaterialTheme.colorScheme.primary
-                        )
-                        ShieldMetricTile(
-                            modifier = Modifier.weight(1f),
-                            title = "Угроз",
-                            value = state.totalThreatsEver.toString(),
-                            support = if (state.totalThreatsEver == 0) "Пока чисто" else "Есть совпадения",
-                            icon = Icons.Filled.BugReport,
-                            accent = if (state.totalThreatsEver == 0) {
-                                MaterialTheme.colorScheme.safeTone
-                            } else {
-                                MaterialTheme.colorScheme.warningTone
-                            }
-                        )
-                    }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ShieldMetricTile(
+                        modifier = Modifier.weight(1f),
+                        title = "Приложений",
+                        value = state.installedAppsCount.toString(),
+                        support = "В пуле сканирования",
+                        icon = Icons.Filled.Security,
+                        accent = MaterialTheme.colorScheme.primary
+                    )
+                    ShieldMetricTile(
+                        modifier = Modifier.weight(1f),
+                        title = "Угроз",
+                        value = state.totalThreatsEver.toString(),
+                        support = if (state.totalThreatsEver == 0) "Пока чисто" else "Есть совпадения",
+                        icon = Icons.Filled.BugReport,
+                        accent = if (state.totalThreatsEver == 0) {
+                            MaterialTheme.colorScheme.safeTone
+                        } else {
+                            MaterialTheme.colorScheme.warningTone
+                        }
+                    )
                 }
             }
 
@@ -249,7 +341,75 @@ private fun HomeContent(
                 ShieldSectionHeader(
                     eyebrow = "Режимы",
                     title = "Сканирование",
-                    subtitle = if (state.isGuest) "Гостю доступен только быстрый режим" else "Выберите режим"
+                    subtitle = when {
+                        scanLocked -> "Идёт проверка. Новая недоступна"
+                        state.isGuest -> "Запуск проверок доступен после входа"
+                        else -> "Глубокая, быстрая, выборочная и APK"
+                    }
+                )
+            }
+
+            modeMessage?.let { message ->
+                item {
+                    ShieldPanel(accent = MaterialTheme.colorScheme.warningTone) {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+
+            if (scanLocked) {
+                item {
+                    val activeIsDeep = state.activeScanType.equals("FULL", ignoreCase = true) ||
+                        state.activeScanType.equals("SELECTIVE", ignoreCase = true) ||
+                        state.activeScanType.equals("APK", ignoreCase = true)
+                    ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
+                        ShieldSectionHeader(
+                            eyebrow = "Текущая проверка",
+                            title = if (activeIsDeep) "Идёт глубокая проверка" else "Идёт фоновая проверка",
+                            subtitle = state.activeScanCurrentApp.ifBlank { "Анализ пакетов" }
+                        )
+                        ShieldStatusChip(
+                            label = "${state.activeScanProgress.coerceIn(0, 100)}%",
+                            icon = Icons.Filled.TrackChanges,
+                            color = MaterialTheme.colorScheme.signalTone
+                        )
+                        Button(
+                            onClick = { onOpenActiveScan(state.activeScanType.ifBlank { "FULL" }) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.signalTone),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Посмотреть текущую проверку")
+                        }
+                    }
+                }
+            }
+
+            item {
+                ModeWideCard(
+                    title = "Глубокая",
+                    subtitle = when {
+                        state.isGuest -> "Недоступно в гостевом режиме"
+                        fullLimitReached -> "Лимит сегодня исчерпан (1/1)"
+                        else -> "Сервер + локально • осталось ${1 - state.fullScansToday}"
+                    },
+                    icon = Icons.Filled.Security,
+                    accent = MaterialTheme.colorScheme.tertiary,
+                    enabled = !state.isGuest && !fullLimitReached && !scanLocked,
+                    actionLabel = if (state.isGuest) "Войти" else if (fullLimitReached) "Лимит" else "Старт",
+                    onAction = {
+                        modeMessage = null
+                        when {
+                            scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "FULL" })
+                            state.isGuest -> onOpenLogin()
+                            fullLimitReached -> modeMessage = "Дневной лимит: глубокая проверка доступна 1 раз в сутки"
+                            else -> onStartScan("FULL", null, null)
+                        }
+                    }
                 )
             }
 
@@ -261,43 +421,101 @@ private fun HomeContent(
                     ModeGridCard(
                         modifier = Modifier.weight(1f),
                         title = "Быстрая",
-                        subtitle = if (state.isGuest) {
-                            if (state.guestScanUsed) "Лимит исчерпан" else "1 запуск"
-                        } else {
-                            "Локально"
-                        },
+                        subtitle = if (state.isGuest) "Нужен вход" else "Локальная проверка",
                         icon = Icons.Filled.FlashOn,
                         accent = MaterialTheme.colorScheme.primary,
-                        enabled = !state.isGuest || !state.guestScanUsed,
-                        actionLabel = if (state.isGuest && state.guestScanUsed) "Войти" else "Старт",
+                        enabled = !state.isGuest && !scanLocked,
+                        actionLabel = if (state.isGuest) "Войти" else "Старт",
                         onAction = {
-                            if (state.isGuest && state.guestScanUsed) {
-                                onOpenLogin()
-                            } else {
-                                onStartScan("QUICK")
+                            modeMessage = null
+                            when {
+                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "QUICK" })
+                                state.isGuest -> onOpenLogin()
+                                else -> onStartScan("QUICK", null, null)
                             }
                         }
                     )
                     ModeGridCard(
                         modifier = Modifier.weight(1f),
-                        title = "Глубокая",
-                        subtitle = if (state.isGuest) "Нужен вход" else "Сервер + локально",
-                        icon = Icons.Filled.Security,
-                        accent = MaterialTheme.colorScheme.tertiary,
-                        enabled = !state.isGuest,
-                        actionLabel = if (state.isGuest) "Войти" else "Старт",
+                        title = "Выборочная",
+                        subtitle = when {
+                            state.isGuest -> "Нужен вход"
+                            selectiveLimitReached -> "Лимит 3/3"
+                            else -> "Осталось ${3 - state.selectiveScansToday}"
+                        },
+                        icon = Icons.Filled.TrackChanges,
+                        accent = MaterialTheme.colorScheme.signalTone,
+                        enabled = !state.isGuest && !selectiveLimitReached && !scanLocked,
+                        actionLabel = if (state.isGuest) "Войти" else "Выбрать",
                         onAction = {
-                            if (state.isGuest) {
-                                onOpenLogin()
-                            } else {
-                                onStartScan("FULL")
+                            modeMessage = null
+                            when {
+                                scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "SELECTIVE" })
+                                state.isGuest -> onOpenLogin()
+                                selectiveLimitReached -> {
+                                    modeMessage = "Дневной лимит: выборочная проверка доступна 3 раза в сутки"
+                                }
+                                state.installedApps.isEmpty() -> {
+                                    modeMessage = "Не удалось получить список установленных приложений"
+                                }
+                                else -> {
+                                    showAppPicker = true
+                                }
                             }
                         }
                     )
                 }
             }
 
-            if (state.isGuest && state.guestScanUsed) {
+            item {
+                ShieldPanel(accent = MaterialTheme.colorScheme.signalTone) {
+                    ShieldSectionHeader(
+                        eyebrow = "Файл",
+                        title = "Проверить APK",
+                        subtitle = when {
+                            state.isGuest -> "Только для авторизованных пользователей"
+                            apkLimitReached -> "Лимит сегодня исчерпан (3/3)"
+                            else -> "Осталось ${3 - state.apkScansToday} запуска"
+                        }
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ShieldStatusChip(
+                            label = "Серверный анализ",
+                            icon = Icons.Filled.UploadFile,
+                            color = MaterialTheme.colorScheme.signalTone
+                        )
+                        Button(
+                            onClick = {
+                                modeMessage = null
+                                when {
+                                    scanLocked -> onOpenActiveScan(state.activeScanType.ifBlank { "APK" })
+                                    state.isGuest -> onOpenLogin()
+                                    apkLimitReached -> {
+                                        modeMessage = "Дневной лимит: проверка APK доступна 3 раза в сутки"
+                                    }
+                                    else -> apkPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream", "*/*"))
+                                }
+                            },
+                            colors = ShieldPrimaryButtonColors(
+                                if (!state.isGuest && !apkLimitReached && !scanLocked) {
+                                    MaterialTheme.colorScheme.signalTone
+                                } else {
+                                    MaterialTheme.colorScheme.outline
+                                }
+                            ),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text(if (state.isGuest) "Войти" else "Выбрать")
+                        }
+                    }
+                }
+            }
+
+            if (state.isGuest) {
                 item {
                     ShieldPanel(accent = MaterialTheme.colorScheme.secondary) {
                         Row(
@@ -315,62 +533,165 @@ private fun HomeContent(
                 }
             }
 
-            if (!state.isGuest) {
+            if (state.isGuest && state.isLoggedIn) {
                 item {
-                    ShieldSectionHeader(
-                        eyebrow = "История",
-                        title = "Последние проверки",
-                        subtitle = if (state.recentResults.isEmpty()) "Пока пусто" else "Свежие результаты"
-                    )
+                    ShieldPanel(accent = MaterialTheme.colorScheme.tertiary) {
+                        Text(
+                            text = "Тестовый гостевой режим активен",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Button(
+                            onClick = onExitGuestMode,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.tertiary),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Вернуться в аккаунт")
+                        }
+                    }
                 }
+            }
 
-                if (state.recentResults.isEmpty()) {
-                    item {
-                        ShieldPanel(accent = MaterialTheme.colorScheme.surfaceVariant) {
-                            Text(
-                                text = "История пуста",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Запустите быструю или глубокую проверку",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                } else {
-                    items(state.recentResults, key = { it.id }) { result ->
-                        val accent = if (result.threatsFound > 0) {
-                            MaterialTheme.colorScheme.warningTone
-                        } else {
-                            MaterialTheme.colorScheme.safeTone
-                        }
-                        ShieldPanel(accent = accent) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = scanTypeLabel(result.scanType),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                ShieldStatusChip(
-                                    label = if (result.threatsFound > 0) "Угроз: ${result.threatsFound}" else "Чисто",
-                                    icon = if (result.threatsFound > 0) Icons.Filled.BugReport else Icons.Filled.Security,
-                                    color = accent
-                                )
-                            }
-                            Text(
-                                text = "${result.totalScanned} пакетов • ${formatAbsoluteTime(result.completedAt)}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+            item {
+                ShieldSectionHeader(
+                    eyebrow = "История",
+                    title = "Последние проверки",
+                    subtitle = if (state.recentResults.isEmpty()) "Пока пусто" else "Свежие результаты"
+                )
+            }
+
+            if (state.isGuest) {
+                item {
+                    ShieldPanel(accent = MaterialTheme.colorScheme.outline) {
+                        Text(
+                            text = "История доступна после входа",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Структура экрана сохранена, но просмотр отчётов заблокирован в гостевом режиме.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = onOpenLogin,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ShieldPrimaryButtonColors(MaterialTheme.colorScheme.signalTone),
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Text("Войти")
                         }
                     }
                 }
+            } else if (state.recentResults.isEmpty()) {
+                item {
+                    ShieldPanel(accent = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(
+                            text = "История пуста",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Запустите быструю, глубокую или выборочную проверку",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                items(state.recentResults, key = { it.id }) { result ->
+                    val accent = if (result.threatsFound > 0) {
+                        MaterialTheme.colorScheme.warningTone
+                    } else {
+                        MaterialTheme.colorScheme.safeTone
+                    }
+                    ShieldPanel(accent = accent) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = scanTypeLabel(result.scanType),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold
+                            )
+                            ShieldStatusChip(
+                                label = if (result.threatsFound > 0) "Угроз: ${result.threatsFound}" else "Чисто",
+                                icon = if (result.threatsFound > 0) Icons.Filled.BugReport else Icons.Filled.Security,
+                                color = accent
+                            )
+                        }
+                        Text(
+                            text = "${result.totalScanned} пакетов • ${formatAbsoluteTime(result.completedAt)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeWideCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accent: Color,
+    enabled: Boolean,
+    actionLabel: String,
+    onAction: () -> Unit
+) {
+    val contentColor = if (enabled) accent else MaterialTheme.colorScheme.outline
+    val containerColor = if (enabled) {
+        accent.copy(alpha = 0.12f)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(contentColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = contentColor)
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = onAction,
+                colors = ShieldPrimaryButtonColors(if (enabled) accent else MaterialTheme.colorScheme.outline),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Text(actionLabel)
             }
         }
     }
@@ -438,6 +759,63 @@ private fun ModeGridCard(
     }
 }
 
+@Composable
+private fun SelectInstalledAppDialog(
+    apps: List<HomeInstalledApp>,
+    onDismiss: () -> Unit,
+    onSelected: (HomeInstalledApp) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Выбор приложения") },
+        text = {
+            if (apps.isEmpty()) {
+                Text(
+                    text = "Список приложений пуст",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(apps, key = { it.packageName }) { app ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(MaterialTheme.shapes.medium)
+                                .clickable { onSelected(app) }
+                                .padding(vertical = 10.dp, horizontal = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = app.appName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = app.packageName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть")
+            }
+        },
+        icon = { Icon(Icons.Filled.Description, contentDescription = null) }
+    )
+}
+
 private fun calculateProtectionScore(state: HomeUiState): Int {
     var score = 44
     if (state.isProtectionActive) score += 28 else score -= 18
@@ -464,6 +842,25 @@ private fun formatAbsoluteTime(timestamp: Long): String =
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая"
     "FULL" -> "Глубокая"
-    "SELECTIVE" -> "Глубокая"
+    "SELECTIVE" -> "Выборочная"
+    "APK" -> "Проверка APK"
     else -> scanType
+}
+
+private fun isValidApkSelection(context: Context, uri: Uri): Boolean {
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            ZipInputStream(input).use { zip ->
+                var hasManifest = false
+                var hasDex = false
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.name == "AndroidManifest.xml") hasManifest = true
+                    if (entry.name == "classes.dex") hasDex = true
+                    if (hasManifest && hasDex) break
+                }
+                hasManifest && hasDex
+            }
+        } ?: false
+    }.getOrDefault(false)
 }

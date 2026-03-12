@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -272,20 +273,21 @@ private fun formatResultsTime(timestamp: Long): String =
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Глубокая проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    "APK" -> "Проверка APK"
     else -> scanType
 }
 
 private fun severityLabel(severity: ThreatSeverity): String = when (severity) {
-    ThreatSeverity.CRITICAL -> "Критично"
-    ThreatSeverity.HIGH -> "Высокая"
-    ThreatSeverity.MEDIUM -> "Средняя"
-    ThreatSeverity.LOW -> "Низкая"
+    ThreatSeverity.CRITICAL -> "Критический"
+    ThreatSeverity.HIGH -> "Высокий"
+    ThreatSeverity.MEDIUM -> "Средний"
+    ThreatSeverity.LOW -> "Низкий"
 }
 
 private fun severityIcon(severity: ThreatSeverity) = when (severity) {
     ThreatSeverity.CRITICAL -> Icons.Filled.Error
     ThreatSeverity.HIGH -> Icons.Filled.Warning
     ThreatSeverity.MEDIUM -> Icons.Filled.BugReport
-    ThreatSeverity.LOW -> Icons.Filled.Security
+    ThreatSeverity.LOW -> Icons.Filled.Info
 }

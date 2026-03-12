@@ -4,14 +4,19 @@ const auth = require('../middleware/auth');
 const {
     createDeepScanJob,
     getDeepScanJob,
-    attachDeepScanApk
+    attachDeepScanApk,
+    getUserDeepScanLimits
 } = require('../services/deepScanService');
 
 router.post('/start', auth, async (req, res) => {
     try {
         const job = await createDeepScanJob(req.userId, req.body || {});
         if (job?.error) {
-            return res.status(400).json({ error: job.error });
+            return res.status(job.status_code || 400).json({
+                error: job.error,
+                code: job.code || null,
+                limits: job.limits || null
+            });
         }
 
         return res.status(job.status === 'AWAITING_UPLOAD' ? 202 : 202).json({
@@ -52,6 +57,22 @@ router.post(
         }
     }
 );
+
+router.get('/limits', auth, async (req, res) => {
+    try {
+        const limits = await getUserDeepScanLimits(req.userId);
+        if (limits?.error) {
+            return res.status(404).json({ error: limits.error, code: limits.code || null });
+        }
+        return res.json({
+            success: true,
+            limits
+        });
+    } catch (error) {
+        console.error('Deep scan limits error:', error);
+        return res.status(500).json({ error: 'Server error' });
+    }
+});
 
 router.get('/:id', auth, async (req, res) => {
     try {

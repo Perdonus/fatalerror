@@ -1,5 +1,6 @@
 package com.shield.antivirus.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,11 +15,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.shield.antivirus.R
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldPrimaryButtonColors
+import com.shield.antivirus.ui.components.WelcomeEdgeDecorations
 import com.shield.antivirus.ui.components.shieldBottomInsets
 
 @Composable
@@ -35,12 +40,15 @@ fun WelcomeScreen(
                 .safeDrawingPadding()
                 .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
-            Text(
-                text = "ShieldSecurity",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopStart)
+            WelcomeEdgeDecorations(modifier = Modifier.fillMaxSize())
+            Image(
+                painter = painterResource(id = R.drawable.shield_logo_transparent),
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth(0.72f)
+                    .alpha(0.28f),
+                contentScale = ContentScale.Fit
             )
             ShieldPanel(
                 modifier = Modifier

@@ -13,8 +13,8 @@ android {
         applicationId = "com.shield.antivirus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.2.7"
+        versionCode = 20
+        versionName = "1.3.0"
     }
 
     signingConfigs {

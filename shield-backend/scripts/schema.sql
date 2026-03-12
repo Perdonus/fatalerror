@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at BIGINT NOT NULL,
     is_premium TINYINT(1) DEFAULT 0,
     premium_expires_at BIGINT DEFAULT NULL,
+    is_dev_mode TINYINT(1) DEFAULT 0,
     last_login_at BIGINT DEFAULT NULL
 );
 
@@ -123,7 +124,8 @@ CREATE TABLE IF NOT EXISTS deep_scan_jobs (
     package_name VARCHAR(255) DEFAULT NULL,
     app_name VARCHAR(255) DEFAULT NULL,
     sha256 VARCHAR(64) DEFAULT NULL,
-    status ENUM('QUEUED','RUNNING','COMPLETED','FAILED') NOT NULL DEFAULT 'QUEUED',
+    scan_mode ENUM('FULL','SELECTIVE','APK') NOT NULL DEFAULT 'FULL',
+    status ENUM('QUEUED','AWAITING_UPLOAD','RUNNING','COMPLETED','FAILED') NOT NULL DEFAULT 'QUEUED',
     verdict VARCHAR(20) DEFAULT NULL,
     risk_score INT NOT NULL DEFAULT 0,
     vt_status VARCHAR(32) DEFAULT NULL,
@@ -140,6 +142,19 @@ CREATE TABLE IF NOT EXISTS deep_scan_jobs (
     updated_at BIGINT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_deep_scan_jobs_user_created (user_id, created_at),
+    INDEX idx_deep_scan_jobs_user_mode_created (user_id, scan_mode, created_at),
     INDEX idx_deep_scan_jobs_status_created (status, created_at),
     INDEX idx_deep_scan_jobs_sha256 (sha256)
+);
+
+CREATE TABLE IF NOT EXISTS deep_scan_daily_usage (
+    user_id VARCHAR(36) NOT NULL,
+    usage_date CHAR(10) NOT NULL,
+    scan_mode ENUM('FULL','SELECTIVE','APK') NOT NULL,
+    launches_count INT NOT NULL DEFAULT 0,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, usage_date, scan_mode),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_deep_scan_daily_usage_user_date (user_id, usage_date)
 );

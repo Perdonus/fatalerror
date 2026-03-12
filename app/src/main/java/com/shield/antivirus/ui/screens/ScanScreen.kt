@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Warning
@@ -51,6 +52,8 @@ import com.shield.antivirus.viewmodel.ScanViewModel
 fun ScanScreen(
     viewModel: ScanViewModel,
     scanType: String,
+    selectedPackage: String? = null,
+    apkUri: String? = null,
     onScanComplete: (Long) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -58,8 +61,12 @@ fun ScanScreen(
     val guestLimitReached by viewModel.guestLimitReached.collectAsState()
     val keepRunningInBackground = scanType.uppercase() != "QUICK"
 
-    LaunchedEffect(scanType) {
-        viewModel.startScan(scanType)
+    LaunchedEffect(scanType, selectedPackage, apkUri) {
+        viewModel.startScan(
+            scanType = scanType,
+            selectedPackages = selectedPackage?.let { listOf(it) }.orEmpty(),
+            apkUri = apkUri
+        )
     }
 
     LaunchedEffect(progress?.isComplete) {
@@ -105,12 +112,12 @@ fun ScanScreen(
                     item {
                         ShieldPanel(accent = MaterialTheme.colorScheme.warningTone) {
                             Text(
-                                text = "Гостевой запуск уже использован",
+                                text = "Запуск в гостевом режиме заблокирован",
                                 style = MaterialTheme.typography.titleLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Чтобы запустить новую проверку, войдите или зарегистрируйтесь.",
+                                text = "Войдите в аккаунт, чтобы запускать проверки.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -216,7 +223,7 @@ fun ScanScreen(
                                 )
                                 ShieldStatusChip(
                                     label = severityLabel(threat.severity),
-                                    icon = Icons.Filled.BugReport,
+                                    icon = severityIcon(threat.severity),
                                     color = threatColor
                                 )
                             }
@@ -277,20 +284,33 @@ private fun progressSummary(progress: ScanProgress?): String {
 private fun scanError(progress: ScanProgress?): String? {
     val current = progress?.currentApp.orEmpty()
     if (current.startsWith("Глубокая проверка была прервана")) return current
+    if (current.startsWith("Лимит")) return current
+    if (current.startsWith("Режим")) return current
+    if (current.startsWith("Выберите")) return current
+    if (current.startsWith("Уже идёт")) return current
     if (current.contains("ошиб", ignoreCase = true)) return current
+    if (current.contains("не является корректным APK", ignoreCase = true)) return current
     return null
 }
 
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Глубокая проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    "APK" -> "Проверка APK"
     else -> scanType
 }
 
 private fun severityLabel(severity: ThreatSeverity): String = when (severity) {
-    ThreatSeverity.CRITICAL -> "Критично"
-    ThreatSeverity.HIGH -> "Высокая"
-    ThreatSeverity.MEDIUM -> "Средняя"
-    ThreatSeverity.LOW -> "Низкая"
+    ThreatSeverity.CRITICAL -> "Критический"
+    ThreatSeverity.HIGH -> "Высокий"
+    ThreatSeverity.MEDIUM -> "Средний"
+    ThreatSeverity.LOW -> "Низкий"
+}
+
+private fun severityIcon(severity: ThreatSeverity) = when (severity) {
+    ThreatSeverity.CRITICAL -> Icons.Filled.Error
+    ThreatSeverity.HIGH -> Icons.Filled.Warning
+    ThreatSeverity.MEDIUM -> Icons.Filled.BugReport
+    ThreatSeverity.LOW -> Icons.Filled.Security
 }

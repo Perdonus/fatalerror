@@ -1,13 +1,14 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
-const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '45000', 10);
+const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '120000', 10);
+const ANALYZER_PYTHON = process.env.APK_ANALYZER_PYTHON || 'python3';
 
 function runAnalyzer(apkPath) {
     return new Promise((resolve) => {
         const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'analyze_apk.py');
         const rulesPath = path.join(__dirname, '..', '..', 'rules', 'deep_scan.yar');
-        const child = spawn('python3', [scriptPath, '--apk', apkPath, '--rules', rulesPath], {
+        const child = spawn(ANALYZER_PYTHON, [scriptPath, '--apk', apkPath, '--rules', rulesPath], {
             stdio: ['ignore', 'pipe', 'pipe']
         });
 

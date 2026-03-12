@@ -27,6 +27,7 @@ class DeepScanWorker(
             ?.map { it.trim() }
             ?.filter { it.isNotBlank() }
             .orEmpty()
+        val apkUri = inputData.getString(KEY_APK_URI)?.ifBlank { null }
 
         val repo = ScanRepository(applicationContext)
         val prefs = UserPreferences(applicationContext)
@@ -38,6 +39,7 @@ class DeepScanWorker(
             repo.startScan(
                 scanType = scanType,
                 selectedPackages = selectedPackages,
+                apkUriString = apkUri,
                 manageNotifications = false
             ).collect { progress ->
                 lastProgress = progress
@@ -76,6 +78,7 @@ class DeepScanWorker(
         const val UNIQUE_WORK_NAME = "shield_deep_scan_active"
         const val KEY_SCAN_TYPE = "scan_type"
         const val KEY_SELECTED_PACKAGES = "selected_packages"
+        const val KEY_APK_URI = "apk_uri"
         const val KEY_CURRENT_APP = "current_app"
         const val KEY_SCANNED_COUNT = "scanned_count"
         const val KEY_TOTAL_COUNT = "total_count"
@@ -84,19 +87,25 @@ class DeepScanWorker(
         const val KEY_THREATS_FOUND = "threats_found"
         const val KEY_ERROR_MESSAGE = "error_message"
 
-        fun enqueue(context: Context, scanType: String, selectedPackages: List<String>): java.util.UUID {
+        fun enqueue(
+            context: Context,
+            scanType: String,
+            selectedPackages: List<String>,
+            apkUri: String? = null
+        ): java.util.UUID {
             val request = OneTimeWorkRequestBuilder<DeepScanWorker>()
                 .setInputData(
                     workDataOf(
                         KEY_SCAN_TYPE to scanType,
-                        KEY_SELECTED_PACKAGES to selectedPackages.joinToString(",")
+                        KEY_SELECTED_PACKAGES to selectedPackages.joinToString(","),
+                        KEY_APK_URI to apkUri.orEmpty()
                     )
                 )
                 .build()
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 UNIQUE_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 request
             )
             return request.id
@@ -109,7 +118,7 @@ class DeepScanWorker(
         fun isDeepScan(workInfo: WorkInfo?): Boolean {
             val scanType = workInfo?.progress?.getString(KEY_SCAN_TYPE)
                 ?: workInfo?.outputData?.getString(KEY_SCAN_TYPE)
-            return scanType == "FULL" || scanType == "SELECTIVE"
+            return scanType == "FULL" || scanType == "SELECTIVE" || scanType == "APK"
         }
     }
 }
@@ -131,6 +140,7 @@ private fun ScanProgress.progressPercent(): Int =
 private fun ScanProgress.stageLabel(scanType: String): String = when {
     isComplete -> "Результат готов"
     scanType == "FULL" && scannedCount <= 0 -> "Подготовка APK и серверного анализа"
+    scanType == "APK" && scannedCount <= 0 -> "Проверка APK и запуск серверного анализа"
     progressPercent() < 25 -> "Хэши и метаданные"
     progressPercent() < 65 -> "Эвристика, VT и статический анализ"
     else -> "Сохраняем результат"

@@ -29,6 +29,17 @@ enum class PendingAuthFlow {
     }
 }
 
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK;
+
+    companion object {
+        fun fromRaw(value: String?): ThemeMode =
+            entries.firstOrNull { it.name == value } ?: SYSTEM
+    }
+}
+
 class UserPreferences(private val context: Context) {
 
     companion object {
@@ -51,6 +62,13 @@ class UserPreferences(private val context: Context) {
         val KEY_PENDING_AUTH_EXPIRES_AT = longPreferencesKey("pending_auth_expires_at")
         val KEY_ACTIVE_DEEP_SCAN_WORK_ID = stringPreferencesKey("active_deep_scan_work_id")
         val KEY_ACTIVE_DEEP_SCAN_TYPE = stringPreferencesKey("active_deep_scan_type")
+        val KEY_ACTIVE_SCAN_TYPE = stringPreferencesKey("active_scan_type")
+        val KEY_ACTIVE_SCAN_CURRENT_APP = stringPreferencesKey("active_scan_current_app")
+        val KEY_ACTIVE_SCAN_PROGRESS = intPreferencesKey("active_scan_progress")
+        val KEY_ACTIVE_SCAN_STARTED_AT = longPreferencesKey("active_scan_started_at")
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_DYNAMIC_COLORS_ENABLED = booleanPreferencesKey("dynamic_colors_enabled")
+        val KEY_IS_DEVELOPER_MODE = booleanPreferencesKey("is_developer_mode")
     }
 
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.preferenceFlow(KEY_IS_LOGGED_IN, false)
@@ -72,6 +90,17 @@ class UserPreferences(private val context: Context) {
     val pendingAuthExpiresAt: Flow<Long> = context.dataStore.data.preferenceFlow(KEY_PENDING_AUTH_EXPIRES_AT, 0L)
     val activeDeepScanWorkId: Flow<String> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_DEEP_SCAN_WORK_ID, "")
     val activeDeepScanType: Flow<String> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_DEEP_SCAN_TYPE, "")
+    val activeScanType: Flow<String> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_SCAN_TYPE, "")
+    val activeScanCurrentApp: Flow<String> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_SCAN_CURRENT_APP, "")
+    val activeScanProgress: Flow<Int> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_SCAN_PROGRESS, 0)
+    val activeScanStartedAt: Flow<Long> = context.dataStore.data.preferenceFlow(KEY_ACTIVE_SCAN_STARTED_AT, 0L)
+    val themeMode: Flow<ThemeMode> = context.dataStore.data
+        .catchPreferences()
+        .map { ThemeMode.fromRaw(it[KEY_THEME_MODE]) }
+    val dynamicColorsEnabled: Flow<Boolean> =
+        context.dataStore.data.preferenceFlow(KEY_DYNAMIC_COLORS_ENABLED, true)
+    val isDeveloperMode: Flow<Boolean> =
+        context.dataStore.data.preferenceFlow(KEY_IS_DEVELOPER_MODE, false)
 
     suspend fun setLoggedIn(value: Boolean) {
         context.dataStore.edit { it[KEY_IS_LOGGED_IN] = value }
@@ -109,6 +138,25 @@ class UserPreferences(private val context: Context) {
             it[KEY_AUTH_TOKEN] = ""
             it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
             it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
+            it.remove(KEY_ACTIVE_SCAN_TYPE)
+            it.remove(KEY_ACTIVE_SCAN_CURRENT_APP)
+            it.remove(KEY_ACTIVE_SCAN_PROGRESS)
+            it.remove(KEY_ACTIVE_SCAN_STARTED_AT)
+        }
+    }
+
+    suspend fun enterGuestModeForDeveloper() {
+        context.dataStore.edit {
+            it[KEY_IS_GUEST] = true
+            it[KEY_IS_LOGGED_IN] = true
+            it[KEY_REALTIME_PROT] = false
+            it[KEY_SCAN_ON_INSTALL] = false
+            it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
+            it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
+            it.remove(KEY_ACTIVE_SCAN_TYPE)
+            it.remove(KEY_ACTIVE_SCAN_CURRENT_APP)
+            it.remove(KEY_ACTIVE_SCAN_PROGRESS)
+            it.remove(KEY_ACTIVE_SCAN_STARTED_AT)
         }
     }
 
@@ -138,6 +186,10 @@ class UserPreferences(private val context: Context) {
             it.remove(KEY_PENDING_AUTH_EXPIRES_AT)
             it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
             it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
+            it.remove(KEY_ACTIVE_SCAN_TYPE)
+            it.remove(KEY_ACTIVE_SCAN_CURRENT_APP)
+            it.remove(KEY_ACTIVE_SCAN_PROGRESS)
+            it.remove(KEY_ACTIVE_SCAN_STARTED_AT)
         }
     }
 
@@ -174,6 +226,18 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_SCAN_ON_INSTALL] = enabled }
     }
 
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { it[KEY_THEME_MODE] = mode.name }
+    }
+
+    suspend fun setDynamicColorsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_DYNAMIC_COLORS_ENABLED] = enabled }
+    }
+
+    suspend fun setDeveloperMode(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_IS_DEVELOPER_MODE] = enabled }
+    }
+
     suspend fun updateLastScanTime() {
         context.dataStore.edit { it[KEY_LAST_SCAN_TIME] = System.currentTimeMillis() }
     }
@@ -189,6 +253,42 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit {
             it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
             it.remove(KEY_ACTIVE_DEEP_SCAN_TYPE)
+        }
+    }
+
+    suspend fun tryAcquireActiveScan(scanType: String, initialApp: String = "Подготовка"): Boolean {
+        var acquired = false
+        context.dataStore.edit {
+            val existing = it[KEY_ACTIVE_SCAN_TYPE].orEmpty()
+            if (existing.isBlank()) {
+                it[KEY_ACTIVE_SCAN_TYPE] = scanType
+                it[KEY_ACTIVE_SCAN_CURRENT_APP] = initialApp
+                it[KEY_ACTIVE_SCAN_PROGRESS] = 0
+                it[KEY_ACTIVE_SCAN_STARTED_AT] = System.currentTimeMillis()
+                acquired = true
+            }
+        }
+        return acquired
+    }
+
+    suspend fun updateActiveScan(scanType: String, currentApp: String, scanned: Int, total: Int) {
+        context.dataStore.edit {
+            if (it[KEY_ACTIVE_SCAN_TYPE].orEmpty() == scanType) {
+                it[KEY_ACTIVE_SCAN_CURRENT_APP] = currentApp
+                it[KEY_ACTIVE_SCAN_PROGRESS] = if (total <= 0) 0 else (((scanned.coerceAtLeast(0)).toFloat() / total.toFloat()) * 100f).toInt()
+            }
+        }
+    }
+
+    suspend fun clearActiveScan(scanType: String? = null) {
+        context.dataStore.edit {
+            val existing = it[KEY_ACTIVE_SCAN_TYPE].orEmpty()
+            if (scanType == null || existing == scanType || existing.isBlank()) {
+                it.remove(KEY_ACTIVE_SCAN_TYPE)
+                it.remove(KEY_ACTIVE_SCAN_CURRENT_APP)
+                it.remove(KEY_ACTIVE_SCAN_PROGRESS)
+                it.remove(KEY_ACTIVE_SCAN_STARTED_AT)
+            }
         }
     }
 

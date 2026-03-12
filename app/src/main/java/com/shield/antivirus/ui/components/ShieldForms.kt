@@ -6,14 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -45,6 +42,7 @@ fun ShieldFormScreenContent(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -52,7 +50,7 @@ fun ShieldFormScreenContent(
             Spacer(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsBottomHeight(WindowInsets.navigationBars.union(WindowInsets.ime))
+                    .height(24.dp)
             )
         }
     }
@@ -64,7 +62,7 @@ fun Modifier.bringIntoViewOnFocus(): Modifier = composed {
     bringIntoViewRequester(requester).onFocusChanged { focusState ->
         if (focusState.isFocused) {
             scope.launch {
-                delay(120)
+                delay(220)
                 requester.bringIntoView()
             }
         }

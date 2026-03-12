@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.shield.antivirus.data.datastore.PendingAuthFlow
+import com.shield.antivirus.data.datastore.ThemeMode
 import com.shield.antivirus.data.datastore.UserPreferences
 import com.shield.antivirus.data.repository.AuthRepository
 import com.shield.antivirus.data.repository.AuthResult
@@ -41,6 +42,9 @@ class AuthViewModel(private val context: Context) : ViewModel() {
     val scanOnInstall = prefs.scanOnInstall.stateIn(viewModelScope, SharingStarted.Lazily, true)
     val isGuest = prefs.isGuest.stateIn(viewModelScope, SharingStarted.Lazily, false)
     val guestScanUsed = prefs.guestScanUsed.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    val themeMode = prefs.themeMode.stateIn(viewModelScope, SharingStarted.Lazily, ThemeMode.SYSTEM)
+    val dynamicColorsEnabled = prefs.dynamicColorsEnabled.stateIn(viewModelScope, SharingStarted.Lazily, true)
+    val isDeveloperMode = prefs.isDeveloperMode.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     fun restorePending(flow: PendingAuthFlow) {
         viewModelScope.launch {
@@ -262,6 +266,14 @@ class AuthViewModel(private val context: Context) : ViewModel() {
         }
     }
 
+    fun enterGuestModeForDeveloper(onComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            prefs.enterGuestModeForDeveloper()
+            ProtectionServiceController.stop(context)
+            onComplete?.invoke()
+        }
+    }
+
     fun logout(onComplete: (() -> Unit)? = null) {
         viewModelScope.launch {
             repo.logout()
@@ -279,6 +291,28 @@ class AuthViewModel(private val context: Context) : ViewModel() {
 
     fun setScanOnInstall(enabled: Boolean) {
         viewModelScope.launch { prefs.setScanOnInstall(enabled) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { prefs.setThemeMode(mode) }
+    }
+
+    fun setDynamicColorsEnabled(enabled: Boolean) {
+        viewModelScope.launch { prefs.setDynamicColorsEnabled(enabled) }
+    }
+
+    fun activateDeveloperMode(devKey: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val success = devKey.trim() == DEV_ACCESS_KEY
+            if (success) {
+                prefs.setDeveloperMode(true)
+            }
+            onResult(success)
+        }
+    }
+
+    fun deactivateDeveloperMode() {
+        viewModelScope.launch { prefs.setDeveloperMode(false) }
     }
 
     fun clearError() {
@@ -304,5 +338,10 @@ class AuthViewModel(private val context: Context) : ViewModel() {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>) =
             AuthViewModel(context.applicationContext) as T
+    }
+
+    companion object {
+        const val DEV_ACCESS_KEY =
+            "SHIELD-LOCAL-DEV-KEY-2026::A3F7D91C-4B68-44A2-93D9-91F5B2AAE7D6::UNLOCK-7D2C-11E6-9C89"
     }
 }

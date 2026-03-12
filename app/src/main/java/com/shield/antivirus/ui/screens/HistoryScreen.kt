@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -198,7 +199,8 @@ private fun formatHistoryTime(timestamp: Long): String =
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
     "FULL" -> "Глубокая проверка"
-    "SELECTIVE" -> "Глубокая проверка"
+    "SELECTIVE" -> "Выборочная проверка"
+    "APK" -> "Проверка APK"
     else -> scanType
 }
 
@@ -215,15 +217,15 @@ private fun severityIcon(severity: com.shield.antivirus.data.model.ThreatSeverit
     com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> Icons.Filled.Error
     com.shield.antivirus.data.model.ThreatSeverity.HIGH -> Icons.Filled.Warning
     com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> Icons.Filled.BugReport
-    com.shield.antivirus.data.model.ThreatSeverity.LOW -> Icons.Filled.Security
+    com.shield.antivirus.data.model.ThreatSeverity.LOW -> Icons.Filled.Info
     null -> Icons.Filled.Security
 }
 
 private fun severityLabel(severity: com.shield.antivirus.data.model.ThreatSeverity?): String = when (severity) {
-    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> "Критично"
-    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> "Высокая"
-    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> "Средняя"
-    com.shield.antivirus.data.model.ThreatSeverity.LOW -> "Низкая"
+    com.shield.antivirus.data.model.ThreatSeverity.CRITICAL -> "Критический"
+    com.shield.antivirus.data.model.ThreatSeverity.HIGH -> "Высокий"
+    com.shield.antivirus.data.model.ThreatSeverity.MEDIUM -> "Средний"
+    com.shield.antivirus.data.model.ThreatSeverity.LOW -> "Низкий"
     null -> "Чисто"
 }
 

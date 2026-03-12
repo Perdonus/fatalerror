@@ -42,6 +42,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -603,23 +604,59 @@ fun ShieldLoadingState(
     modifier: Modifier = Modifier
 ) {
     val transition = rememberInfiniteTransition(label = "shieldLoading")
-    val pulseA by transition.animateFloat(
-        initialValue = 0.82f,
-        targetValue = 1.18f,
+    val haloScale by transition.animateFloat(
+        initialValue = 0.88f,
+        targetValue = 1.12f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
+            animation = tween(1100, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "pulseA"
+        label = "haloScale"
     )
-    val pulseB by transition.animateFloat(
-        initialValue = 0.92f,
-        targetValue = 1.08f,
+    val haloAlpha by transition.animateFloat(
+        initialValue = 0.14f,
+        targetValue = 0.34f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
+            animation = tween(1100, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "pulseB"
+        label = "haloAlpha"
+    )
+    val orbitRotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "orbitRotation"
+    )
+    val dotPulseA by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, delayMillis = 0, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotPulseA"
+    )
+    val dotPulseB by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, delayMillis = 180, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotPulseB"
+    )
+    val dotPulseC by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, delayMillis = 360, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotPulseC"
     )
 
     Column(
@@ -628,35 +665,46 @@ fun ShieldLoadingState(
         verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)
     ) {
         Box(
-            modifier = Modifier.size(120.dp),
+            modifier = Modifier.size(132.dp),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(104.dp)
+                    .size(116.dp)
                     .graphicsLayer {
-                        scaleX = pulseA
-                        scaleY = pulseA
+                        scaleX = haloScale
+                        scaleY = haloScale
                     }
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = haloAlpha))
+            )
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .size(84.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 6.dp
             )
             Box(
                 modifier = Modifier
-                    .size(72.dp)
-                    .graphicsLayer {
-                        scaleX = pulseB
-                        scaleY = pulseB
-                    }
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f))
-            )
-            Icon(
-                painter = rememberVectorPainter(ImageVector.vectorResource(id = R.drawable.ic_brand_emblem)),
-                contentDescription = null,
-                tint = Color.Unspecified,
-                modifier = Modifier.size(56.dp)
-            )
+                    .size(84.dp)
+                    .graphicsLayer { rotationZ = orbitRotation }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiary)
+                )
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LoadingPulseDot(alpha = dotPulseA)
+            LoadingPulseDot(alpha = dotPulseB)
+            LoadingPulseDot(alpha = dotPulseC)
         }
         Text(
             text = title,
@@ -670,6 +718,18 @@ fun ShieldLoadingState(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun LoadingPulseDot(alpha: Float) {
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha.coerceIn(0.2f, 1f))
+            )
+    )
 }
 
 @Composable

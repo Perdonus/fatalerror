@@ -1,7 +1,6 @@
 const AIH_BASE_URL = (process.env.AIH_BASE_URL || 'https://sosiskibot.ru/api/v1').replace(/\/$/, '');
 const AIH_TIMEOUT_MS = parseInt(process.env.AIH_TIMEOUT_MS || '15000', 10);
-let cachedModel = null;
-let cachedModelAt = 0;
+const AIH_DEFAULT_MODEL = String(process.env.AIH_MODEL || 'gpt-5.2').trim() || 'gpt-5.2';
 
 function isAiConfigured() {
     return Boolean(String(process.env.AIH_API_KEY || '').trim());
@@ -94,12 +93,19 @@ function coerceDeepScanTriage(content) {
         ? parsed.suppress_types.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 16)
         : [];
     const reason = String(parsed?.reason || parsed?.rationale || '').trim().slice(0, 400);
+    const reportRaw = parsed?.report_to_user ?? parsed?.show_to_user ?? parsed?.should_report ?? null;
+    const reportToUser = typeof reportRaw === 'boolean' ? reportRaw : null;
+    const userSummary = String(
+        parsed?.user_summary || parsed?.user_message || parsed?.short_reason || ''
+    ).trim().slice(0, 240);
 
     return {
         suggestedVerdict,
         benignProbability: Number.isFinite(probability) ? clamp(probability, 0, 1) : 0,
         suppressTypes,
-        reason
+        reason,
+        reportToUser,
+        userSummary
     };
 }
 
@@ -178,34 +184,12 @@ function buildFallbackExplanation({ summary, result }) {
 }
 
 async function resolveModel() {
-    if (process.env.AIH_MODEL) {
-        return process.env.AIH_MODEL.trim();
-    }
-
-    const now = Date.now();
-    if (cachedModel && now - cachedModelAt < 10 * 60 * 1000) {
-        return cachedModel;
-    }
-
-    const payload = await apiRequest('/models');
-    const candidate = Array.isArray(payload?.data)
-        ? payload.data.find((item) => item && typeof item.id === 'string')
-        : null;
-
-    if (!candidate?.id) {
-        throw new Error('AI upstream returned no usable model');
-    }
-
-    cachedModel = candidate.id;
-    cachedModelAt = now;
-    return cachedModel;
+    return AIH_DEFAULT_MODEL;
 }
 
 async function explainScan({ summary, result }) {
     if (!isAiConfigured()) {
-        const error = new Error('AI service is not configured');
-        error.statusCode = 503;
-        throw error;
+        return buildFallbackExplanation({ summary, result });
     }
 
     try {
@@ -291,6 +275,7 @@ async function triageDeepScanFindings({
 
     const payloadForModel = {
         package_name: normalized?.packageName || null,
+        scan_mode: normalized?.scanMode || null,
         installer_package: normalized?.installerPackage || null,
         permission_count: Array.isArray(normalized?.permissions) ? normalized.permissions.length : 0,
         permissions: Array.isArray(normalized?.permissions) ? normalized.permissions.slice(0, 40) : [],
@@ -319,7 +304,9 @@ async function triageDeepScanFindings({
                     'Unknown installer сам по себе не является угрозой.',
                     'Верни только JSON без пояснений.',
                     'Формат JSON:',
-                    '{"suggested_verdict":"clean|low_risk|suspicious|malicious","benign_probability":0..1,"suppress_types":["install_source"],"reason":"<=200 chars"}',
+                    '{"suggested_verdict":"clean|low_risk|suspicious|malicious","report_to_user":true|false,"user_summary":"<=160 chars","benign_probability":0..1,"suppress_types":["install_source"],"reason":"<=200 chars"}',
+                    'Если report_to_user=false: это значит, что пользователю этот сигнал можно не показывать.',
+                    'user_summary должен кратко объяснить решение без воды.',
                     'suppress_types содержит только типы findings, которые можно скрыть для снижения ложных срабатываний.'
                 ].join(' ')
             },

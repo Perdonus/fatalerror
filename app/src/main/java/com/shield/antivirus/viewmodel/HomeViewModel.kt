@@ -25,9 +25,12 @@ data class HomeInstalledApp(
 data class HomeUiState(
     val userName: String = "",
     val isLoggedIn: Boolean = false,
+    val isDeveloperMode: Boolean = false,
     val installedAppsCount: Int = 0,
     val installedApps: List<HomeInstalledApp> = emptyList(),
     val lastScanTime: Long = 0L,
+    val lastBackgroundScanTime: Long = 0L,
+    val lastBackgroundScanResultId: Long? = null,
     val recentResults: List<ScanResult> = emptyList(),
     val isProtectionActive: Boolean = true,
     val lastScanThreatCount: Int = 0,
@@ -68,14 +71,16 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                 prefs.userName,
                 prefs.lastScanTime,
                 prefs.realtimeProtection,
-                prefs.isGuest
-            ) { isLoggedIn, name, lastScan, protection, isGuest ->
+                prefs.isGuest,
+                prefs.isDeveloperMode
+            ) { isLoggedIn, name, lastScan, protection, isGuest, isDeveloperMode ->
                 PrimarySnapshot(
                     isLoggedIn = isLoggedIn,
                     name = name,
                     lastScan = lastScan,
                     protection = protection,
-                    isGuest = isGuest
+                    isGuest = isGuest,
+                    isDeveloperMode = isDeveloperMode
                 )
             }
 
@@ -105,6 +110,7 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                     lastScan = primary.lastScan,
                     protection = primary.protection,
                     isGuest = primary.isGuest,
+                    isDeveloperMode = primary.isDeveloperMode,
                     guestScanUsed = active.guestScanUsed,
                     activeScanType = active.activeScanType,
                     activeScanCurrentApp = active.activeScanCurrentApp,
@@ -117,16 +123,21 @@ class HomeViewModel(private val context: Context) : ViewModel() {
                     System.currentTimeMillis() - snapshot.activeScanStartedAt > 30L * 60L * 1000L
                 val startOfDay = startOfCurrentDay()
                 val todayResults = results.filter { it.completedAt >= startOfDay }
-                val latestResult = results.maxByOrNull { it.completedAt }
+                val latestBackgroundResult = results
+                    .filter { it.scanType.uppercase() == "QUICK_BG" }
+                    .maxByOrNull { it.completedAt }
                 HomeUiState(
                     userName = snapshot.name,
                     isLoggedIn = snapshot.isLoggedIn,
+                    isDeveloperMode = snapshot.isDeveloperMode,
                     installedAppsCount = installedApps.size,
                     installedApps = appsForSelection,
                     lastScanTime = snapshot.lastScan,
+                    lastBackgroundScanTime = latestBackgroundResult?.completedAt ?: 0L,
+                    lastBackgroundScanResultId = latestBackgroundResult?.id,
                     recentResults = if (snapshot.isGuest) emptyList() else results.take(4),
                     isProtectionActive = snapshot.protection && !snapshot.isGuest,
-                    lastScanThreatCount = if (snapshot.isGuest) 0 else (latestResult?.threatsFound ?: 0),
+                    lastScanThreatCount = if (snapshot.isGuest) 0 else (latestBackgroundResult?.threatsFound ?: 0),
                     totalScans = if (snapshot.isGuest) 0 else results.size,
                     isGuest = snapshot.isGuest,
                     guestScanUsed = snapshot.guestScanUsed,
@@ -156,6 +167,7 @@ class HomeViewModel(private val context: Context) : ViewModel() {
         val lastScan: Long,
         val protection: Boolean,
         val isGuest: Boolean,
+        val isDeveloperMode: Boolean,
         val guestScanUsed: Boolean,
         val activeScanType: String,
         val activeScanCurrentApp: String,
@@ -168,7 +180,8 @@ class HomeViewModel(private val context: Context) : ViewModel() {
         val name: String,
         val lastScan: Long,
         val protection: Boolean,
-        val isGuest: Boolean
+        val isGuest: Boolean,
+        val isDeveloperMode: Boolean
     )
 
     private data class ActiveScanSnapshot(

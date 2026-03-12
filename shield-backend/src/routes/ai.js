@@ -1,13 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const { explainScan, isAiConfigured } = require('../services/aiExplainService');
+const { explainScan } = require('../services/aiExplainService');
 
 router.post('/explain-scan', auth, async (req, res) => {
-    if (!isAiConfigured()) {
-        return res.status(503).json({ error: 'AI service is not configured' });
-    }
-
     const { summary = null, result = null } = req.body || {};
     if (!summary && !result) {
         return res.status(400).json({ error: 'summary or result is required' });
@@ -24,7 +20,7 @@ router.post('/explain-scan', auth, async (req, res) => {
     } catch (error) {
         console.error('AI explain error:', error);
         const statusCode = Number(error.statusCode || 502);
-        return res.status(statusCode).json({ error: statusCode === 503 ? 'AI service is not configured' : 'AI upstream unavailable' });
+        return res.status(statusCode).json({ error: 'AI upstream unavailable' });
     }
 });
 

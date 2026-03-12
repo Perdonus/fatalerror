@@ -205,13 +205,17 @@ fun ShieldPanel(
     accent: Color = MaterialTheme.colorScheme.primary,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)
+            containerColor = colors.surfaceContainerHigh
         ),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.14f))
+        border = BorderStroke(
+            width = 1.dp,
+            color = lerp(colors.outlineVariant, accent, 0.30f).copy(alpha = 0.86f)
+        )
     ) {
         Column(
             modifier = Modifier.padding(20.dp),

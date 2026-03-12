@@ -98,9 +98,14 @@ class ScanRepository(private val context: Context) {
         scanType: String,
         selectedPackages: List<String> = emptyList(),
         apkUriString: String? = null,
+        resultScanTypeOverride: String? = null,
         manageNotifications: Boolean = true
     ): Flow<ScanProgress> = flow {
         val normalizedType = scanType.uppercase()
+        val persistedScanType = resultScanTypeOverride
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: normalizedType
         var lockAcquired = false
         try {
             AppLogger.log(
@@ -108,6 +113,7 @@ class ScanRepository(private val context: Context) {
                 message = "Scan start requested",
                 metadata = mapOf(
                     "scan_type" to normalizedType,
+                    "result_scan_type" to persistedScanType,
                     "selected_count" to selectedPackages.size.toString(),
                     "apk_uri_provided" to (!apkUriString.isNullOrBlank()).toString()
                 )
@@ -242,7 +248,7 @@ class ScanRepository(private val context: Context) {
                     prefs.updateLastScanTime()
 
                     val entity = ScanResultEntity(
-                        scanType = normalizedType,
+                        scanType = persistedScanType,
                         startedAt = System.currentTimeMillis(),
                         completedAt = System.currentTimeMillis(),
                         totalScanned = 1,
@@ -429,7 +435,7 @@ class ScanRepository(private val context: Context) {
             prefs.updateLastScanTime()
 
             val entity = ScanResultEntity(
-                scanType = normalizedType,
+                scanType = persistedScanType,
                 startedAt = startTime,
                 completedAt = System.currentTimeMillis(),
                 totalScanned = total,

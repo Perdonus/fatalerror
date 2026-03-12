@@ -14,7 +14,10 @@ class ScanWorker(
     override suspend fun doWork(): Result {
         return try {
             val repo = ScanRepository(applicationContext)
-            repo.startScan("QUICK").collect()
+            repo.startScan(
+                scanType = "QUICK",
+                resultScanTypeOverride = "QUICK_BG"
+            ).collect()
             Result.success()
         } catch (e: Exception) {
             Result.failure()

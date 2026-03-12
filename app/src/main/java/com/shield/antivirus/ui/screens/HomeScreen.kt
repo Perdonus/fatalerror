@@ -147,9 +147,9 @@ private fun HomeContent(
         else -> MaterialTheme.colorScheme.safeTone
     }
 
-    val fullLimitReached = state.fullScansToday >= 1
-    val selectiveLimitReached = state.selectiveScansToday >= 3
-    val apkLimitReached = state.apkScansToday >= 3
+    val fullLimitReached = !state.isDeveloperMode && state.fullScansToday >= 1
+    val selectiveLimitReached = !state.isDeveloperMode && state.selectiveScansToday >= 3
+    val apkLimitReached = !state.isDeveloperMode && state.apkScansToday >= 3
 
     var guestIntroLoading by rememberSaveable(isGuestMode) { mutableStateOf(isGuestMode) }
     var showAppPicker by rememberSaveable { mutableStateOf(false) }
@@ -241,13 +241,13 @@ private fun HomeContent(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ShieldStatusChip(
-                            label = if (isGuestMode) "Гость" else "Последняя: ${formatTime(state.lastScanTime)}",
+                            label = if (isGuestMode) "Гость" else "Фон: ${formatTime(state.lastBackgroundScanTime)}",
                             icon = Icons.Filled.Security,
                             color = statusColor
                         )
                     }
                     if (state.lastScanThreatCount > 0) {
-                        val latestId = state.recentResults.firstOrNull()?.id
+                        val latestId = state.lastBackgroundScanResultId
                         Button(
                             onClick = {
                                 if (latestId != null) {
@@ -332,7 +332,7 @@ private fun HomeContent(
                     title = "Глубокая",
                     icon = Icons.Filled.Security,
                     accent = MaterialTheme.colorScheme.tertiary,
-                    enabled = !fullLimitReached && !scanLocked,
+                    enabled = !scanLocked,
                         onAction = {
                             modeMessage = null
                             actionOverlay = true
@@ -371,7 +371,7 @@ private fun HomeContent(
                         title = "Выборочная",
                         icon = Icons.Filled.TrackChanges,
                         accent = MaterialTheme.colorScheme.signalTone,
-                        enabled = !selectiveLimitReached && !scanLocked,
+                        enabled = !scanLocked,
                         onAction = {
                             modeMessage = null
                             actionOverlay = true
@@ -394,10 +394,22 @@ private fun HomeContent(
             }
 
             item {
+                val apkCardEnabled = !scanLocked
+                val apkCardContainerColor = if (apkCardEnabled) {
+                    MaterialTheme.colorScheme.surfaceContainerHigh
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                }
+                val apkCardBorderColor = if (apkCardEnabled) {
+                    MaterialTheme.colorScheme.signalTone.copy(alpha = 0.38f)
+                } else {
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.85f)
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)),
-                    shape = MaterialTheme.shapes.large
+                    colors = CardDefaults.cardColors(containerColor = apkCardContainerColor),
+                    shape = MaterialTheme.shapes.large,
+                    border = BorderStroke(1.dp, apkCardBorderColor)
                 ) {
                     Row(
                         modifier = Modifier
@@ -437,7 +449,7 @@ private fun HomeContent(
                                 }
                             },
                             colors = ShieldPrimaryButtonColors(
-                                if (!isGuestMode && !apkLimitReached && !scanLocked) {
+                                if (!isGuestMode && !apkLimitReached && apkCardEnabled) {
                                     MaterialTheme.colorScheme.signalTone
                                 } else {
                                     MaterialTheme.colorScheme.outline
@@ -521,14 +533,14 @@ private fun ModeWideCard(
 ) {
     val contentColor = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant
     val containerColor = if (enabled) {
-        accent.copy(alpha = 0.12f)
+        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
+        MaterialTheme.colorScheme.surfaceContainerHighest
     }
     val borderColor = if (enabled) {
-        accent.copy(alpha = 0.34f)
+        accent.copy(alpha = 0.48f)
     } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)
     }
 
     Card(
@@ -593,14 +605,14 @@ private fun ModeGridCard(
 ) {
     val contentColor = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant
     val containerColor = if (enabled) {
-        accent.copy(alpha = 0.10f)
+        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f)
+        MaterialTheme.colorScheme.surfaceContainerHighest
     }
     val borderColor = if (enabled) {
-        accent.copy(alpha = 0.34f)
+        accent.copy(alpha = 0.48f)
     } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.9f)
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.92f)
     }
 
     Card(

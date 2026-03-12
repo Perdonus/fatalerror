@@ -276,6 +276,50 @@ function applyAiTriageDecision(base, aiTriage) {
         return base;
     }
 
+    if (aiTriage.reportToUser === false) {
+        if (base.strongSignals) {
+            return {
+                ...base,
+                triage: {
+                    ...base.triage,
+                    ai: {
+                        applied: false,
+                        model: aiTriage.model || null,
+                        reason: aiTriage.reason || 'ai_hide_rejected_due_to_strong_signals',
+                        benign_probability: aiTriage.benignProbability,
+                        report_to_user: true,
+                        user_summary: aiTriage.userSummary || null
+                    }
+                }
+            };
+        }
+
+        return {
+            ...base,
+            verdict: 'clean',
+            riskScore: Math.min(base.riskScore, 10),
+            findings: [],
+            recommendations: buildCalmRecommendations(
+                base.recommendations,
+                aiTriage.userSummary || 'AI-триаж не подтвердил угрозу, сигнал скрыт.'
+            ),
+            triage: {
+                ...base.triage,
+                applied: true,
+                source: 'deterministic+ai',
+                reason: aiTriage.reason || 'ai_report_gate_hidden',
+                benign_probability: Math.max(0.82, Number(aiTriage.benignProbability || 0)),
+                ai: {
+                    applied: true,
+                    model: aiTriage.model || null,
+                    benign_probability: aiTriage.benignProbability,
+                    report_to_user: false,
+                    user_summary: aiTriage.userSummary || null
+                }
+            }
+        };
+    }
+
     if (base.strongSignals || aiTriage.benignProbability < 0.72) {
         return {
             ...base,
@@ -285,7 +329,9 @@ function applyAiTriageDecision(base, aiTriage) {
                     applied: false,
                     model: aiTriage.model || null,
                     reason: aiTriage.reason || 'ai_threshold_not_met',
-                    benign_probability: aiTriage.benignProbability
+                    benign_probability: aiTriage.benignProbability,
+                    report_to_user: true,
+                    user_summary: aiTriage.userSummary || null
                 }
             }
         };
@@ -303,7 +349,9 @@ function applyAiTriageDecision(base, aiTriage) {
                     applied: false,
                     model: aiTriage.model || null,
                     reason: aiTriage.reason || 'ai_verdict_rejected',
-                    benign_probability: aiTriage.benignProbability
+                    benign_probability: aiTriage.benignProbability,
+                    report_to_user: true,
+                    user_summary: aiTriage.userSummary || null
                 }
             }
         };
@@ -343,7 +391,9 @@ function applyAiTriageDecision(base, aiTriage) {
             ai: {
                 applied: true,
                 model: aiTriage.model || null,
-                benign_probability: aiTriage.benignProbability
+                benign_probability: aiTriage.benignProbability,
+                report_to_user: true,
+                user_summary: aiTriage.userSummary || null
             }
         }
     };
@@ -1058,7 +1108,8 @@ async function runDeepScanJob(jobId) {
             vt
         });
 
-        if (isAiConfigured() && !triaged.strongSignals) {
+        const hasDangerSignals = Array.isArray(triaged.findings) && triaged.findings.length > 0;
+        if (isAiConfigured() && hasDangerSignals) {
             try {
                 const aiTriage = await triageDeepScanFindings({
                     normalized,
@@ -1077,7 +1128,9 @@ async function runDeepScanJob(jobId) {
                             applied: false,
                             model: null,
                             reason: 'ai_unavailable_fallback',
-                            benign_probability: 0
+                            benign_probability: 0,
+                            report_to_user: true,
+                            user_summary: null
                         }
                     }
                 };

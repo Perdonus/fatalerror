@@ -284,6 +284,7 @@ private fun formatResultsTime(timestamp: Long): String =
 
 private fun scanTypeLabel(scanType: String): String = when (scanType.uppercase()) {
     "QUICK" -> "Быстрая проверка"
+    "QUICK_BG", "BACKGROUND_QUICK" -> "Быстрая проверка (фон)"
     "FULL" -> "Глубокая проверка"
     "SELECTIVE" -> "Выборочная проверка"
     "APK" -> "Проверка APK"

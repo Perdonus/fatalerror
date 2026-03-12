@@ -18,11 +18,11 @@ class InsightRepository(context: Context) {
         result: ScanResult,
         isGuest: Boolean
     ): Result<String> = withContext(Dispatchers.IO) {
+        val token = sessionManager.getValidAccessToken()
+        if (isGuest || token.isNullOrBlank()) {
+            return@withContext Result.failure(IllegalStateException("Функция доступна только после входа в аккаунт"))
+        }
         runCatching {
-            val token = sessionManager.getValidAccessToken()
-            if (isGuest || token.isNullOrBlank()) {
-                throw IllegalStateException("Функция доступна только после входа в аккаунт")
-            }
             val response = ApiClient.executeShieldCall { api ->
                 api.explainScan(
                     token = "Bearer $token",
@@ -59,16 +59,16 @@ class InsightRepository(context: Context) {
                 )
             }
             if (!response.isSuccessful) {
-                throw IllegalStateException("Не удалось получить объяснение")
+                return@runCatching buildClientFallback(result)
             }
             val body = response.body()
             val explanation = body?.explanation?.trim().orEmpty()
             if (body?.success == true && explanation.isNotBlank()) {
                 explanation
             } else {
-                throw IllegalStateException(body?.error ?: "Пустой ответ сервера")
+                buildClientFallback(result)
             }
-        }
+        }.recoverCatching { buildClientFallback(result) }
     }
 
     suspend fun explainOverview(
@@ -83,12 +83,12 @@ class InsightRepository(context: Context) {
         recentResults: List<ScanResult>,
         isGuest: Boolean
     ): Result<String> = withContext(Dispatchers.IO) {
+        val latest = recentResults.firstOrNull()
+        val token = sessionManager.getValidAccessToken()
+        if (isGuest || token.isNullOrBlank()) {
+            return@withContext Result.failure(IllegalStateException("Функция доступна только после входа в аккаунт"))
+        }
         runCatching {
-            val latest = recentResults.firstOrNull()
-            val token = sessionManager.getValidAccessToken()
-            if (isGuest || token.isNullOrBlank()) {
-                throw IllegalStateException("Функция доступна только после входа в аккаунт")
-            }
             val response = ApiClient.executeShieldCall { api ->
                 api.explainScan(
                     token = "Bearer $token",
@@ -119,16 +119,61 @@ class InsightRepository(context: Context) {
                 )
             }
             if (!response.isSuccessful) {
-                throw IllegalStateException("Не удалось получить объяснение")
+                return@runCatching latest?.let { buildClientFallback(it) }
+                    ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
             }
             val body = response.body()
             val explanation = body?.explanation?.trim().orEmpty()
             if (body?.success == true && explanation.isNotBlank()) {
                 explanation
             } else {
-                throw IllegalStateException(body?.error ?: "Пустой ответ сервера")
+                latest?.let { buildClientFallback(it) }
+                    ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
             }
+        }.recoverCatching {
+            latest?.let { buildClientFallback(it) }
+                ?: "## Итог\nНедостаточно данных для объяснения.\n\n## Что делать сейчас\n- Запустите проверку ещё раз."
         }
+    }
+
+    private fun buildClientFallback(result: ScanResult): String {
+        val top = result.threats.firstOrNull()
+        if (top == null) {
+            return """
+                ## Итог
+                Явных угроз не найдено.
+                
+                ## Подтверждено данными
+                - Проверено пакетов: ${result.totalScanned}
+                - Найдено угроз: 0
+                
+                ## Что делать сейчас
+                - Обновите приложения и систему.
+                - Отключите установку из неизвестных источников.
+                
+                ## Что ещё проверить
+                - Повторите глубокую проверку при подозрительном поведении устройства.
+            """.trimIndent()
+        }
+
+        return """
+            ## Итог
+            Найден риск в приложении **${top.appName}**.
+            
+            ## Подтверждено данными
+            - Тип угрозы: ${top.threatName}
+            - Уровень: ${top.severity}
+            - Детект: ${top.detectionCount}/${top.totalEngines}
+            
+            ## Что делать сейчас
+            - Проверьте источник установки приложения.
+            - Ограничьте лишние разрешения.
+            - Запустите повторную глубокую проверку.
+            
+            ## Что ещё проверить
+            - Автозапуск и работу в фоне.
+            - Наличие обновлений приложения.
+        """.trimIndent()
     }
 
     private fun buildDetailedNotes(title: String, result: ScanResult): String {

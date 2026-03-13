@@ -864,13 +864,13 @@ async function getUserDeepScanLimits(userId) {
         usageRows.map((row) => [String(row.scan_mode || '').toUpperCase(), Number(row.launches_count || 0)])
     );
     const modes = Object.fromEntries(
-        Object.entries(SCAN_MODE_LIMITS).map(([mode, limit]) => {
+        Object.keys(SCAN_MODE_LIMITS).map((mode) => {
             const used = usageMap.get(mode) || 0;
             return [mode, {
-                limit,
+                limit: null,
                 used,
-                remaining: Math.max(0, limit - used),
-                enforced: !devMode
+                remaining: null,
+                enforced: false
             }];
         })
     );
@@ -878,6 +878,7 @@ async function getUserDeepScanLimits(userId) {
     return {
         user_id: userId,
         dev_mode: devMode,
+        limits_disabled: true,
         timezone: 'UTC',
         day_key: window.dayKey,
         day_start_at: window.startAt,
@@ -1152,7 +1153,6 @@ async function createDeepScanJob(userId, payload) {
     const id = crypto.randomUUID();
     const now = nowMs();
     const window = getUtcDayWindow(now);
-    const modeLimit = SCAN_MODE_LIMITS[normalized.scanMode];
     const decision = chooseNextAction(normalized);
     const requestJson = JSON.stringify({
         ...normalized,
@@ -1170,28 +1170,7 @@ async function createDeepScanJob(userId, payload) {
             return { error: 'User not found', code: 'USER_NOT_FOUND', status_code: 404 };
         }
 
-        if (userMode.devMode) {
-            await incrementDailyUsage(connection, userId, normalized.scanMode, window.dayKey, now);
-        } else {
-            const consumed = await consumeDailyUsageWithLimit(
-                connection,
-                userId,
-                normalized.scanMode,
-                window.dayKey,
-                modeLimit,
-                now
-            );
-            if (!consumed) {
-                await connection.rollback();
-                const limits = await getUserDeepScanLimits(userId);
-                return {
-                    error: `Daily limit reached for ${normalized.scanMode} scans`,
-                    code: 'DAILY_LIMIT_REACHED',
-                    status_code: 429,
-                    limits
-                };
-            }
-        }
+        await incrementDailyUsage(connection, userId, normalized.scanMode, window.dayKey, now);
 
         await connection.query(
             `INSERT INTO deep_scan_jobs

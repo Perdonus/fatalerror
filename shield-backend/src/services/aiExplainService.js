@@ -185,6 +185,132 @@ function stripMarkdown(value) {
         .trim();
 }
 
+function firstNonBlank(...values) {
+    for (const value of values) {
+        const normalized = String(value || '').trim();
+        if (normalized) {
+            return normalized;
+        }
+    }
+    return '';
+}
+
+function firstFinding(result) {
+    const findings = Array.isArray(result?.findings) ? result.findings : [];
+    return findings[0] || null;
+}
+
+function collectCandidateSectionItems(candidate, matcher) {
+    const sections = Array.isArray(candidate?.sections) ? candidate.sections : [];
+    return sections
+        .filter((section) => matcher(section))
+        .flatMap((section) => {
+            const lines = [];
+            if (section?.summary) lines.push(section.summary);
+            if (section?.text) lines.push(section.text);
+            if (Array.isArray(section?.lines)) lines.push(...section.lines);
+            if (Array.isArray(section?.bullets)) lines.push(...section.bullets);
+            if (Array.isArray(section?.items)) lines.push(...section.items);
+            return lines;
+        })
+        .map((item) => stripMarkdown(item))
+        .filter(Boolean);
+}
+
+function sentence(text) {
+    const normalized = stripMarkdown(text);
+    if (!normalized) return '';
+    return /[.!?…]$/.test(normalized) ? normalized : `${normalized}.`;
+}
+
+function buildThreatSummary({ summary, result, candidate }) {
+    const finding = firstFinding(result);
+    const candidateThreat = firstNonBlank(
+        candidate?.threat,
+        candidate?.what,
+        candidate?.summary,
+        ...collectCandidateSectionItems(candidate, (section) => {
+            const key = String(section?.key || '').trim().toLowerCase();
+            const title = String(section?.title || '').trim().toLowerCase();
+            return ['threat', 'summary', 'result', 'what'].includes(key)
+                || title.includes('что это')
+                || title.includes('угроза');
+        })
+    );
+    if (candidateThreat) {
+        return sentence(candidateThreat);
+    }
+
+    if (!finding) {
+        return Number(result?.threatsFound || summary?.totalThreats || 0) > 0
+            ? 'Есть подозрительный сигнал, но тип угрозы по данным не уточнён.'
+            : 'Явной угрозы не найдено.';
+    }
+
+    const appLabel = finding.appName ? `в приложении ${finding.appName}` : 'в приложении';
+    const threatName = firstNonBlank(finding.threatName, finding.type, 'подозрительный сигнал');
+    const summaryText = stripMarkdown(finding.summary);
+    if (summaryText) {
+        return sentence(`${threatName} ${appLabel}. ${summaryText}`);
+    }
+    return sentence(`${threatName} ${appLabel}`);
+}
+
+function buildThreatReason({ summary, result, candidate }) {
+    const finding = firstFinding(result);
+    const candidateReason = firstNonBlank(
+        candidate?.reason,
+        candidate?.why,
+        ...collectCandidateSectionItems(candidate, (section) => {
+            const key = String(section?.key || '').trim().toLowerCase();
+            const title = String(section?.title || '').trim().toLowerCase();
+            return ['why', 'evidence', 'confirmed', 'facts', 'trigger'].includes(key)
+                || title.includes('почему')
+                || title.includes('сработ')
+                || title.includes('данн');
+        }),
+        ...toUniqueStringList(candidate?.confirmedByData, 4),
+        ...toUniqueStringList(candidate?.confirmed, 4),
+        ...toUniqueStringList(candidate?.evidence, 4)
+    );
+    if (candidateReason) {
+        return sentence(candidateReason);
+    }
+
+    if (!finding) {
+        return Number(result?.threatsFound || summary?.totalThreats || 0) > 0
+            ? 'Сработал эвристический анализ, но подробных причин в результате нет.'
+            : 'Сигналов для срабатывания не обнаружено.';
+    }
+
+    const parts = [];
+    const findingSummary = stripMarkdown(finding.summary);
+    if (findingSummary) {
+        parts.push(sentence(findingSummary));
+    }
+    if (finding.detectionEngine) {
+        parts.push(sentence(`Источник сигнала: ${finding.detectionEngine}`));
+    }
+    if (Array.isArray(finding.permissions) && finding.permissions.length > 0) {
+        parts.push(sentence(`Сработали разрешения: ${finding.permissions.slice(0, 3).join(', ')}`));
+    }
+    if (Number.isFinite(Number(finding.detectionCount)) && Number(finding.detectionCount) > 0) {
+        parts.push(sentence(`Совпадений по этому сигналу: ${Number(finding.detectionCount)}`));
+    }
+
+    return parts.join(' ').trim() || 'Сработал внутренний эвристический анализ по признакам риска.';
+}
+
+function buildExplainMarkdown(summaryText, reasonText) {
+    return [
+        '## Что это за угроза',
+        summaryText,
+        '',
+        '## Почему она вылезла',
+        reasonText
+    ].join('\n').trim();
+}
+
 function inferExplainVerdict(summary, result, candidateVerdict = null) {
     const fromCandidate = normalizeVerdict(candidateVerdict);
     if (fromCandidate) {
@@ -252,51 +378,28 @@ function toneFromVerdict(verdict) {
 function buildStructuredExplainPayload({ summary, result, explanation, advice, candidate }) {
     const verdict = inferExplainVerdict(summary, result, candidate?.verdict);
     const confidence = inferExplainConfidence(summary, result, verdict, candidate?.confidence);
-    const baseSummary = String(candidate?.summary || '').trim() || stripMarkdown(explanation).slice(0, 320);
-    const actions = toUniqueStringList(candidate?.actions, 6);
-    const legacyAdvice = toUniqueStringList(advice, 6);
-    const checks = toUniqueStringList(candidate?.checks, 6);
-    const tone = normalizeTone(candidate?.tone || toneFromVerdict(verdict));
-
-    const normalizedCards = Array.isArray(candidate?.cards)
-        ? candidate.cards
-            .filter((card) => card && typeof card === 'object')
-            .slice(0, 4)
-            .map((card, index) => ({
-                title: String(card.title || `Карточка ${index + 1}`).trim().slice(0, 80),
-                tone: normalizeTone(card.tone || tone),
-                items: toUniqueStringList(card.items, 6)
-            }))
-            .filter((card) => card.items.length > 0)
-        : [];
-
-    const cards = normalizedCards.length > 0
-        ? normalizedCards
-        : [
-            {
-                title: 'Итог',
-                tone,
-                items: baseSummary ? [baseSummary] : ['Недостаточно данных для развёрнутого вывода.']
-            },
-            ...((actions.length > 0 || legacyAdvice.length > 0) ? [{
-                title: 'Что делать сейчас',
-                tone: verdict === 'clean' ? 'positive' : 'warning',
-                items: (actions.length > 0 ? actions : legacyAdvice).slice(0, 5)
-            }] : []),
-            ...(checks.length > 0 ? [{
-                title: 'Что проверить',
-                tone: 'info',
-                items: checks.slice(0, 5)
-            }] : [])
-        ];
+    const summaryText = buildThreatSummary({ summary, result, candidate });
+    const reasonText = buildThreatReason({ summary, result, candidate });
 
     return {
-        summary: baseSummary || 'Недостаточно данных для краткой сводки.',
+        title: firstFinding(result)?.appName || 'Объяснение',
+        summary: summaryText,
         verdict,
         confidence,
-        cards,
-        actions: actions.length > 0 ? actions : legacyAdvice,
-        checks
+        sections: [
+            {
+                key: 'threat',
+                title: 'Что это за угроза',
+                items: [summaryText]
+            },
+            {
+                key: 'why',
+                title: 'Почему она вылезла',
+                items: [reasonText]
+            }
+        ],
+        actions: [],
+        checks: []
     };
 }
 
@@ -309,22 +412,14 @@ function buildFallbackExplanation({ summary, result }) {
     const modeLabel = scanMode === 'full' ? 'глубокой проверке' : scanMode === 'quick' ? 'быстрой проверке' : 'проверке';
 
     if (!topFinding) {
+        const summaryText = totalScanned > 0
+            ? `Явной угрозы не найдено. Проверка просмотрела ${totalScanned} приложений.`
+            : 'Явной угрозы не найдено.';
+        const reasonText = 'Сигналов, которые требовали бы отдельного объяснения, в результате нет.';
         const payload = {
             model: 'local-fallback',
-            explanation: [
-                '## Итог',
-                totalScanned > 0
-                    ? `Проверка завершена. Просмотрено **${totalScanned}** приложений, явных угроз не найдено.`
-                    : 'Проверка завершена, явных угроз не найдено.',
-                '',
-                '## Что сделать сейчас',
-                '- Обновите приложения и систему до последних версий.',
-                '- Проверьте, что установки из неизвестных источников отключены.',
-                '',
-                '## Дополнительно',
-                '- Повторите глубокую проверку при необычном поведении устройства.'
-            ].join('\n'),
-            advice: ['Повторите глубокую проверку позже, если поведение устройства кажется подозрительным.']
+            explanation: buildExplainMarkdown(summaryText, reasonText),
+            advice: []
         };
         return {
             ...payload,
@@ -343,31 +438,18 @@ function buildFallbackExplanation({ summary, result }) {
 
     const payload = {
         model: 'local-fallback',
-        explanation: [
-            '## Что найдено',
-            `Приложение **${topFinding.appName}** помечено как риск **${severityLabel(topFinding.severity)}**.`,
-            `Причина: **${topFinding.threatName}**.`,
-            '',
-            '## Почему это важно',
-            totalThreats > 1
-                ? `В отчёте есть ещё **${totalThreats - 1}** сигнал(ов), это не единичный индикатор.`
-                : `Это основной сигнал в текущей ${modeLabel}.`,
-            `${engine}${summaryText}`.trim(),
-            '',
-            '## Что сделать сейчас',
-            '- Если приложение установлено не из официального магазина, удалите его.',
-            '- Ограничьте чувствительные разрешения (SMS, Accessibility, Overlay).',
-            '- Запустите повторную глубокую проверку после обновлений.',
-            '',
-            '## Что проверить дополнительно',
-            '- Источник установки и сертификат подписи.',
-            '- Поведение в фоне и автозапуск.'
-        ].join('\n'),
-        advice: [
-            'Если приложение установлено не из официального магазина, лучше удалить его.',
-            'Проверьте выданные разрешения и отключите лишние.',
-            'Повторите глубокую проверку после обновления базы.'
-        ]
+        explanation: buildExplainMarkdown(
+            sentence(`Это сигнал ${topFinding.threatName || 'повышенного риска'} в приложении ${topFinding.appName}`),
+            sentence(
+                [
+                    totalThreats > 1
+                        ? `В отчёте есть ещё ${totalThreats - 1} дополнительных сигнала.`
+                        : `Это основной сигнал в текущей ${modeLabel}.`,
+                    `${engine}${summaryText}`.trim()
+                ].filter(Boolean).join(' ')
+            )
+        ),
+        advice: []
     };
     return {
         ...payload,
@@ -406,24 +488,15 @@ async function explainScan({ summary, result }) {
                     role: 'system',
                     content: [
                         'Ты аналитик мобильной безопасности для Android-антивируса.',
-                        'Пиши только по-русски, максимально прикладно и коротко.',
-                        'Никакой воды, общих фраз и предположений без данных.',
+                        'Пиши только по-русски, очень коротко и по сути.',
+                        'Никакой воды, общих фраз, советов и дополнительных рекомендаций.',
                         'Используй только факты из входных данных; ничего не выдумывай.',
-                        'Если данных мало: напиши это явно и кратко в формате "Недостаточно данных: ...".',
-                        'Поле explanation верни в Markdown строго с секциями:',
-                        '## Итог',
-                        '## Подтверждено данными',
-                        '## Что делать сейчас',
-                        '## Что ещё проверить',
-                        'Ограничения по объёму: каждая секция 1-3 короткие строки или 2-4 буллета.',
-                        'В "Итог" дай 1-2 простых предложения без терминов.',
-                        'Для CRITICAL/HIGH: тон прямой и жёсткий, 3-5 конкретных шагов в приоритетном порядке (сначала срочные).',
-                        'Для LOW/CLEAN/угроз не найдено: спокойный тон, не пугай, дай 1-3 шага профилактики.',
-                        'Если проверка быстрая и неполная — явно укажи ограничение покрытия.',
-                        'Секция "Что ещё проверить" должна быть пустой или очень короткой, если добавить нечего.',
-                        'Возвращай строго JSON вида {"explanation":"...markdown...","advice":["...","..."],"structured_v1":{"summary":"...","verdict":"clean|low_risk|suspicious|malicious|unknown","confidence":0..1,"cards":[{"title":"...","tone":"positive|neutral|warning|critical|info","items":["..."]}],"actions":["..."],"checks":["..."]}}.',
+                        'Нужно объяснить только две вещи: что это за угроза и почему она вылезла.',
+                        'Если данных мало, прямо так и скажи в блоке "Почему она вылезла".',
+                        'В каждом блоке максимум 1-2 коротких предложения.',
+                        'Возвращай строго JSON вида {"explanation":"## Что это за угроза\\n...\\n\\n## Почему она вылезла\\n...","advice":[],"structured_v1":{"summary":"...","verdict":"clean|low_risk|suspicious|malicious|unknown","confidence":0..1,"sections":[{"key":"threat","title":"Что это за угроза","items":["..."]},{"key":"why","title":"Почему она вылезла","items":["..."]}]}}.',
                         'Поля explanation и advice обязательны для обратной совместимости.',
-                        'advice: 2-5 пунктов, только действия, без повторов и абстракций.'
+                        'advice всегда возвращай пустым массивом.'
                     ].join(' ')
                 },
                 {
@@ -446,10 +519,11 @@ async function explainScan({ summary, result }) {
             advice: parsed.advice,
             candidate: parsed.structuredCandidate
         });
-        const explanation = String(parsed.explanation || '').trim() || `## Итог\n${structured_v1.summary}`;
-        const advice = parsed.advice.length > 0
-            ? parsed.advice
-            : toUniqueStringList(structured_v1.actions, 5);
+        const explanation = buildExplainMarkdown(
+            structured_v1.sections?.[0]?.items?.[0] || structured_v1.summary,
+            structured_v1.sections?.[1]?.items?.[0] || 'Подробная причина в данных не найдена.'
+        );
+        const advice = [];
         return {
             model,
             explanation,
@@ -458,10 +532,7 @@ async function explainScan({ summary, result }) {
         };
     } catch (error) {
         console.error('AI explain failed:', error);
-        if (!error.statusCode) {
-            error.statusCode = 502;
-        }
-        throw error;
+        return buildFallbackExplanation({ summary, result });
     }
 }
 

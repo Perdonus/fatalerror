@@ -17,7 +17,7 @@ const VT_TIMEOUT_MS = parseInt(process.env.VT_TIMEOUT_MS || '8000', 10);
 const UPLOAD_ROOT = process.env.DEEP_SCAN_UPLOAD_DIR || path.join(process.cwd(), 'storage', 'deep-scans');
 const MAX_UPLOAD_BYTES = parseInt(process.env.DEEP_SCAN_MAX_UPLOAD_BYTES || String(256 * 1024 * 1024), 10);
 const APK_FETCH_URL_TEMPLATE = String(process.env.DEEP_SCAN_APK_FETCH_URL_TEMPLATE || '').trim();
-const APK_FETCH_TIMEOUT_MS = parseInt(process.env.DEEP_SCAN_APK_FETCH_TIMEOUT_MS || '12000', 10);
+const APK_FETCH_TIMEOUT_MS = parseInt(process.env.DEEP_SCAN_APK_FETCH_TIMEOUT_MS || '0', 10);
 const APK_FETCH_MAX_BYTES = parseInt(process.env.DEEP_SCAN_APK_FETCH_MAX_BYTES || String(MAX_UPLOAD_BYTES), 10);
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const SCAN_MODE_LIMITS = Object.freeze({
@@ -1087,10 +1087,13 @@ async function tryFetchApkForJob(jobId, request, normalized) {
     }
 
     try {
-        const response = await fetch(fetchUrl, {
-            method: 'GET',
-            signal: AbortSignal.timeout(APK_FETCH_TIMEOUT_MS)
-        });
+        const fetchOptions = {
+            method: 'GET'
+        };
+        if (APK_FETCH_TIMEOUT_MS > 0) {
+            fetchOptions.signal = AbortSignal.timeout(APK_FETCH_TIMEOUT_MS);
+        }
+        const response = await fetch(fetchUrl, fetchOptions);
         if (!response.ok) {
             throw new Error(`status ${response.status}`);
         }

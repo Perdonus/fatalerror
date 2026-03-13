@@ -1,7 +1,7 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
-const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '120000', 10);
+const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '0', 10);
 const ANALYZER_PYTHON = process.env.APK_ANALYZER_PYTHON || 'python3';
 
 function runAnalyzer(apkPath) {
@@ -14,7 +14,7 @@ function runAnalyzer(apkPath) {
 
         let stdout = '';
         let stderr = '';
-        const timer = setTimeout(() => {
+        const timer = ANALYZER_TIMEOUT_MS > 0 ? setTimeout(() => {
             child.kill('SIGKILL');
             resolve({
                 ok: false,
@@ -24,7 +24,7 @@ function runAnalyzer(apkPath) {
                 risk_bonus: 0,
                 sources: []
             });
-        }, ANALYZER_TIMEOUT_MS);
+        }, ANALYZER_TIMEOUT_MS) : null;
 
         child.stdout.on('data', (chunk) => {
             stdout += chunk.toString();
@@ -33,7 +33,7 @@ function runAnalyzer(apkPath) {
             stderr += chunk.toString();
         });
         child.on('error', (error) => {
-            clearTimeout(timer);
+            if (timer) clearTimeout(timer);
             resolve({
                 ok: false,
                 error: error.message,
@@ -44,7 +44,7 @@ function runAnalyzer(apkPath) {
             });
         });
         child.on('close', () => {
-            clearTimeout(timer);
+            if (timer) clearTimeout(timer);
             try {
                 const parsed = JSON.parse(stdout || '{}');
                 resolve({

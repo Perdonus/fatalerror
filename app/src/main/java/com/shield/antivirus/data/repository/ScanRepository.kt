@@ -713,8 +713,16 @@ class ScanRepository(private val context: Context) {
     }
 
     private suspend fun pollDeepScanUntilCompleted(scanId: String, accessToken: String): DeepScanJob? {
-        repeat(16) { attempt ->
-            delay(if (attempt < 3) 450L else 900L)
+        var attempt = 0
+        while (true) {
+            delay(
+                when {
+                    attempt < 3 -> 450L
+                    attempt < 12 -> 900L
+                    attempt < 40 -> 1600L
+                    else -> 2500L
+                }
+            )
             val pollResponse = ApiClient.executeShieldCall { api ->
                 api.getDeepScan("Bearer $accessToken", scanId)
             }
@@ -747,8 +755,8 @@ class ScanRepository(private val context: Context) {
                 "COMPLETED" -> return currentJob
                 else -> throw IllegalStateException("Сервер вернул неизвестный статус проверки.")
             }
+            attempt += 1
         }
-        throw IllegalStateException("Сервер не успел завершить проверку вовремя.")
     }
 
     private fun extractServerError(response: Response<*>): String? {

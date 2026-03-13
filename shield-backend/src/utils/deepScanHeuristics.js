@@ -166,6 +166,7 @@ function normalizeDeepScanPayload(payload = {}) {
         packageName: normalizePackageName(payload.package_name || payload.packageName),
         scanMode: normalizeString(payload.scan_mode || payload.scanMode, 32)?.toUpperCase() || null,
         sha256: normalizeSha256(payload.sha256),
+        isSystemApp: normalizeBoolean(payload.is_system_app ?? payload.isSystemApp),
         installerPackage: normalizeString(payload.installer_package || payload.installerPackage || payload.install_source || payload.installSource, 255),
         permissions: normalizePermissions(payload.permissions || payload.requested_permissions || payload.requestedPermissions),
         targetSdk: normalizeNumber(payload.target_sdk ?? payload.targetSdk),

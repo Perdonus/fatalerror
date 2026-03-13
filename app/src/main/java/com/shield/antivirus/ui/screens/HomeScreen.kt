@@ -241,7 +241,7 @@ private fun HomeContent(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ShieldStatusChip(
-                            label = if (isGuestMode) "Гость" else "Фон: ${formatTime(state.lastBackgroundScanTime)}",
+                            label = if (isGuestMode) "Гость" else "Защита активна",
                             icon = Icons.Filled.Security,
                             color = statusColor
                         )
@@ -753,17 +753,6 @@ private fun SelectInstalledAppDialog(
         },
         icon = { Icon(Icons.Filled.Description, contentDescription = null) }
     )
-}
-
-private fun formatTime(timestamp: Long): String {
-    if (timestamp == 0L) return "ещё не запускалась"
-    val delta = System.currentTimeMillis() - timestamp
-    return when {
-        delta < 60_000L -> "только что"
-        delta < 3_600_000L -> "${delta / 60_000L} мин назад"
-        delta < 86_400_000L -> "${delta / 3_600_000L} ч назад"
-        else -> SimpleDateFormat("dd MMM, HH:mm", Locale("ru")).format(Date(timestamp))
-    }
 }
 
 private fun isValidApkSelection(context: Context, uri: Uri): Boolean {

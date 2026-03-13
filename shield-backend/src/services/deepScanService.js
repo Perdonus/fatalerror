@@ -640,17 +640,25 @@ function isCriticalHardSignalFinding(finding) {
     return HARD_SIGNAL_SOURCES.has(String(finding.source || ''));
 }
 
-function applyUserFacingThreatGate({ verdict, riskScore, findings, recommendations, vt }) {
+function applyUserFacingThreatGate({ verdict, riskScore, findings, recommendations, vt, normalized }) {
     const normalizedFindings = normalizeFindingsList(findings);
     const verdictIsThreat = verdictRank(verdict) >= verdictRank('suspicious');
     const vtMalicious = Number(vt?.malicious || 0);
     const criticalHardSignals = normalizedFindings.filter(isCriticalHardSignalFinding);
     const hasHardSignals = vtMalicious > 0 || criticalHardSignals.length > 0;
     const weakSignalsOnly = normalizedFindings.length > 0 && normalizedFindings.every(isWeakSignalOnlyFinding);
+    const contextSignalsOnly = normalizedFindings.length > 0 && normalizedFindings.every((finding) => {
+        const type = String(finding?.type || '');
+        return LOW_SIGNAL_FINDING_TYPES.has(type) || type === 'platform_age';
+    });
+    const systemAppWithoutHardSignals = Boolean(normalized?.isSystemApp) && !hasHardSignals;
 
     let allowThreatsToUser = verdictIsThreat || hasHardSignals;
     let gateReason = allowThreatsToUser ? 'allow_verdict_or_hard_signals' : 'blocked_without_verdict_or_hard_signals';
-    if (weakSignalsOnly && !hasHardSignals) {
+    if (systemAppWithoutHardSignals && contextSignalsOnly) {
+        allowThreatsToUser = false;
+        gateReason = 'blocked_system_app_without_hard_signals';
+    } else if (weakSignalsOnly && !hasHardSignals) {
         allowThreatsToUser = false;
         gateReason = 'blocked_weak_signals_only';
     }
@@ -669,6 +677,7 @@ function applyUserFacingThreatGate({ verdict, riskScore, findings, recommendatio
                 hard_signals_present: hasHardSignals,
                 vt_malicious: vtMalicious,
                 weak_signals_only: weakSignalsOnly,
+                system_app_without_hard_signals: systemAppWithoutHardSignals,
                 critical_hard_signal_count: criticalHardSignals.length,
                 critical_hard_signal_types: Array.from(new Set(criticalHardSignals.map((item) => item.type).filter(Boolean))).slice(0, 8),
                 findings_before_gate: normalizedFindings.length,
@@ -701,6 +710,7 @@ function applyUserFacingThreatGate({ verdict, riskScore, findings, recommendatio
             hard_signals_present: hasHardSignals,
             vt_malicious: vtMalicious,
             weak_signals_only: weakSignalsOnly,
+            system_app_without_hard_signals: systemAppWithoutHardSignals,
             critical_hard_signal_count: criticalHardSignals.length,
             critical_hard_signal_types: Array.from(new Set(criticalHardSignals.map((item) => item.type).filter(Boolean))).slice(0, 8),
             findings_before_gate: normalizedFindings.length,
@@ -1568,7 +1578,8 @@ async function runDeepScanJob(jobId) {
             riskScore: triaged.riskScore,
             findings: triaged.findings,
             recommendations: triaged.recommendations,
-            vt
+            vt,
+            normalized
         });
         triaged = {
             ...triaged,

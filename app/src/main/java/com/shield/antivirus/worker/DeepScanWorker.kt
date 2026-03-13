@@ -75,6 +75,11 @@ class DeepScanWorker(
 
             prefs.clearActiveDeepScan()
             NotificationHelper.cancelScanNotification(applicationContext)
+            NotificationHelper.showScanSummaryNotification(
+                context = applicationContext,
+                threatsFound = lastProgress.threats.size,
+                deepMode = true
+            )
             AppLogger.log(
                 tag = "deep_scan_worker",
                 message = "Deep worker completed",
@@ -107,7 +112,7 @@ class DeepScanWorker(
         val notification = NotificationHelper.buildScanNotification(
             context = applicationContext,
             progress = progress.progressPercent(),
-            current = progress.currentApp.ifBlank { if (progress.isComplete) "Результат сохранён" else "Серверный анализ" },
+            status = progress.notificationStatus(scanType),
             stage = progress.stageLabel(scanType),
             deepMode = true
         )
@@ -183,9 +188,14 @@ private fun ScanProgress.progressPercent(): Int =
 
 private fun ScanProgress.stageLabel(scanType: String): String = when {
     isComplete -> "Результат готов"
-    scanType == "FULL" && scannedCount <= 0 -> "Подготовка APK и серверного анализа"
-    scanType == "APK" && scannedCount <= 0 -> "Проверка APK и запуск серверного анализа"
-    progressPercent() < 25 -> "Хэши и метаданные"
-    progressPercent() < 65 -> "Эвристика, VT и статический анализ"
+    progressPercent() < 15 -> "Подключаем сервер"
+    progressPercent() < 70 -> "Проверяем приложения"
     else -> "Сохраняем результат"
+}
+
+private fun ScanProgress.notificationStatus(scanType: String): String = when (scanType.uppercase()) {
+    "FULL" -> "Идёт глубокая проверка"
+    "SELECTIVE" -> "Идёт выборочная проверка"
+    "APK" -> "Идёт проверка APK"
+    else -> "Идёт проверка"
 }

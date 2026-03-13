@@ -55,11 +55,9 @@ class LocalThreatDetector(context: Context) {
             return ThreatInfo(
                 packageName = app.packageName,
                 appName = app.appName,
-                threatName = "Локальная сигнатура",
+                threatName = "Совпадение с локальной сигнатурой",
                 severity = ThreatSeverity.CRITICAL,
-                detectionEngine = "Shield локальные правила",
-                detectionCount = 1,
-                totalEngines = 1,
+                detectionEngine = "",
                 summary = "Хэш APK совпал с локально заблокированной сигнатурой."
             )
         }
@@ -68,11 +66,9 @@ class LocalThreatDetector(context: Context) {
             return ThreatInfo(
                 packageName = app.packageName,
                 appName = app.appName,
-                threatName = "Запрещённое семейство пакетов",
+                threatName = "Подозрительное семейство пакетов",
                 severity = ThreatSeverity.HIGH,
-                detectionEngine = "Shield локальные правила",
-                detectionCount = 1,
-                totalEngines = 1,
+                detectionEngine = "",
                 summary = "Имя пакета попало под локальное правило по известному семейству."
             )
         }
@@ -130,9 +126,9 @@ class LocalThreatDetector(context: Context) {
         }
 
         val threatName = when {
-            matchedCombos.isNotEmpty() -> "Эвристика: опасные разрешения"
-            keywordHits.isNotEmpty() -> "Эвристика: подозрительные признаки"
-            else -> "Эвристика: рискованная установка"
+            matchedCombos.isNotEmpty() -> "Опасные разрешения"
+            keywordHits.isNotEmpty() -> "Подозрительные признаки"
+            else -> "Рискованная установка"
         }
 
         return ThreatInfo(
@@ -140,9 +136,7 @@ class LocalThreatDetector(context: Context) {
             appName = app.appName,
             threatName = threatName,
             severity = severity,
-            detectionEngine = "Shield локальные правила",
-            detectionCount = (keywordHits.size + matchedCombos.size + if (hasStrongSignal) 1 else 0).coerceAtLeast(1),
-            totalEngines = (riskyPermissions.size + if (hasBehaviorRedFlags) 1 else 0).coerceAtLeast(1),
+            detectionEngine = "",
             summary = buildString {
                 if (keywordHits.isNotEmpty()) {
                     append("Ключевые слова: ${keywordHits.joinToString()}. ")

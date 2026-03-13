@@ -44,6 +44,29 @@ function classifyFullReportError(error) {
     return null;
 }
 
+function sanitizeDeepScanForClient(scan) {
+    if (!scan || typeof scan !== 'object') {
+        return scan;
+    }
+
+    const findings = Array.isArray(scan.findings)
+        ? scan.findings.map((finding) => ({
+            ...finding,
+            source: null
+        }))
+        : [];
+
+    return {
+        ...scan,
+        request: undefined,
+        summary: scan.summary ? {
+            ...scan.summary,
+            sources: []
+        } : null,
+        findings
+    };
+}
+
 router.post('/start', auth, async (req, res) => {
     try {
         const job = await createDeepScanJob(req.userId, req.body || {});
@@ -166,7 +189,7 @@ router.get('/:id', auth, async (req, res) => {
 
         return res.json({
             success: true,
-            scan
+            scan: sanitizeDeepScanForClient(scan)
         });
     } catch (error) {
         console.error('Deep scan fetch error:', error);

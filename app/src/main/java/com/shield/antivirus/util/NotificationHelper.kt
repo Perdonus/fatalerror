@@ -14,12 +14,11 @@ import com.shield.antivirus.R
 
 object NotificationHelper {
     const val CHANNEL_PROTECTION = "shield_protection"
-    const val CHANNEL_THREATS = "shield_threats"
     const val CHANNEL_SCAN = "shield_scan"
 
     const val NOTIF_PROTECTION_ID = 1001
-    const val NOTIF_THREAT_BASE = 2000
     const val NOTIF_SCAN_ID = 3001
+    const val NOTIF_SCAN_SUMMARY_ID = 3002
 
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -31,14 +30,6 @@ object NotificationHelper {
                     "Фоновая защита",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply { description = "Постоянный статус защиты" }
-            )
-
-            nm.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_THREATS,
-                    "Угрозы",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Оповещения об угрозах" }
             )
 
             nm.createNotificationChannel(
@@ -63,60 +54,85 @@ object NotificationHelper {
             .setContentIntent(buildMainIntent(context))
             .build()
 
-    fun showThreatNotification(context: Context, appName: String, threatName: String, id: Int) {
-        createChannels(context)
-        val notification = NotificationCompat.Builder(context, CHANNEL_THREATS)
-            .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle("Обнаружена угроза")
-            .setContentText("$appName: $threatName")
-            .setStyle(
-                NotificationCompat.BigTextStyle().bigText(
-                    "Приложение \"$appName\" помечено как угроза: $threatName. Откройте Shield Antivirus и проверьте результат."
-                )
-            )
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
-            .setContentIntent(buildMainIntent(context))
-            .build()
-        NotificationManagerCompat.from(context).notify(NOTIF_THREAT_BASE + id, notification)
-    }
-
-    fun showScanNotification(context: Context, progress: Int, current: String) {
+    fun showScanNotification(
+        context: Context,
+        progress: Int,
+        status: String,
+        stage: String? = null,
+        deepMode: Boolean = false
+    ) {
         createChannels(context)
         NotificationManagerCompat.from(context).notify(
             NOTIF_SCAN_ID,
-            buildScanNotification(context, progress, current)
+            buildScanNotification(
+                context = context,
+                progress = progress,
+                status = status,
+                stage = stage,
+                deepMode = deepMode
+            )
         )
     }
 
     fun buildScanNotification(
         context: Context,
         progress: Int,
-        current: String,
+        status: String,
         stage: String? = null,
         deepMode: Boolean = false
     ): android.app.Notification {
         createChannels(context)
+        val normalizedProgress = progress.coerceIn(0, 100)
+        val safeStatus = status.ifBlank { if (deepMode) "Идёт глубокая проверка" else "Идёт проверка" }
+        val safeStage = stage?.takeIf { it.isNotBlank() } ?: if (normalizedProgress <= 0) {
+            "Подготавливаем проверку"
+        } else {
+            "Прогресс: $normalizedProgress%"
+        }
         return NotificationCompat.Builder(context, CHANNEL_SCAN)
             .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle(if (deepMode) "Глубокая проверка" else "Идёт проверка")
-            .setContentText(current.ifBlank { if (deepMode) "Серверный анализ" else "Сканирование" })
-            .setSubText(stage)
+            .setContentTitle(if (deepMode) "Глубокая проверка" else "Проверка приложений")
+            .setContentText(safeStatus)
+            .setSubText(safeStage)
             .setStyle(
                 BigTextStyle().bigText(
                     listOfNotNull(
-                        current.ifBlank { null },
-                        stage
+                        safeStatus,
+                        safeStage
                     ).joinToString(separator = "\n")
                 )
             )
-            .setProgress(100, progress.coerceIn(0, 100), progress <= 0)
+            .setProgress(100, normalizedProgress, normalizedProgress <= 0)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setContentIntent(buildMainIntent(context))
             .build()
+    }
+
+    fun showScanSummaryNotification(
+        context: Context,
+        threatsFound: Int,
+        deepMode: Boolean = false
+    ) {
+        createChannels(context)
+        val summary = if (threatsFound > 0) {
+            "Угрозы найдены: $threatsFound"
+        } else {
+            "Угроз не найдено"
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_SCAN)
+            .setSmallIcon(R.drawable.ic_notification_shield)
+            .setContentTitle(if (deepMode) "Глубокая проверка завершена" else "Проверка завершена")
+            .setContentText(summary)
+            .setStyle(BigTextStyle().bigText(summary))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setContentIntent(buildMainIntent(context))
+            .build()
+        NotificationManagerCompat.from(context).notify(NOTIF_SCAN_SUMMARY_ID, notification)
     }
 
     fun cancelScanNotification(context: Context) {

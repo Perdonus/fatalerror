@@ -177,6 +177,7 @@ data class DeepScanStartRequest(
     @SerializedName("package_name") val packageName: String,
     @SerializedName("scan_mode") val scanMode: String,
     val sha256: String?,
+    @SerializedName("is_system_app") val isSystemApp: Boolean = false,
     @SerializedName("installer_package") val installerPackage: String?,
     val permissions: List<String>,
     @SerializedName("target_sdk") val targetSdk: Int? = null,

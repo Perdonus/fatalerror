@@ -557,13 +557,22 @@ async function triageDeepScanFindings({
             severity: finding.severity,
             source: finding.source,
             title: finding.title,
+            detail: finding.detail,
             permission: finding?.evidence?.permission || null
         }));
 
     const payloadForModel = {
+        app_name: normalized?.appName || null,
         package_name: normalized?.packageName || null,
         scan_mode: normalized?.scanMode || null,
+        is_system_app: Boolean(normalized?.isSystemApp),
         installer_package: normalized?.installerPackage || null,
+        target_sdk: normalized?.targetSdk ?? null,
+        min_sdk: normalized?.minSdk ?? null,
+        is_debuggable: Boolean(normalized?.isDebuggable),
+        uses_cleartext_traffic: Boolean(normalized?.usesCleartextTraffic),
+        signature_present: Boolean(normalized?.signatureSha256),
+        certificate_subject: normalized?.certificateSubject || null,
         permission_count: Array.isArray(normalized?.permissions) ? normalized.permissions.length : 0,
         permissions: Array.isArray(normalized?.permissions) ? normalized.permissions.slice(0, 40) : [],
         risk_score: Number(riskScore || 0),
@@ -589,6 +598,9 @@ async function triageDeepScanFindings({
                     'Твоя задача: снижать ложные срабатывания, но не пропускать опасные сочетания.',
                     'Если есть сильные признаки (VirusTotal malicious>0, accessibility+overlay+sms, внешние malware-маркеры), не давай benign.',
                     'Unknown installer сам по себе не является угрозой.',
+                    'Системные и предустановленные приложения без hard-signals обычно не нужно показывать пользователю.',
+                    'Не показывай benign-приложения только из-за install_source, platform_age, metadata_gap, signature_gap, certificate_gap.',
+                    'Смотри на совокупность факторов: системность, installer, разрешения, подпись, debug/cleartext, VT и все findings.',
                     'Верни только JSON без пояснений.',
                     'Формат JSON:',
                     '{"suggested_verdict":"clean|low_risk|suspicious|malicious","report_to_user":true|false,"user_summary":"<=160 chars","benign_probability":0..1,"suppress_types":["install_source"],"reason":"<=200 chars"}',

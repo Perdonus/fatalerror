@@ -7,9 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.shield.antivirus.data.datastore.UserPreferences
-import com.shield.antivirus.data.model.ThreatInfo
 import com.shield.antivirus.data.model.ScanResult
-import com.shield.antivirus.data.repository.InsightRepository
 import com.shield.antivirus.data.repository.FullReportRateLimitException
 import com.shield.antivirus.data.repository.ScanAlreadyRunningException
 import com.shield.antivirus.data.repository.ScanProgress
@@ -28,13 +26,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
-data class ScanExplainUiState(
-    val isLoading: Boolean = false,
-    val title: String? = null,
-    val explanation: String? = null,
-    val error: String? = null
-)
-
 data class ScanReportDownloadState(
     val isLoading: Boolean = false,
     val message: String? = null,
@@ -44,7 +35,6 @@ data class ScanReportDownloadState(
 
 class ScanViewModel(private val context: Context) : ViewModel() {
     private val repo = ScanRepository(context)
-    private val insightRepo = InsightRepository(context)
     private val prefs = UserPreferences(context)
     private val workManager = WorkManager.getInstance(context.applicationContext)
 
@@ -65,9 +55,6 @@ class ScanViewModel(private val context: Context) : ViewModel() {
 
     private val _currentResult = MutableStateFlow<ScanResult?>(null)
     val currentResult: StateFlow<ScanResult?> = _currentResult.asStateFlow()
-
-    private val _explainState = MutableStateFlow(ScanExplainUiState())
-    val explainState: StateFlow<ScanExplainUiState> = _explainState.asStateFlow()
     private val _reportDownloadState = MutableStateFlow(ScanReportDownloadState())
     val reportDownloadState: StateFlow<ScanReportDownloadState> = _reportDownloadState.asStateFlow()
 
@@ -182,7 +169,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
             _guestLimitReached.value = false
             _progress.value = ScanProgress(totalCount = 1)
 
-            if (!guest && normalizedType == "FULL") {
+            if (!guest && normalizedType != "QUICK") {
                 val existingWorkId = prefs.activeDeepScanWorkId.first()
                     .takeIf { it.isNotBlank() }
                     ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
@@ -317,65 +304,6 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch {
             _currentResult.value = repo.getResultById(id)
         }
-    }
-
-    fun explainCurrentResult() {
-        viewModelScope.launch {
-            val result = _currentResult.value ?: run {
-                _explainState.value = ScanExplainUiState(error = "Сначала откройте готовый отчёт")
-                return@launch
-            }
-            _explainState.value = ScanExplainUiState(
-                isLoading = true,
-                title = result.threats.firstOrNull()?.appName ?: "Отчёт"
-            )
-            insightRepo.explainResult(
-                result = result,
-                isGuest = prefs.isGuest.first()
-            ).onSuccess { explanation ->
-                _explainState.value = ScanExplainUiState(
-                    title = result.threats.firstOrNull()?.appName ?: "Отчёт",
-                    explanation = explanation
-                )
-            }.onFailure { error ->
-                _explainState.value = ScanExplainUiState(
-                    title = result.threats.firstOrNull()?.appName ?: "Отчёт",
-                    error = error.message ?: "Не удалось получить объяснение"
-                )
-            }
-        }
-    }
-
-    fun explainThreat(threat: ThreatInfo) {
-        viewModelScope.launch {
-            val result = _currentResult.value ?: run {
-                _explainState.value = ScanExplainUiState(error = "Сначала откройте готовый отчёт")
-                return@launch
-            }
-            _explainState.value = ScanExplainUiState(isLoading = true, title = threat.appName)
-            val scopedResult = result.copy(
-                threats = listOf(threat),
-                threatsFound = 1
-            )
-            insightRepo.explainResult(
-                result = scopedResult,
-                isGuest = prefs.isGuest.first()
-            ).onSuccess { explanation ->
-                _explainState.value = ScanExplainUiState(
-                    title = threat.appName,
-                    explanation = explanation
-                )
-            }.onFailure { error ->
-                _explainState.value = ScanExplainUiState(
-                    title = threat.appName,
-                    error = error.message ?: "Не удалось получить объяснение"
-                )
-            }
-        }
-    }
-
-    fun clearExplanation() {
-        _explainState.value = ScanExplainUiState()
     }
 
     fun downloadCurrentFullReport() {

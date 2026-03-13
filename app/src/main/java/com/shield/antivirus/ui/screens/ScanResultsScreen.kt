@@ -3,7 +3,6 @@ package com.shield.antivirus.ui.screens
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,15 +18,10 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.LoadingIndicatorDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
@@ -35,9 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,7 +41,6 @@ import com.shield.antivirus.data.model.ThreatSeverity
 import com.shield.antivirus.ui.components.ShieldBackdrop
 import com.shield.antivirus.ui.components.ShieldBlockingLoadingOverlay
 import com.shield.antivirus.ui.components.ShieldEmptyState
-import com.shield.antivirus.ui.components.ShieldMarkdownCards
 import com.shield.antivirus.ui.components.ShieldPanel
 import com.shield.antivirus.ui.components.ShieldScreenScaffold
 import com.shield.antivirus.ui.components.ShieldSectionHeader
@@ -65,7 +55,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScanResultsScreen(
     viewModel: ScanViewModel,
@@ -77,9 +67,7 @@ fun ScanResultsScreen(
     val result by viewModel.currentResult.collectAsState()
     val isGuest by viewModel.isGuest.collectAsState()
     val isDeveloperMode by viewModel.isDeveloperMode.collectAsState()
-    val explainState by viewModel.explainState.collectAsState()
     val reportDownloadState by viewModel.reportDownloadState.collectAsState()
-    var showExplainSheet by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(scanId) {
         viewModel.loadResult(scanId)
@@ -95,70 +83,6 @@ fun ScanResultsScreen(
     }
 
     ShieldBackdrop {
-        if (showExplainSheet) {
-            ModalBottomSheet(
-                onDismissRequest = {
-                    showExplainSheet = false
-                    viewModel.clearExplanation()
-                }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val renderedExplanation = explainState.explanation?.trim().orEmpty()
-                    val hasExplanation = renderedExplanation.isNotBlank()
-                    when {
-                        explainState.isLoading -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 24.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                LoadingIndicator(
-                                    modifier = Modifier.padding(6.dp),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    polygons = LoadingIndicatorDefaults.IndeterminateIndicatorPolygons
-                                )
-                            }
-                        }
-                        hasExplanation -> {
-                            if (!explainState.title.isNullOrBlank()) {
-                                Text(
-                                    text = explainState.title.orEmpty(),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-                            }
-                            ShieldMarkdownCards(
-                                markdown = renderedExplanation,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        !explainState.error.isNullOrBlank() -> {
-                            if (!explainState.title.isNullOrBlank()) {
-                                Text(
-                                    text = explainState.title.orEmpty(),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-                            }
-                            Text(
-                                text = explainState.error.orEmpty(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.criticalTone
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
         ShieldScreenScaffold(
             title = "Результат",
             onBack = onBack
@@ -237,25 +161,17 @@ fun ScanResultsScreen(
                 } else {
                     item {
                         ShieldSectionHeader(
-                            eyebrow = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники" else "Угрозы",
-                            title = if (current.threats.any { !it.summary.isNullOrBlank() }) "Источники проверки" else "Список совпадений"
+                            eyebrow = "Угрозы",
+                            title = "Найденные приложения"
                         )
                     }
                     itemsIndexed(
                         items = current.threats,
                         key = { index, threat ->
-                            "${threat.packageName}|${threat.threatName}|${threat.detectionEngine}|$index"
+                            "${threat.packageName}|${threat.threatName}|$index"
                         }
                     ) { _, threat ->
-                        ThreatCard(
-                            threat = threat,
-                            isGuest = isGuest,
-                            onLogin = onOpenLogin,
-                            onExplain = {
-                                showExplainSheet = true
-                                viewModel.explainThreat(threat)
-                            }
-                        )
+                        ThreatCard(threat = threat)
                     }
                 }
             }
@@ -270,10 +186,7 @@ fun ScanResultsScreen(
 
 @Composable
 private fun ThreatCard(
-    threat: ThreatInfo,
-    isGuest: Boolean,
-    onLogin: () -> Unit,
-    onExplain: () -> Unit
+    threat: ThreatInfo
 ) {
     val accent = when (threat.severity) {
         ThreatSeverity.CRITICAL -> MaterialTheme.colorScheme.criticalTone
@@ -296,16 +209,11 @@ private fun ThreatCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = if (isGuest) onLogin else onExplain) {
-                    Text(if (isGuest) "Войти" else "Объяснить")
-                }
-                ShieldStatusChip(
-                    label = null,
-                    icon = severityIcon(threat.severity),
-                    color = accent
-                )
-            }
+            ShieldStatusChip(
+                label = null,
+                icon = severityIcon(threat.severity),
+                color = accent
+            )
         }
         Text(
             text = threat.threatName,
@@ -321,11 +229,6 @@ private fun ThreatCard(
         }
         Text(
             text = threat.packageName,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "${threat.detectionCount}/${threat.totalEngines} • ${threat.detectionEngine}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -209,7 +209,7 @@ fun ScanScreen(
                     itemsIndexed(
                         items = progress?.threats.orEmpty(),
                         key = { index, threat ->
-                            "${threat.packageName}|${threat.threatName}|${threat.detectionEngine}|$index"
+                            "${threat.packageName}|${threat.threatName}|$index"
                         }
                     ) { _, threat ->
                         val threatColor = when (threat.severity) {
@@ -245,7 +245,7 @@ fun ScanScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "${threat.detectionCount}/${threat.totalEngines} • ${threat.packageName}",
+                                text = threat.packageName,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

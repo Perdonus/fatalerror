@@ -1,0 +1,14 @@
+[Unit]
+Description=NeuralV resident Linux daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/neuralvd
+Restart=always
+RestartSec=5
+Environment=NEURALV_BASE_URL=https://sosiskibot.ru/basedata
+
+[Install]
+WantedBy=default.target

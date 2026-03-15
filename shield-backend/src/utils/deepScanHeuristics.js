@@ -111,7 +111,7 @@ function normalizePermissions(rawPermissions) {
         .slice(0, 256)));
 }
 
-function makeFinding(type, severity, title, detail, evidence = {}, source = 'Shield Rules', score = 0) {
+function makeFinding(type, severity, title, detail, evidence = {}, source = 'NeuralV Rules', score = 0) {
     return {
         type,
         severity,

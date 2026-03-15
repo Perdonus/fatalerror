@@ -18,5 +18,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ShieldAntivirus"
+rootProject.name = "NeuralV"
 include(":app")
+include(":desktop-core")
+include(":desktop-app")

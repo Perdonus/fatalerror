@@ -1,10 +1,10 @@
-# Shield Antivirus — Backend API
+# NeuralV — Backend API
 
 ## Deploy
 
 ```bash
-ssh fatalerror@91.233.168.135
-cd /home/fatalerror/shield-backend
+ssh root@91.233.168.135
+cd /root/fatalerror/shield-backend
 cp .env.example .env
 nano .env
 npm install

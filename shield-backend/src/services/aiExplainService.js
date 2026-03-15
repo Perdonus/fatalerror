@@ -723,8 +723,98 @@ async function triageDeepScanFindings({
     };
 }
 
+async function triageDesktopScanFindings({
+    platform,
+    mode,
+    artifactKind,
+    targetName,
+    targetPath,
+    sha256,
+    metadata,
+    vt,
+    verdict,
+    riskScore,
+    findings
+}) {
+    if (!isAiConfigured()) {
+        const error = new Error('AI service is not configured');
+        error.statusCode = 503;
+        throw error;
+    }
+
+    const model = await resolveModel();
+    const compactFindings = (Array.isArray(findings) ? findings : [])
+        .slice(0, 18)
+        .map((finding) => ({
+            type: finding.type,
+            severity: finding.severity,
+            source: finding.source,
+            title: finding.title,
+            detail: finding.detail
+        }));
+
+    const payloadForModel = {
+        platform: String(platform || 'UNKNOWN'),
+        mode: String(mode || 'ON_DEMAND'),
+        artifact_kind: String(artifactKind || 'UNKNOWN'),
+        target_name: String(targetName || ''),
+        target_path: String(targetPath || ''),
+        sha256: String(sha256 || ''),
+        metadata: metadata && typeof metadata === 'object' ? metadata : {},
+        risk_score: Number(riskScore || 0),
+        current_verdict: String(verdict || 'clean'),
+        virus_total: {
+            status: vt?.status || null,
+            malicious: Number(vt?.malicious || 0),
+            suspicious: Number(vt?.suspicious || 0),
+            harmless: Number(vt?.harmless || 0)
+        },
+        findings: compactFindings
+    };
+
+    const completion = await apiRequest('/chat/completions', {
+        model,
+        temperature: 0.05,
+        max_tokens: 360,
+        messages: [
+            {
+                role: 'system',
+                content: [
+                    'Ты серверный модуль AI-триажа desktop security scan для Windows и Linux.',
+                    'Твоя задача: убирать шум и ложные срабатывания перед пользовательским отчётом, но не скрывать реально опасные сигналы.',
+                    'Если есть hard signals (VirusTotal malicious>0, persistence + unsigned/untrusted signer, privilege escalation, suspicious script chain, tampering, risky imports/packer markers), не давай benign.',
+                    'Unknown provenance сам по себе не является достаточной угрозой.',
+                    'Оцени совокупность факторов: платформа, тип артефакта, publisher/signer, autorun, privileges, capabilities, suspicious imports, entropy, VT, metadata и findings.',
+                    'Верни только JSON без пояснений.',
+                    'Формат JSON:',
+                    '{"suggested_verdict":"clean|low_risk|suspicious|malicious","report_to_user":true|false,"user_summary":"<=160 chars","benign_probability":0..1,"suppress_types":["unknown_origin"],"reason":"<=200 chars"}',
+                    'Если report_to_user=false: сигнал можно скрыть из пользовательского отчёта.',
+                    'user_summary должен быть коротким и утилитарным.',
+                    'suppress_types содержит только типы findings, которые можно убрать без потери важных угроз.'
+                ].join(' ')
+            },
+            {
+                role: 'user',
+                content: sanitizeInput(payloadForModel) || '{}'
+            }
+        ]
+    });
+
+    const content = completion?.choices?.[0]?.message?.content;
+    if (!content) {
+        throw new Error('AI desktop triage completion is empty');
+    }
+
+    const parsed = coerceDeepScanTriage(content);
+    return {
+        model,
+        ...parsed
+    };
+}
+
 module.exports = {
     isAiConfigured,
     explainScan,
-    triageDeepScanFindings
+    triageDeepScanFindings,
+    triageDesktopScanFindings
 };

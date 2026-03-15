@@ -1,38 +1,31 @@
-# Shield Antivirus — Android App
+# NeuralV Security Platform
 
-## Структура проекта
-- **Kotlin + Jetpack Compose + Material3**
-- **Min SDK:** 26 (Android 8.0+)
-- **Target SDK:** 35 (Android 15)
-- **VirusTotal API v3** для проверки файлов
-- **Room** для истории сканирований
-- **WorkManager** для фоновых задач
-- **DataStore** для настроек
+NeuralV теперь живёт как единая многоплатформенная линейка поверх общего backend `/basedata`.
 
-## Экраны
-1. **Login / Register** — авторизация (локальная, без интернета)
-2. **Home** — статус защиты, статистика, кнопки сканирования
-3. **Scan** — анимация сканирования с прогрессом
-4. **Results** — результаты с угрозами
-5. **History** — история всех сканирований
-6. **Settings** — API ключ, настройки защиты
+## Что в репозитории
+- `app/` — Android клиент на Jetpack Compose + Material 3
+- `shield-backend/` — Node.js backend, auth, Android deep scans, desktop scan subsystem, release manifest
+- `desktop-core/` — shared Kotlin/JVM слой для desktop-клиентов
+- `desktop-app/` — Compose Desktop GUI для Windows и Linux
+- `shell/` — Linux shell/TUI + resident daemon scaffold на Go
+- `web/neuralv/` — responsive MD3 website для `/neuralv/`
+- `branding/` — общие brand tokens и logo assets
 
-## Как собрать
-1. Открой папку в **Android Studio**
-2. В `local.properties` укажи путь к SDK
-3. `Build → Make Project` или `gradlew assembleDebug`
+## Ключевые принципы
+- Android `applicationId` остаётся `com.shield.antivirus`, чтобы не ломать обновления.
+- Единая авторизация идёт через `/basedata/api/auth`.
+- Android deep scan и desktop scans разделены на уровне API и БД.
+- Website читает release manifest из `/basedata/api/releases/manifest`.
+- Linux shell устанавливается через `curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash`.
 
-## VirusTotal API ключ
-1. Зарегистрируйся на [virustotal.com](https://virustotal.com)
-2. В приложении: **Settings → VirusTotal API → вставь ключ → Save**
-3. Бесплатный план: 4 запроса/минуту, 500/день
+## CI/CD
+GitHub Actions теперь готовятся собирать:
+- Android release APK
+- Windows desktop GUI
+- Linux desktop GUI
+- Linux shell binaries
+- Website bundle
+- unified `release-builds` branch с `release-manifest.json`
 
-## Фичи
-- ✅ Сканирование установленных APK через VirusTotal SHA-256
-- ✅ Быстрое / Полное / Выборочное сканирование  
-- ✅ Фоновый сервис 24/7 (foreground service)
-- ✅ Уведомления при обнаружении угроз
-- ✅ Автозапуск после перезагрузки
-- ✅ Мониторинг установки новых приложений
-- ✅ История сканирований (Room DB)
-- ✅ Логин/регистрация с хешированием паролей
+## Сборка
+По требованию проекта локальные тяжёлые билды не являются основным путём. Основной путь — GitHub Actions.

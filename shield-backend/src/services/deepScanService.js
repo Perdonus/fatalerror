@@ -174,7 +174,7 @@ function normalizeFindingsList(findings) {
             severity: item.severity || 'low',
             title: item.title || 'Signal',
             detail: item.detail || '',
-            source: item.source || 'Shield Rules',
+            source: item.source || 'NeuralV Rules',
             score: Number(item.score || 0),
             evidence: item.evidence && typeof item.evidence === 'object' ? item.evidence : {}
         }));
@@ -202,7 +202,7 @@ function formatVerdict(value) {
 function groupFindingsBySource(findings) {
     const sourceMap = new Map();
     normalizeFindingsList(findings).forEach((finding) => {
-        const source = String(finding.source || 'Shield Rules');
+        const source = String(finding.source || 'NeuralV Rules');
         const bucket = sourceMap.get(source) || [];
         bucket.push(finding);
         sourceMap.set(source, bucket);
@@ -239,7 +239,7 @@ function renderFindingsSection(title, findings) {
     normalized.forEach((finding, index) => {
         lines.push(`${index + 1}. [${String(finding.severity || 'low').toUpperCase()}] ${finding.title}`);
         lines.push(`   - Тип: ${finding.type || 'n/a'}`);
-        lines.push(`   - Источник: ${finding.source || 'Shield Rules'}`);
+        lines.push(`   - Источник: ${finding.source || 'NeuralV Rules'}`);
         lines.push(`   - Детали: ${finding.detail || 'n/a'}`);
         if (Number(finding.score || 0) > 0) {
             lines.push(`   - Балл: ${Number(finding.score)}`);
@@ -270,7 +270,7 @@ function buildDeepScanFullReportPayload(row) {
 
     const groupedFinal = groupFindingsBySource(finalFindings);
     const lines = [];
-    lines.push('# Shield Deep Scan Full Report');
+    lines.push('# NeuralV Deep Scan Full Report');
     lines.push('');
     lines.push(`- Generated at: ${new Date().toISOString()}`);
     lines.push(`- Scan ID: ${row.id}`);
@@ -1080,7 +1080,7 @@ function dedupeFindings(findings) {
 function buildSourceSummaries(findings, vt) {
     const sourceMap = new Map();
     findings.forEach((finding) => {
-        const source = finding.source || 'Shield Rules';
+        const source = finding.source || 'NeuralV Rules';
         const bucket = sourceMap.get(source) || [];
         bucket.push(finding);
         sourceMap.set(source, bucket);

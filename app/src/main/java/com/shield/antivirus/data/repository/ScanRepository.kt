@@ -132,7 +132,7 @@ class ScanRepository(private val context: Context) {
 
             val generatedAt = System.currentTimeMillis()
             val header = buildString {
-                appendLine("# Shield Full Report")
+                appendLine("# NeuralV Full Report")
                 appendLine()
                 appendLine("- generated_at: $generatedAt")
                 appendLine("- local_scan_id: ${result.id}")
@@ -156,7 +156,7 @@ class ScanRepository(private val context: Context) {
                 }
             }
 
-            val fileName = "shield-full-report-${result.id}-${generatedAt}.md"
+            val fileName = "neuralv-full-report-${result.id}-${generatedAt}.md"
             saveReportToDownloads(fileName, payload)
         }
     }
@@ -935,7 +935,7 @@ class ScanRepository(private val context: Context) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, mimeType)
-                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/ShieldSecurity")
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/NeuralV")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -953,7 +953,7 @@ class ScanRepository(private val context: Context) {
 
         val fallbackDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: context.filesDir
-        val targetDir = File(fallbackDir, "ShieldSecurity").apply { mkdirs() }
+        val targetDir = File(fallbackDir, "NeuralV").apply { mkdirs() }
         val file = File(targetDir, fileName)
         file.writeText(content, Charsets.UTF_8)
         return file.absolutePath

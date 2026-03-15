@@ -182,6 +182,9 @@ fun NavGraph(navController: NavHostController = rememberNavController()) {
             ),
             deepLinks = listOf(
                 navDeepLink {
+                    uriPattern = "neuralv://auth/reset-password?token={token}&email={email}"
+                },
+                navDeepLink {
                     uriPattern = "shieldsecurity://auth/reset-password?token={token}&email={email}"
                 }
             )

@@ -45,7 +45,7 @@ object NotificationHelper {
     fun buildProtectionNotification(context: Context) =
         NotificationCompat.Builder(context, CHANNEL_PROTECTION)
             .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle("Shield Antivirus")
+            .setContentTitle("NeuralV")
             .setContentText("Фоновая защита активна")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
@@ -123,7 +123,7 @@ object NotificationHelper {
         }
         val notification = NotificationCompat.Builder(context, CHANNEL_SCAN)
             .setSmallIcon(R.drawable.ic_notification_shield)
-            .setContentTitle(if (deepMode) "Глубокая проверка завершена" else "Проверка завершена")
+            .setContentTitle("Проверка завершена")
             .setContentText(summary)
             .setStyle(BigTextStyle().bigText(summary))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

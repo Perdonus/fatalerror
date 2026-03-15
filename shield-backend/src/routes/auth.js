@@ -56,7 +56,7 @@ function passwordResetExpiresAt(now = nowMs()) {
 }
 
 function getResetUrl(token, email) {
-    const baseUrl = (process.env.APP_RESET_URL || 'shieldsecurity://auth/reset-password').trim();
+    const baseUrl = (process.env.APP_RESET_URL || 'neuralv://auth/reset-password').trim();
     const separator = baseUrl.includes('?') ? '&' : '?';
     return `${baseUrl}${separator}token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
 }
@@ -177,7 +177,7 @@ async function sendAuthCodeEmail(email, code, purpose) {
     const actionLabel = purpose === 'REGISTER' ? 'регистрации' : 'входа';
     await sendMail({
         to: email,
-        subject: `ShieldSecurity: код ${actionLabel}`,
+        subject: `NeuralV: код ${actionLabel}`,
         text: `Ваш код ${actionLabel}: ${code}. Код действует ${AUTH_CODE_TTL_MINUTES} минут.`,
         html: `<p>Ваш код ${actionLabel}: <strong>${code}</strong></p><p>Код действует ${AUTH_CODE_TTL_MINUTES} минут.</p>`
     });
@@ -186,7 +186,7 @@ async function sendAuthCodeEmail(email, code, purpose) {
 async function sendPasswordResetEmail(email, link) {
     await sendMail({
         to: email,
-        subject: 'ShieldSecurity: сброс пароля',
+        subject: 'NeuralV: сброс пароля',
         text: `Перейдите по ссылке, чтобы сбросить пароль: ${link}`,
         html: `<p>Чтобы сбросить пароль, откройте ссылку:</p><p><a href="${link}">${link}</a></p>`
     });

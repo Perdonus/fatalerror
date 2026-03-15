@@ -185,7 +185,7 @@ private fun HomeContent(
     }
 
     ShieldScreenScaffold(
-        title = "ShieldSecurity",
+        title = "NeuralV",
         subtitle = null,
         leadingContent = {
             IconButton(onClick = if (isGuestMode) onOpenLogin else onOpenHistory) {

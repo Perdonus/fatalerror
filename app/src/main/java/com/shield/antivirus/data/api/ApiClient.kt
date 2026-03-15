@@ -111,7 +111,7 @@ object ApiClient {
                 }
                 AppLogger.log(
                     tag = "api_client",
-                    message = "Shield endpoint failed, trying next",
+                    message = "NeuralV endpoint failed, trying next",
                     level = "WARN",
                     metadata = mapOf(
                         "endpoint_index" to index.toString(),
@@ -122,7 +122,7 @@ object ApiClient {
             } catch (error: Exception) {
                 AppLogger.logError(
                     tag = "api_client",
-                    message = "Shield call exception",
+                    message = "NeuralV call exception",
                     error = error,
                     metadata = mapOf("endpoint_index" to index.toString())
                 )
@@ -134,6 +134,6 @@ object ApiClient {
         }
 
         lastResponse?.let { return it }
-        throw lastError ?: IllegalStateException("Shield backend is unavailable on every configured endpoint.")
+        throw lastError ?: IllegalStateException("NeuralV backend is unavailable on every configured endpoint.")
     }
 }

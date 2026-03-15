@@ -158,3 +158,133 @@ CREATE TABLE IF NOT EXISTS deep_scan_daily_usage (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_deep_scan_daily_usage_user_date (user_id, usage_date)
 );
+
+CREATE TABLE IF NOT EXISTS desktop_scan_jobs (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    platform ENUM('WINDOWS','LINUX') NOT NULL,
+    mode ENUM('QUICK','FULL','SELECTIVE','ARTIFACT','RESIDENT_EVENT','ON_DEMAND') NOT NULL DEFAULT 'FULL',
+    artifact_kind VARCHAR(32) DEFAULT 'UNKNOWN',
+    target_name VARCHAR(255) DEFAULT NULL,
+    target_path VARCHAR(700) DEFAULT NULL,
+    sha256 VARCHAR(64) DEFAULT NULL,
+    status ENUM('QUEUED','AWAITING_UPLOAD','RUNNING','COMPLETED','FAILED','CANCELLED') NOT NULL DEFAULT 'QUEUED',
+    verdict VARCHAR(20) DEFAULT NULL,
+    risk_score INT NOT NULL DEFAULT 0,
+    surfaced_findings INT NOT NULL DEFAULT 0,
+    hidden_findings INT NOT NULL DEFAULT 0,
+    artifact_required TINYINT(1) NOT NULL DEFAULT 0,
+    request_json LONGTEXT NOT NULL,
+    summary_json LONGTEXT DEFAULT NULL,
+    findings_json LONGTEXT DEFAULT NULL,
+    full_report_json LONGTEXT DEFAULT NULL,
+    error_message VARCHAR(255) DEFAULT NULL,
+    created_at BIGINT NOT NULL,
+    started_at BIGINT DEFAULT NULL,
+    completed_at BIGINT DEFAULT NULL,
+    updated_at BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_desktop_scan_jobs_user_created (user_id, created_at),
+    INDEX idx_desktop_scan_jobs_status_created (status, created_at),
+    INDEX idx_desktop_scan_jobs_user_platform_mode (user_id, platform, mode, created_at),
+    INDEX idx_desktop_scan_jobs_sha256 (sha256)
+);
+
+CREATE TABLE IF NOT EXISTS desktop_scan_artifacts (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    storage_path VARCHAR(700) NOT NULL,
+    sha256 VARCHAR(64) DEFAULT NULL,
+    size_bytes BIGINT DEFAULT NULL,
+    mime_type VARCHAR(120) DEFAULT NULL,
+    created_at BIGINT NOT NULL,
+    uploaded_at BIGINT NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES desktop_scan_jobs(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_desktop_scan_artifacts_job (job_id, uploaded_at),
+    INDEX idx_desktop_scan_artifacts_user (user_id, uploaded_at),
+    INDEX idx_desktop_scan_artifacts_sha256 (sha256)
+);
+
+CREATE TABLE IF NOT EXISTS release_artifacts (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    platform ENUM('android','windows','linux','shell','site') NOT NULL,
+    channel VARCHAR(32) NOT NULL DEFAULT 'main',
+    version VARCHAR(64) NOT NULL,
+    sha256 VARCHAR(128) DEFAULT '',
+    download_url VARCHAR(700) NOT NULL,
+    install_command VARCHAR(700) DEFAULT NULL,
+    file_name VARCHAR(255) DEFAULT NULL,
+    notes_json LONGTEXT DEFAULT NULL,
+    metadata_json LONGTEXT DEFAULT NULL,
+    is_latest TINYINT(1) NOT NULL DEFAULT 1,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    INDEX idx_release_artifacts_platform_latest (platform, is_latest, updated_at)
+);
+
+CREATE TABLE IF NOT EXISTS desktop_scan_jobs (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    platform ENUM('WINDOWS','LINUX') NOT NULL,
+    scan_mode ENUM('ON_DEMAND','SELECTIVE','ARTIFACT','RESIDENT_EVENT') NOT NULL DEFAULT 'ON_DEMAND',
+    artifact_kind VARCHAR(32) NOT NULL DEFAULT 'UNKNOWN',
+    target_name VARCHAR(255) DEFAULT NULL,
+    target_path VARCHAR(512) DEFAULT NULL,
+    sha256 VARCHAR(64) DEFAULT NULL,
+    status ENUM('QUEUED','AWAITING_UPLOAD','RUNNING','COMPLETED','FAILED','CANCELLED') NOT NULL DEFAULT 'QUEUED',
+    verdict VARCHAR(20) DEFAULT NULL,
+    risk_score INT NOT NULL DEFAULT 0,
+    user_summary VARCHAR(255) DEFAULT NULL,
+    request_json LONGTEXT NOT NULL,
+    summary_json LONGTEXT DEFAULT NULL,
+    findings_json LONGTEXT DEFAULT NULL,
+    raw_findings_json LONGTEXT DEFAULT NULL,
+    full_report_markdown LONGTEXT DEFAULT NULL,
+    error_message VARCHAR(255) DEFAULT NULL,
+    created_at BIGINT NOT NULL,
+    started_at BIGINT DEFAULT NULL,
+    completed_at BIGINT DEFAULT NULL,
+    updated_at BIGINT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_desktop_scan_jobs_user_created (user_id, created_at),
+    INDEX idx_desktop_scan_jobs_user_platform_created (user_id, platform, created_at),
+    INDEX idx_desktop_scan_jobs_status_created (status, created_at),
+    INDEX idx_desktop_scan_jobs_sha256 (sha256)
+);
+
+CREATE TABLE IF NOT EXISTS desktop_scan_artifacts (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(36) NOT NULL,
+    original_name VARCHAR(255) DEFAULT NULL,
+    stored_name VARCHAR(255) DEFAULT NULL,
+    mime_type VARCHAR(120) DEFAULT NULL,
+    size_bytes BIGINT DEFAULT NULL,
+    sha256 VARCHAR(64) DEFAULT NULL,
+    storage_path VARCHAR(512) NOT NULL,
+    deleted_at BIGINT DEFAULT NULL,
+    created_at BIGINT NOT NULL,
+    INDEX idx_desktop_scan_artifacts_job (job_id),
+    INDEX idx_desktop_scan_artifacts_sha256 (sha256)
+);
+
+CREATE TABLE IF NOT EXISTS release_artifacts (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    platform ENUM('ANDROID','WINDOWS','LINUX','LINUX_SHELL','WEBSITE') NOT NULL,
+    channel VARCHAR(32) NOT NULL DEFAULT 'stable',
+    version VARCHAR(64) NOT NULL,
+    artifact_name VARCHAR(255) NOT NULL,
+    sha256 VARCHAR(128) DEFAULT NULL,
+    download_url VARCHAR(1024) DEFAULT NULL,
+    install_command LONGTEXT DEFAULT NULL,
+    page_url VARCHAR(255) DEFAULT NULL,
+    is_latest TINYINT(1) NOT NULL DEFAULT 1,
+    published_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    INDEX idx_release_artifacts_platform_channel_latest (platform, channel, is_latest, published_at),
+    INDEX idx_release_artifacts_published_at (published_at)
+);

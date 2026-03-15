@@ -8,10 +8,13 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const aiRoutes = require('./routes/ai');
 const deepScansRoutes = require('./routes/deepScans');
+const desktopScansRoutes = require('./routes/desktopScans');
+const releasesRoutes = require('./routes/releases');
 const scansRoutes = require('./routes/scans');
 const purchasesRoutes = require('./routes/purchases');
 const logsRoutes = require('./routes/logs');
 const { resumePendingDeepScans } = require('./services/deepScanService');
+const { resumePendingDesktopScans } = require('./services/desktopScanService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -44,7 +47,7 @@ app.use(cors({
 }));
 
 const skipGlobalLimiterForDeepRoutes = (req) => {
-    return /^\/api\/scans\/deep(?:\/|$)/.test(String(req.path || ''));
+    return /^\/api\/scans\/(?:deep|desktop)(?:\/|$)/.test(String(req.path || ''));
 };
 
 const limiter = rateLimit({
@@ -77,14 +80,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', aiLimiter, aiRoutes);
 app.use('/api/scans/deep', deepScansRoutes);
+app.use('/api/scans/desktop', desktopScansRoutes);
 app.use('/api/scans', scansRoutes);
 app.use('/api/purchases', purchasesRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/releases', releasesRoutes);
 
 function buildHealthPayload() {
     return {
         status: 'ok',
-        service: 'Shield Antivirus API',
+        service: 'NeuralV API',
         version: '1.0.0',
         timestamp: Date.now()
     };
@@ -112,11 +117,13 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\nShield Antivirus API running on port ${PORT}`);
+    console.log(`\nNeuralV API running on port ${PORT}`);
     console.log(`   Health: http://localhost:${PORT}/healths`);
     console.log(`   Auth:   http://localhost:${PORT}/api/auth`);
     console.log(`   Deep:   http://localhost:${PORT}/api/scans/deep/start`);
+    console.log(`   Desktop:http://localhost:${PORT}/api/scans/desktop/start`);
     resumePendingDeepScans();
+    resumePendingDesktopScans();
 });
 
 module.exports = app;

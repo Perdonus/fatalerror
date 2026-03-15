@@ -1,0 +1,33 @@
+{
+  "productName": "NeuralV",
+  "androidApplicationId": "com.shield.antivirus",
+  "palette": {
+    "primary": "#006B68",
+    "primaryBright": "#00A99A",
+    "signal": "#5F7CFF",
+    "warning": "#B75B00",
+    "critical": "#C62828",
+    "ink": "#122130",
+    "canvas": "#F3F6F8",
+    "canvasWarm": "#F8F1E8",
+    "night": "#08131D",
+    "nightSurface": "#122231",
+    "nightAccent": "#16374D"
+  },
+  "typography": {
+    "display": "Google Sans",
+    "body": "Google Sans Text",
+    "fallback": "system-ui"
+  },
+  "icon": {
+    "style": "shield-core on atmospheric backdrop",
+    "cornerStyle": "rounded expressive",
+    "monochrome": false
+  },
+  "artifacts": {
+    "android": "neuralv-android-release.apk",
+    "windows": "neuralv-windows.zip",
+    "linuxGui": "neuralv-linux.tar.gz",
+    "linuxShell": "neuralv-shell-linux.tar.gz"
+  }
+}

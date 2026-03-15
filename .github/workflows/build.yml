@@ -66,14 +66,6 @@ jobs:
           set -o pipefail
           ./gradlew assembleRelease --stacktrace --no-daemon --console=plain 2>&1 | tee gradle-build.log
 
-      - name: Surface Gradle failure
-        if: failure()
-        shell: bash
-        run: |
-          grep -E "^(e: |FAILURE:|\\* What went wrong:|Caused by:|> Task .+ FAILED)" gradle-build.log | tail -n 50 | while IFS= read -r line; do
-            printf '::error::%s\n' "$line"
-          done
-
       - name: Upload Gradle log
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,38 +73,340 @@ jobs:
           name: android-gradle-log
           path: gradle-build.log
 
-      - name: Upload release APK
-        if: success()
+      - name: Prepare Android release bundle
+        shell: bash
+        run: |
+          mkdir -p dist/android
+          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+          cp "$APK_PATH" dist/android/neuralv-android-release.apk
+
+      - name: Upload Android release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: shield-antivirus-release-apk
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: ignore
+          name: neuralv-android-release
+          path: dist/android/*
+          if-no-files-found: error
 
-      - name: Publish release APK branch
-        if: success()
+  desktop-linux:
+    name: Linux Desktop GUI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Build Linux desktop distributable
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | tee desktop-linux-build.log
+
+      - name: Package Linux desktop archive
+        shell: bash
+        run: |
+          mkdir -p dist/linux
+          APP_DIR="$(find desktop-app/build/compose/binaries/main/app -maxdepth 1 -mindepth 1 -type d | head -n 1)"
+          test -n "$APP_DIR"
+          tar -C "$(dirname "$APP_DIR")" -czf dist/linux/neuralv-linux.tar.gz "$(basename "$APP_DIR")"
+
+      - name: Upload Linux desktop log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-gradle-log
+          path: desktop-linux-build.log
+
+      - name: Upload Linux desktop bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-linux-gui
+          path: dist/linux/*
+          if-no-files-found: error
+
+  desktop-windows:
+    name: Windows Desktop GUI
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Windows desktop distributable
+        shell: pwsh
+        run: |
+          .\gradlew.bat :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath desktop-windows-build.log
+
+      - name: Package Windows desktop archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
+          $appDir = Get-ChildItem desktop-app/build/compose/binaries/main/app -Directory | Select-Object -First 1
+          if (-not $appDir) { throw "Desktop app directory not found" }
+          Compress-Archive -Path "$($appDir.FullName)\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
+
+      - name: Upload Windows desktop log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-gradle-log
+          path: desktop-windows-build.log
+
+      - name: Upload Windows desktop bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-windows-gui
+          path: dist/windows/*
+          if-no-files-found: error
+
+  shell-linux:
+    name: Linux Shell And Daemon
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build shell binaries
+        shell: bash
+        run: |
+          mkdir -p dist/shell
+          cd shell
+          go mod download
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralvd ./cmd/neuralvd
+          cd ..
+          tar -C dist/shell -czf dist/shell/neuralv-shell-linux.tar.gz neuralv-shell
+          tar -C dist/shell -czf dist/shell/neuralvd-linux.tar.gz neuralvd
+
+      - name: Upload shell bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-shell-linux
+          path: |
+            dist/shell/neuralv-shell-linux.tar.gz
+            dist/shell/neuralvd-linux.tar.gz
+          if-no-files-found: error
+
+  web-neuralv:
+    name: NeuralV Website
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/neuralv
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build site
+        run: npm run build
+
+      - name: Package site bundle
+        shell: bash
+        run: |
+          mkdir -p dist-export
+          zip -qr dist-export/neuralv-site.zip dist
+
+      - name: Upload site bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-site
+          path: web/neuralv/dist-export/*
+          if-no-files-found: error
+
+  publish-release-builds:
+    name: Publish Release Builds Branch
+    needs:
+      - backend-check
+      - android-release
+      - desktop-linux
+      - desktop-windows
+      - shell-linux
+      - web-neuralv
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Android bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-android-release
+          path: stage/android
+
+      - name: Download Linux desktop bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-linux-gui
+          path: stage/linux
+
+      - name: Download Windows desktop bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-windows-gui
+          path: stage/windows
+
+      - name: Download shell bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-shell-linux
+          path: stage/shell
+
+      - name: Download site bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-site
+          path: stage/site
+
+      - name: Build release manifest
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
-          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
-          test -n "${APK_PATH}"
+          mkdir -p publish/android publish/windows publish/linux publish/shell publish/site publish/install
+          cp stage/android/neuralv-android-release.apk publish/android/
+          cp stage/windows/neuralv-windows.zip publish/windows/
+          cp stage/linux/neuralv-linux.tar.gz publish/linux/
+          cp stage/shell/neuralv-shell-linux.tar.gz publish/shell/
+          cp stage/shell/neuralvd-linux.tar.gz publish/shell/
+          cp stage/site/neuralv-site.zip publish/site/
+          cp shell/install/linux.sh publish/install/linux.sh
 
-          rm -rf /tmp/apk-publish
-          mkdir -p /tmp/apk-publish
-          cp "${APK_PATH}" /tmp/apk-publish/shield-antivirus-release.apk
-          cat > /tmp/apk-publish/BUILD_INFO.txt <<EOF
+          sha_android="$(sha256sum publish/android/neuralv-android-release.apk | awk '{print $1}')"
+          sha_windows="$(sha256sum publish/windows/neuralv-windows.zip | awk '{print $1}')"
+          sha_linux="$(sha256sum publish/linux/neuralv-linux.tar.gz | awk '{print $1}')"
+          sha_shell="$(sha256sum publish/shell/neuralv-shell-linux.tar.gz | awk '{print $1}')"
+          sha_daemon="$(sha256sum publish/shell/neuralvd-linux.tar.gz | awk '{print $1}')"
+          sha_site="$(sha256sum publish/site/neuralv-site.zip | awk '{print $1}')"
+          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/release-builds"
+
+          cat > publish/manifest.json <<JSON
+          {
+            "success": true,
+            "generated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "release_channel": "main",
+            "artifacts": [
+              {
+                "platform": "android",
+                "channel": "release",
+                "version": "${GITHUB_SHA}",
+                "sha256": "${sha_android}",
+                "download_url": "${raw_base}/android/neuralv-android-release.apk",
+                "install_command": "",
+                "file_name": "neuralv-android-release.apk",
+                "notes": ["Android APK"],
+                "metadata": {}
+              },
+              {
+                "platform": "windows",
+                "channel": "beta",
+                "version": "${GITHUB_SHA}",
+                "sha256": "${sha_windows}",
+                "download_url": "${raw_base}/windows/neuralv-windows.zip",
+                "install_command": "",
+                "file_name": "neuralv-windows.zip",
+                "notes": ["Compose Desktop Windows GUI"],
+                "metadata": {}
+              },
+              {
+                "platform": "linux",
+                "channel": "beta",
+                "version": "${GITHUB_SHA}",
+                "sha256": "${sha_linux}",
+                "download_url": "${raw_base}/linux/neuralv-linux.tar.gz",
+                "install_command": "",
+                "file_name": "neuralv-linux.tar.gz",
+                "notes": ["Compose Desktop Linux GUI"],
+                "metadata": {
+                  "daemonUrl": "${raw_base}/shell/neuralvd-linux.tar.gz",
+                  "daemonSha256": "${sha_daemon}"
+                }
+              },
+              {
+                "platform": "shell",
+                "channel": "beta",
+                "version": "${GITHUB_SHA}",
+                "sha256": "${sha_shell}",
+                "download_url": "${raw_base}/shell/neuralv-shell-linux.tar.gz",
+                "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash",
+                "file_name": "neuralv-shell-linux.tar.gz",
+                "notes": ["Bubble Tea shell client"],
+                "metadata": {
+                  "daemonUrl": "${raw_base}/shell/neuralvd-linux.tar.gz",
+                  "daemonSha256": "${sha_daemon}"
+                }
+              },
+              {
+                "platform": "site",
+                "channel": "main",
+                "version": "${GITHUB_SHA}",
+                "sha256": "${sha_site}",
+                "download_url": "${raw_base}/site/neuralv-site.zip",
+                "install_command": "",
+                "file_name": "neuralv-site.zip",
+                "notes": ["Static web bundle for /neuralv/"],
+                "metadata": {}
+              }
+            ]
+          }
+JSON
+
+          cat > publish/BUILD_INFO.txt <<EOF2
           Repository: ${GITHUB_REPOSITORY}
           Commit: ${GITHUB_SHA}
           Workflow Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           Built At: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          EOF
+          EOF2
 
-          cd /tmp/apk-publish
+      - name: Publish release-builds branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/release-builds
+          mkdir -p /tmp/release-builds
+          cp -R publish/. /tmp/release-builds/
+          cd /tmp/release-builds
           git init
-          git checkout -b apk-builds
-          git add shield-antivirus-release.apk BUILD_INFO.txt
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish APK for ${GITHUB_SHA} [skip ci]"
+          git checkout -b release-builds
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish NeuralV release bundle for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin apk-builds
+          git push --force origin release-builds

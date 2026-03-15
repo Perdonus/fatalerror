@@ -10,6 +10,7 @@ on:
       - 'desktop-core/**'
       - 'shell/**'
       - 'gradle/**'
+      - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
       - 'settings.gradle.kts'
@@ -78,7 +79,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          go build -trimpath -ldflags="-s -w" -o dist\windows\nv.exe .\shell\cmd\nv
+          $semver = ((Get-Content gradle.properties | Where-Object { $_ -match '^neuralv\.version=' } | Select-Object -First 1) -split '=')[1].Trim()
+          if (-not $semver) { throw "neuralv.version is missing in gradle.properties" }
+          go build -trimpath -ldflags="-s -w -X main.nvVersion=$semver" -o dist\windows\nv.exe .\shell\cmd\nv
 
       - name: Upload Windows build log
         if: always()
@@ -121,13 +124,18 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          test -n "$semver"
           rm -rf publish-windows
           mkdir -p publish-windows/windows
-          cp stage/windows/neuralv-windows.zip publish-windows/windows/
-          cp stage/windows/nv.exe publish-windows/windows/
-          sha_windows="$(sha256sum publish-windows/windows/neuralv-windows.zip | awk '{print $1}')"
-          sha_nv="$(sha256sum publish-windows/windows/nv.exe | awk '{print $1}')"
+          cp stage/windows/neuralv-windows.zip "publish-windows/windows/neuralv-windows-${semver}.zip"
+          cp stage/windows/neuralv-windows.zip publish-windows/windows/neuralv-windows.zip
+          cp stage/windows/nv.exe "publish-windows/windows/nv-${semver}.exe"
+          cp stage/windows/nv.exe publish-windows/windows/nv.exe
+          sha_windows="$(sha256sum "publish-windows/windows/neuralv-windows-${semver}.zip" | awk '{print $1}')"
+          sha_nv="$(sha256sum "publish-windows/windows/nv-${semver}.exe" | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/windows-builds"
+          export SEMVER="$semver"
           export SHA_WINDOWS="$sha_windows"
           export SHA_NV="$sha_nv"
           export RAW_BASE="$raw_base"
@@ -144,11 +152,11 @@ jobs:
                   {
                       "platform": "windows",
                       "channel": "beta",
-                      "version": os.environ["GITHUB_SHA"],
+                      "version": os.environ["SEMVER"],
                       "sha256": os.environ["SHA_WINDOWS"],
-                      "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
+                      "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows-{os.environ['SEMVER']}.zip",
                       "install_command": "winget install --id NeuralV.NeuralV -e",
-                      "file_name": "neuralv-windows.zip",
+                      "file_name": f"neuralv-windows-{os.environ['SEMVER']}.zip",
                       "notes": ["Windows GUI with short install flow via winget or nv."],
                       "metadata": {
                           "wingetPackageId": "NeuralV.NeuralV",
@@ -160,7 +168,7 @@ jobs:
                           "nvInstallCommand": "nv install neuralv@latest",
                           "nvUpdateCommand": "nv install neuralv@latest",
                           "nvUninstallCommand": "nv uninstall neuralv",
-                          "nvDownloadUrl": f"{os.environ['RAW_BASE']}/windows/nv.exe",
+                          "nvDownloadUrl": f"{os.environ['RAW_BASE']}/windows/nv-{os.environ['SEMVER']}.exe",
                           "nvSha256": os.environ["SHA_NV"],
                           "directDownloadLabel": "Скачать GUI zip"
                       }
@@ -172,6 +180,7 @@ jobs:
           with open("publish-windows/BUILD_INFO.txt", "w", encoding="utf-8") as f:
               f.write(
                   f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Version: {os.environ['SEMVER']}\n"
                   f"Commit: {os.environ['GITHUB_SHA']}\n"
                   f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
                   f"Built At: {generated_at}\n"
@@ -193,6 +202,7 @@ jobs:
           git init
           git checkout -b windows-builds
           git add .
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows bundle for ${GITHUB_SHA} [skip ci]"
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows bundle ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin windows-builds

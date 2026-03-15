@@ -10,6 +10,7 @@ on:
       - 'desktop-core/**'
       - 'shell/**'
       - 'gradle/**'
+      - 'gradle.properties'
       - 'gradlew'
       - 'gradlew.bat'
       - 'settings.gradle.kts'
@@ -124,6 +125,15 @@ jobs:
         with:
           go-version: '1.23'
 
+      - name: Resolve release version
+        id: release_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          test -n "$semver"
+          echo "semver=$semver" >> "$GITHUB_OUTPUT"
+
       - name: Build nv and shell binaries
         shell: bash
         run: |
@@ -131,9 +141,9 @@ jobs:
           mkdir -p dist/shell
           cd shell
           go mod download
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/nv ./cmd/nv
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralvd ./cmd/neuralvd
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.nvVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/nv ./cmd/nv
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.cliVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.daemonVersion=${{ steps.release_version.outputs.semver }}" -o ../dist/shell/neuralvd ./cmd/neuralvd
           cd ..
           tar -C dist/shell -czf dist/shell/nv-linux.tar.gz nv
           tar -C dist/shell -czf dist/shell/neuralv-shell-linux.tar.gz neuralv-shell
@@ -183,19 +193,26 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          test -n "$semver"
           rm -rf publish-linux
           mkdir -p publish-linux/linux publish-linux/shell publish-linux/install
-          cp stage/linux/neuralv-linux.tar.gz publish-linux/linux/
-          cp stage/linux/nv-linux.tar.gz publish-linux/shell/
-          cp stage/linux/neuralv-shell-linux.tar.gz publish-linux/shell/
-          cp stage/linux/neuralvd-linux.tar.gz publish-linux/shell/
+          cp stage/linux/neuralv-linux.tar.gz "publish-linux/linux/neuralv-linux-${semver}.tar.gz"
+          cp stage/linux/neuralv-linux.tar.gz publish-linux/linux/neuralv-linux.tar.gz
+          cp stage/linux/nv-linux.tar.gz "publish-linux/shell/nv-linux-${semver}.tar.gz"
+          cp stage/linux/nv-linux.tar.gz publish-linux/shell/nv-linux.tar.gz
+          cp stage/linux/neuralv-shell-linux.tar.gz "publish-linux/shell/neuralv-shell-linux-${semver}.tar.gz"
+          cp stage/linux/neuralv-shell-linux.tar.gz publish-linux/shell/neuralv-shell-linux.tar.gz
+          cp stage/linux/neuralvd-linux.tar.gz "publish-linux/shell/neuralvd-linux-${semver}.tar.gz"
+          cp stage/linux/neuralvd-linux.tar.gz publish-linux/shell/neuralvd-linux.tar.gz
           cp shell/install/linux.sh publish-linux/install/linux.sh
           cp shell/install/nv.sh publish-linux/install/nv.sh
-          sha_linux="$(sha256sum publish-linux/linux/neuralv-linux.tar.gz | awk '{print $1}')"
-          sha_nv="$(sha256sum publish-linux/shell/nv-linux.tar.gz | awk '{print $1}')"
-          sha_shell="$(sha256sum publish-linux/shell/neuralv-shell-linux.tar.gz | awk '{print $1}')"
-          sha_daemon="$(sha256sum publish-linux/shell/neuralvd-linux.tar.gz | awk '{print $1}')"
+          sha_linux="$(sha256sum "publish-linux/linux/neuralv-linux-${semver}.tar.gz" | awk '{print $1}')"
+          sha_nv="$(sha256sum "publish-linux/shell/nv-linux-${semver}.tar.gz" | awk '{print $1}')"
+          sha_shell="$(sha256sum "publish-linux/shell/neuralv-shell-linux-${semver}.tar.gz" | awk '{print $1}')"
+          sha_daemon="$(sha256sum "publish-linux/shell/neuralvd-linux-${semver}.tar.gz" | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/linux-builds"
+          export SEMVER="$semver"
           export SHA_LINUX="$sha_linux"
           export SHA_NV="$sha_nv"
           export SHA_SHELL="$sha_shell"
@@ -214,39 +231,39 @@ jobs:
                   {
                       "platform": "linux",
                       "channel": "main",
-                      "version": os.environ["GITHUB_SHA"],
+                      "version": os.environ["SEMVER"],
                       "sha256": os.environ["SHA_LINUX"],
-                      "download_url": f"{os.environ['RAW_BASE']}/linux/neuralv-linux.tar.gz",
+                      "download_url": f"{os.environ['RAW_BASE']}/linux/neuralv-linux-{os.environ['SEMVER']}.tar.gz",
                       "install_command": "",
-                      "file_name": "neuralv-linux.tar.gz",
+                      "file_name": f"neuralv-linux-{os.environ['SEMVER']}.tar.gz",
                       "notes": ["Compose Desktop Linux GUI"],
                       "metadata": {
-                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux.tar.gz",
+                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux-{os.environ['SEMVER']}.tar.gz",
                           "daemonSha256": os.environ["SHA_DAEMON"]
                       }
                   },
                   {
                       "platform": "nv",
                       "channel": "main",
-                      "version": os.environ["GITHUB_SHA"],
+                      "version": os.environ["SEMVER"],
                       "sha256": os.environ["SHA_NV"],
-                      "download_url": f"{os.environ['RAW_BASE']}/shell/nv-linux.tar.gz",
+                      "download_url": f"{os.environ['RAW_BASE']}/shell/nv-linux-{os.environ['SEMVER']}.tar.gz",
                       "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh",
-                      "file_name": "nv-linux.tar.gz",
+                      "file_name": f"nv-linux-{os.environ['SEMVER']}.tar.gz",
                       "notes": ["Linux package manager for NeuralV releases"],
                       "metadata": {}
                   },
                   {
                       "platform": "shell",
                       "channel": "main",
-                      "version": os.environ["GITHUB_SHA"],
+                      "version": os.environ["SEMVER"],
                       "sha256": os.environ["SHA_SHELL"],
-                      "download_url": f"{os.environ['RAW_BASE']}/shell/neuralv-shell-linux.tar.gz",
+                      "download_url": f"{os.environ['RAW_BASE']}/shell/neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
                       "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest",
-                      "file_name": "neuralv-shell-linux.tar.gz",
+                      "file_name": f"neuralv-shell-linux-{os.environ['SEMVER']}.tar.gz",
                       "notes": ["Bubble Tea shell client"],
                       "metadata": {
-                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux.tar.gz",
+                          "daemonUrl": f"{os.environ['RAW_BASE']}/shell/neuralvd-linux-{os.environ['SEMVER']}.tar.gz",
                           "daemonSha256": os.environ["SHA_DAEMON"]
                       }
                   }
@@ -257,6 +274,7 @@ jobs:
           with open("publish-linux/BUILD_INFO.txt", "w", encoding="utf-8") as f:
               f.write(
                   f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Version: {os.environ['SEMVER']}\n"
                   f"Commit: {os.environ['GITHUB_SHA']}\n"
                   f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
                   f"Built At: {generated_at}\n"
@@ -278,6 +296,7 @@ jobs:
           git init
           git checkout -b linux-builds
           git add .
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux payloads for ${GITHUB_SHA} [skip ci]"
+          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux payloads ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin linux-builds

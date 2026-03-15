@@ -63,6 +63,7 @@ const HARD_SIGNAL_SOURCES = new Set([
     'APKiD',
     'YARA'
 ]);
+const ACTIVE_JOB_ABORTS = new Map();
 
 const AGGRESSIVE_FINDING_TYPES_FOR_BENIGN = new Set([
     'install_source',
@@ -88,6 +89,33 @@ function isVirusTotalConfigured() {
 
 function computeSha256(buffer) {
     return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function createCancelledError() {
+    const error = new Error('Проверка остановлена пользователем');
+    error.code = 'DEEP_SCAN_CANCELLED';
+    return error;
+}
+
+function isCancelledError(error) {
+    return String(error?.code || '').toUpperCase() === 'DEEP_SCAN_CANCELLED';
+}
+
+async function ensureJobNotStopped(jobId, signal = null) {
+    if (signal?.aborted) {
+        throw createCancelledError();
+    }
+    const [rows] = await pool.query(
+        `SELECT status, error_message FROM deep_scan_jobs WHERE id = ? LIMIT 1`,
+        [jobId]
+    );
+    const row = rows[0];
+    if (!row) {
+        throw createCancelledError();
+    }
+    if (row.status === 'FAILED' && String(row.error_message || '').includes('Проверка остановлена пользователем')) {
+        throw createCancelledError();
+    }
 }
 
 async function computeSha256ForFile(filePath) {
@@ -1061,7 +1089,7 @@ function mergeVerdicts(baseVerdict, combinedScore, vt, findings) {
     return verdict;
 }
 
-async function lookupVirusTotalByHash(sha256) {
+async function lookupVirusTotalByHash(sha256, signal = null) {
     if (!sha256) {
         return { status: 'skipped' };
     }
@@ -1069,13 +1097,16 @@ async function lookupVirusTotalByHash(sha256) {
         return { status: 'unconfigured' };
     }
 
+    const requestSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(VT_TIMEOUT_MS)])
+        : AbortSignal.timeout(VT_TIMEOUT_MS);
     const response = await fetch(`${VT_API_BASE}/files/${encodeURIComponent(sha256)}`, {
         method: 'GET',
         headers: {
             'x-apikey': process.env.VT_API_KEY,
             'accept': 'application/json'
         },
-        signal: AbortSignal.timeout(VT_TIMEOUT_MS)
+        signal: requestSignal
     });
 
     if (response.status === 404) {
@@ -1169,7 +1200,7 @@ async function downloadResponseToFileWithLimit(response, targetPath, maxBytes) {
     }
 }
 
-async function tryFetchApkForJob(jobId, request, normalized) {
+async function tryFetchApkForJob(jobId, request, normalized, signal = null) {
     if (normalized.uploadedApkPath) {
         return { request, normalized };
     }
@@ -1189,7 +1220,11 @@ async function tryFetchApkForJob(jobId, request, normalized) {
             method: 'GET'
         };
         if (APK_FETCH_TIMEOUT_MS > 0) {
-            fetchOptions.signal = AbortSignal.timeout(APK_FETCH_TIMEOUT_MS);
+            fetchOptions.signal = signal
+                ? AbortSignal.any([signal, AbortSignal.timeout(APK_FETCH_TIMEOUT_MS)])
+                : AbortSignal.timeout(APK_FETCH_TIMEOUT_MS);
+        } else if (signal) {
+            fetchOptions.signal = signal;
         }
         const response = await fetch(fetchUrl, fetchOptions);
         if (!response.ok) {
@@ -1455,6 +1490,46 @@ async function attachDeepScanApk(id, userId, payload, originalName = 'sample.apk
     return getDeepScanJob(id, userId);
 }
 
+async function cancelActiveDeepScans(userId) {
+    const [rows] = await pool.query(
+        `SELECT id, status
+         FROM deep_scan_jobs
+         WHERE user_id = ?
+           AND status IN ('AWAITING_UPLOAD', 'QUEUED', 'RUNNING')`,
+        [userId]
+    );
+
+    if (!rows.length) {
+        return { cancelled: 0 };
+    }
+
+    const cancelledAt = nowMs();
+    const ids = rows.map((row) => row.id);
+    const placeholders = ids.map(() => '?').join(',');
+    await pool.query(
+        `UPDATE deep_scan_jobs
+         SET status = 'FAILED',
+             error_message = ?,
+             completed_at = ?,
+             updated_at = ?
+         WHERE user_id = ?
+           AND id IN (${placeholders})
+           AND status IN ('AWAITING_UPLOAD', 'QUEUED', 'RUNNING')`,
+        ['Проверка остановлена пользователем', cancelledAt, cancelledAt, userId, ...ids]
+    );
+
+    ids.forEach((id) => {
+        const abort = ACTIVE_JOB_ABORTS.get(id);
+        if (abort) {
+            try {
+                abort();
+            } catch (_) {}
+        }
+    });
+
+    return { cancelled: ids.length };
+}
+
 function enqueueDeepScan(jobId) {
     if (ENQUEUED_IDS.has(jobId)) {
         return;
@@ -1522,11 +1597,13 @@ async function runDeepScanJob(jobId) {
         return;
     }
 
+    const controller = new AbortController();
+    ACTIVE_JOB_ABORTS.set(jobId, () => controller.abort(createCancelledError()));
     const startedAt = nowMs();
     await pool.query(
         `UPDATE deep_scan_jobs
          SET status = 'RUNNING', started_at = COALESCE(started_at, ?), updated_at = ?, error_message = NULL
-         WHERE id = ?`,
+         WHERE id = ? AND status IN ('QUEUED', 'RUNNING')`,
         [startedAt, startedAt, jobId]
     );
 
@@ -1534,26 +1611,32 @@ async function runDeepScanJob(jobId) {
     let normalized = normalizeDeepScanPayload(request);
 
     try {
+        await ensureJobNotStopped(jobId, controller.signal);
         let vt = { status: normalized.sha256 ? 'pending' : 'skipped' };
         try {
-            vt = await lookupVirusTotalByHash(normalized.sha256 || normalized.uploadedApkSha256);
+            vt = await lookupVirusTotalByHash(normalized.sha256 || normalized.uploadedApkSha256, controller.signal);
         } catch (error) {
             vt = { status: 'error', error: error.message };
         }
 
         let heuristics = analyzeHeuristics(normalized, vt);
         const heavyStage = shouldRunHeavyApkStage({ normalized, vt, heuristics });
+        await ensureJobNotStopped(jobId, controller.signal);
 
         if (heavyStage.enabled && !normalized.uploadedApkPath) {
-            const fetchResult = await tryFetchApkForJob(jobId, request, normalized);
+            const fetchResult = await tryFetchApkForJob(jobId, request, normalized, controller.signal);
             request = fetchResult.request;
             normalized = fetchResult.normalized;
             heuristics = analyzeHeuristics(normalized, vt);
         }
 
         const apkAnalysis = (heavyStage.enabled && normalized.uploadedApkPath)
-            ? await runAnalyzer(normalized.uploadedApkPath)
+            ? await runAnalyzer(normalized.uploadedApkPath, { signal: controller.signal })
             : { ok: false, findings: [], metadata: {}, risk_bonus: 0, sources: [], skipped: true };
+        if (apkAnalysis?.cancelled) {
+            throw createCancelledError();
+        }
+        await ensureJobNotStopped(jobId, controller.signal);
 
         const mergedFindings = dedupeFindings([
             ...heuristics.findings,
@@ -1763,16 +1846,22 @@ async function runDeepScanJob(jobId) {
         );
     } catch (error) {
         const failedAt = nowMs();
+        const message = isCancelledError(error)
+            ? 'Проверка остановлена пользователем'
+            : String(error.message || 'Deep scan failed').slice(0, 255);
         await pool.query(
             `UPDATE deep_scan_jobs
              SET status = 'FAILED', error_message = ?, completed_at = ?, updated_at = ?
              WHERE id = ?`,
-            [String(error.message || 'Deep scan failed').slice(0, 255), failedAt, failedAt, jobId]
+            [message, failedAt, failedAt, jobId]
         );
+    } finally {
+        ACTIVE_JOB_ABORTS.delete(jobId);
     }
 }
 
 module.exports = {
+    cancelActiveDeepScans,
     createDeepScanJob,
     getDeepScanJob,
     getDeepScanFullReports,

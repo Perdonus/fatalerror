@@ -41,6 +41,9 @@ ARCHIVE_TEXT_FILE_MAX_BYTES = 96 * 1024
 NATIVE_LIB_SCAN_LIMIT = 28
 NATIVE_LIB_MAX_BYTES = 640 * 1024
 NATIVE_TOTAL_SCAN_BYTES = 6 * 1024 * 1024
+HEAVY_STATIC_MAX_FILE_BYTES = 12 * 1024 * 1024
+HEAVY_STATIC_MAX_DEX = 2
+HEAVY_STATIC_MAX_ENTRIES = 1400
 
 SUSPICIOUS_ENDPOINT_MARKERS = [
     'api.telegram.org/bot',
@@ -728,6 +731,20 @@ def parse_quark(path, tool_status):
     return findings, metadata
 
 
+def should_run_heavy_static(metadata):
+    file_size = int(metadata.get('file_size') or 0)
+    dex_count = int(metadata.get('dex_count') or 0)
+    entry_count = int(metadata.get('entry_count') or 0)
+
+    if file_size > HEAVY_STATIC_MAX_FILE_BYTES:
+        return False, f'file_size>{HEAVY_STATIC_MAX_FILE_BYTES}'
+    if dex_count > HEAVY_STATIC_MAX_DEX:
+        return False, f'dex_count>{HEAVY_STATIC_MAX_DEX}'
+    if entry_count > HEAVY_STATIC_MAX_ENTRIES:
+        return False, f'entry_count>{HEAVY_STATIC_MAX_ENTRIES}'
+    return True, 'within_limits'
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--apk', required=True)
@@ -842,15 +859,25 @@ def main():
         extend_findings_capped(result['findings'], parse_apkid(apk_path, tool_status))
         extend_findings_capped(result['findings'], parse_yara(apk_path, args.rules, tool_status))
 
-        androguard_findings, androguard_metadata = parse_androguard(apk_path, tool_status)
-        extend_findings_capped(result['findings'], androguard_findings)
-        if androguard_metadata:
-            result['metadata']['androguard'] = androguard_metadata
+        run_heavy_static, heavy_reason = should_run_heavy_static(result['metadata'])
+        result['metadata']['heavy_static_stage'] = {
+            'enabled': run_heavy_static,
+            'reason': heavy_reason
+        }
 
-        quark_findings, quark_metadata = parse_quark(apk_path, tool_status)
-        extend_findings_capped(result['findings'], quark_findings)
-        if quark_metadata:
-            result['metadata']['quark'] = quark_metadata
+        if run_heavy_static:
+            androguard_findings, androguard_metadata = parse_androguard(apk_path, tool_status)
+            extend_findings_capped(result['findings'], androguard_findings)
+            if androguard_metadata:
+                result['metadata']['androguard'] = androguard_metadata
+
+            quark_findings, quark_metadata = parse_quark(apk_path, tool_status)
+            extend_findings_capped(result['findings'], quark_findings)
+            if quark_metadata:
+                result['metadata']['quark'] = quark_metadata
+        else:
+            tool_status['androguard'] = f'skipped_{heavy_reason}'
+            tool_status['quark'] = f'skipped_{heavy_reason}'
 
         if len(result['findings']) > MAX_FINDINGS_TOTAL:
             result['findings'] = result['findings'][:MAX_FINDINGS_TOTAL]

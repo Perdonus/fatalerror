@@ -10,6 +10,7 @@ const {
     createDeepScanJob,
     getDeepScanJob,
     attachDeepScanApk,
+    cancelActiveDeepScans,
     getUserDeepScanLimits,
     getDeepScanFullReports
 } = require('../services/deepScanService');
@@ -279,6 +280,23 @@ router.get('/limits', auth, async (req, res) => {
     } catch (error) {
         console.error('Deep scan limits error:', error);
         return res.status(500).json({ error: 'Server error' });
+    }
+});
+
+router.post('/cancel-active', auth, async (req, res) => {
+    try {
+        const result = await cancelActiveDeepScans(req.userId);
+        return res.json({
+            success: true,
+            message: result.cancelled > 0 ? 'Проверка остановлена' : 'Активных проверок нет'
+        });
+    } catch (error) {
+        console.error('Deep scan cancel error:', error);
+        const classified = classifyDeepScanRuntimeError(error);
+        if (classified) {
+            return res.status(classified.status).json(classified.payload);
+        }
+        return res.status(500).json({ error: 'Сервер не смог остановить проверку.' });
     }
 });
 

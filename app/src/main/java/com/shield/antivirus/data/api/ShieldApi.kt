@@ -79,6 +79,11 @@ interface ShieldApi {
         @Path("id") id: String
     ): Response<DeepScanPollResponse>
 
+    @POST("api/scans/deep/cancel-active")
+    suspend fun cancelActiveDeepScans(
+        @Header("Authorization") token: String
+    ): Response<BasicResponse>
+
     @POST("api/scans/deep/full-report")
     suspend fun getDeepScanFullReport(
         @Header("Authorization") token: String,

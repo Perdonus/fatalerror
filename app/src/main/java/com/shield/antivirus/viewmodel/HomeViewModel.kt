@@ -209,6 +209,7 @@ class HomeViewModel(private val context: Context) : ViewModel() {
 
     fun cancelActiveScan() {
         viewModelScope.launch {
+            scanRepo.cancelActiveServerScans()
             DeepScanWorker.cancel(context.applicationContext)
             prefs.clearActiveDeepScan()
             prefs.clearActiveScan()

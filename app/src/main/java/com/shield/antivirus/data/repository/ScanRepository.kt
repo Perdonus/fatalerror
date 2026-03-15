@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.Response
@@ -82,6 +83,23 @@ class ScanRepository(private val context: Context) {
 
     suspend fun getRecentResults() = withContext(Dispatchers.IO) {
         dao.getRecentResults().map { it.toDomain() }
+    }
+
+    suspend fun cancelActiveServerScans() = withContext(Dispatchers.IO) {
+        val token = sessionManager.getValidAccessToken() ?: return@withContext
+        runCatching {
+            withTimeoutOrNull(5_000L) {
+                ApiClient.executeShieldCall { api ->
+                    api.cancelActiveDeepScans("Bearer $token")
+                }
+            }
+        }.onFailure { error ->
+            AppLogger.logError(
+                tag = "scan_repository",
+                message = "Cancel active deep scans failed",
+                error = error
+            )
+        }
     }
 
     suspend fun downloadFullServerReport(result: ScanResult): Result<String> = withContext(Dispatchers.IO) {

@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -54,6 +55,7 @@ fun RegisterScreen(
     onNavigateLogin: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -66,7 +68,10 @@ fun RegisterScreen(
     }
 
     LaunchedEffect(uiState.success) {
-        if (uiState.success) onRegisterSuccess()
+        if (uiState.success) {
+            focusManager.clearFocus(force = true)
+            onRegisterSuccess()
+        }
     }
 
     ShieldCalmBackdrop {
@@ -220,6 +225,7 @@ fun RegisterScreen(
 
                     Button(
                         onClick = {
+                            focusManager.clearFocus(force = true)
                             viewModel.clearError()
                             if (uiState.requiresCode) {
                                 viewModel.verifyCode(PendingAuthFlow.REGISTER, code)

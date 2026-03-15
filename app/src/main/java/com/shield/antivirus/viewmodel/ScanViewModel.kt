@@ -275,6 +275,7 @@ class ScanViewModel(private val context: Context) : ViewModel() {
         workObserverJob?.cancel()
         DeepScanWorker.cancel(context.applicationContext)
         viewModelScope.launch {
+            repo.cancelActiveServerScans()
             prefs.clearActiveDeepScan()
             prefs.clearActiveScan()
             _actionLoading.value = false

@@ -407,9 +407,9 @@ class ScanRepository(private val context: Context) {
                                 .filter { it.packageName in selectedPackages }
                         }
                     }
-                    "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
+                    "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = false)
                     "SELECTIVE" -> {
-                        val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = true)
+                        val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = false)
                         if (selectedPackages.isEmpty()) installedApps else installedApps.filter { it.packageName in selectedPackages }
                     }
                     else -> PackageUtils.getAllInstalledApps(context, includeSystem = true)

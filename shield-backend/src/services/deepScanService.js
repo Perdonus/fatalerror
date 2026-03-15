@@ -890,6 +890,7 @@ async function getUserDeepScanLimits(userId) {
 function chooseNextAction(normalized) {
     const mode = normalizeScanMode(normalized.scanMode);
     const wantsFullServerAnalysis = mode === 'FULL' || mode === 'SELECTIVE';
+    const isSystemApp = Boolean(normalized?.isSystemApp);
 
     if (mode === 'APK') {
         if (normalized.uploadedApkPath) {
@@ -908,6 +909,12 @@ function chooseNextAction(normalized) {
         return {
             nextAction: 'upload_apk',
             reason: 'Нет SHA-256. Для полной проверки нужен сам APK.'
+        };
+    }
+    if (isSystemApp && wantsFullServerAnalysis) {
+        return {
+            nextAction: 'poll',
+            reason: 'Системный пакет: ограничиваемся hash+metadata этапом без тяжёлой APK-проверки.'
         };
     }
     if (wantsFullServerAnalysis) {
@@ -1413,11 +1420,14 @@ async function runDeepScanJob(jobId) {
 
     let request = parseJson(row.request_json, {});
     let normalized = normalizeDeepScanPayload(request);
+    const skipHeavyApkStage = Boolean(normalized?.isSystemApp);
 
     try {
-        const fetchResult = await tryFetchApkForJob(jobId, request, normalized);
-        request = fetchResult.request;
-        normalized = fetchResult.normalized;
+        if (!skipHeavyApkStage) {
+            const fetchResult = await tryFetchApkForJob(jobId, request, normalized);
+            request = fetchResult.request;
+            normalized = fetchResult.normalized;
+        }
 
         let vt = { status: normalized.sha256 ? 'pending' : 'skipped' };
         try {
@@ -1427,7 +1437,7 @@ async function runDeepScanJob(jobId) {
         }
 
         const heuristics = analyzeHeuristics(normalized, vt);
-        const apkAnalysis = normalized.uploadedApkPath
+        const apkAnalysis = (!skipHeavyApkStage && normalized.uploadedApkPath)
             ? await runAnalyzer(normalized.uploadedApkPath)
             : { ok: false, findings: [], metadata: {}, risk_bonus: 0, sources: [] };
 
@@ -1452,12 +1462,15 @@ async function runDeepScanJob(jobId) {
                 metadata: heuristics.metadata || {}
             },
             static_analysis: {
-                ok: Boolean(apkAnalysis.ok),
+                ok: !skipHeavyApkStage && Boolean(apkAnalysis.ok),
                 risk_bonus: Number(apkAnalysis.risk_bonus || 0),
                 findings: normalizeFindingsList(apkAnalysis.findings || []),
-                metadata: apkAnalysis.metadata || {},
+                metadata: {
+                    ...(apkAnalysis.metadata || {}),
+                    skipped_for_system_app: skipHeavyApkStage
+                },
                 sources: Array.isArray(apkAnalysis.sources) ? apkAnalysis.sources : [],
-                error: apkAnalysis.error || null
+                error: skipHeavyApkStage ? null : (apkAnalysis.error || null)
             },
             merged_before_triage: {
                 verdict: baseVerdict,

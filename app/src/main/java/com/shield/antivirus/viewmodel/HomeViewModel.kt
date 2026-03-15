@@ -63,7 +63,8 @@ class HomeViewModel(private val context: Context) : ViewModel() {
             val installedApps = withContext(Dispatchers.IO) {
                 PackageUtils.getAllInstalledApps(context, includeSystem = true)
             }
-            val appsForSelection = installedApps.map {
+            val selectableApps = installedApps.filter { !it.isSystemApp }
+            val appsForSelection = selectableApps.map {
                 HomeInstalledApp(appName = it.appName, packageName = it.packageName)
             }
 

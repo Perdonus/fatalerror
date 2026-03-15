@@ -22,12 +22,6 @@ compose.desktop {
         mainClass = "com.neuralv.desktop.app.MainKt"
 
         nativeDistributions {
-            targetFormats(
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb,
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Rpm,
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage
-            )
             packageName = "NeuralV"
             packageVersion = "1.0.0"
             description = "NeuralV desktop security client"

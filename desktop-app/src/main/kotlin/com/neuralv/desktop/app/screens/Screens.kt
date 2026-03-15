@@ -2,6 +2,7 @@ package com.neuralv.desktop.app.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,6 +53,7 @@ import com.neuralv.desktop.core.model.DesktopPlatform
 import com.neuralv.desktop.core.model.DesktopScanMode
 import com.neuralv.desktop.core.model.ReleaseArtifact
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WelcomeScreen(
     state: DesktopUiState,
@@ -164,6 +166,7 @@ fun AuthScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     state: DesktopUiState,
@@ -195,6 +198,7 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ScanScreen(
     state: DesktopUiState,
@@ -281,6 +285,7 @@ fun HistoryScreen(state: DesktopUiState) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     state: DesktopUiState,

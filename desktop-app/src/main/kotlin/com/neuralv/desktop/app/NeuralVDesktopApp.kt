@@ -2,6 +2,7 @@ package com.neuralv.desktop.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,7 +109,7 @@ private enum class DesktopScreen {
 
 private enum class ThemeChoice { SYSTEM, LIGHT, DARK }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FrameWindowScope.NeuralVDesktopApp() {
     var backendUrl by rememberSaveable { mutableStateOf("https://sosiskibot.ru/basedata") }

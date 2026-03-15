@@ -248,7 +248,6 @@ jobs:
     name: Publish Release Builds Branch
     needs:
       - backend-check
-      - android-release
       - desktop-linux
       - desktop-windows
       - shell-linux
@@ -260,6 +259,7 @@ jobs:
 
       - name: Download Android bundle
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: neuralv-android-release
           path: stage/android
@@ -298,7 +298,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p publish/android publish/windows publish/linux publish/shell publish/site publish/install
-          cp stage/android/neuralv-android-release.apk publish/android/
+          if [ -f stage/android/neuralv-android-release.apk ]; then
+            cp stage/android/neuralv-android-release.apk publish/android/
+          fi
           cp stage/windows/neuralv-windows.zip publish/windows/
           cp stage/linux/neuralv-linux.tar.gz publish/linux/
           cp stage/shell/neuralv-shell-linux.tar.gz publish/shell/
@@ -306,91 +308,110 @@ jobs:
           cp stage/site/neuralv-site.zip publish/site/
           cp shell/install/linux.sh publish/install/linux.sh
 
-          sha_android="$(sha256sum publish/android/neuralv-android-release.apk | awk '{print $1}')"
+          sha_android=""
+          if [ -f publish/android/neuralv-android-release.apk ]; then
+            sha_android="$(sha256sum publish/android/neuralv-android-release.apk | awk '{print $1}')"
+          fi
           sha_windows="$(sha256sum publish/windows/neuralv-windows.zip | awk '{print $1}')"
           sha_linux="$(sha256sum publish/linux/neuralv-linux.tar.gz | awk '{print $1}')"
           sha_shell="$(sha256sum publish/shell/neuralv-shell-linux.tar.gz | awk '{print $1}')"
           sha_daemon="$(sha256sum publish/shell/neuralvd-linux.tar.gz | awk '{print $1}')"
           sha_site="$(sha256sum publish/site/neuralv-site.zip | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/release-builds"
-
-          cat > publish/manifest.json <<JSON
-          {
-            "success": true,
-            "generated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "release_channel": "main",
-            "artifacts": [
+          export SHA_ANDROID="${sha_android}"
+          export SHA_WINDOWS="${sha_windows}"
+          export SHA_LINUX="${sha_linux}"
+          export SHA_SHELL="${sha_shell}"
+          export SHA_DAEMON="${sha_daemon}"
+          export SHA_SITE="${sha_site}"
+          export RAW_BASE="${raw_base}"
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          artifacts = []
+          sha_android = os.environ.get("SHA_ANDROID", "").strip()
+          raw_base = os.environ["RAW_BASE"]
+          if sha_android:
+              artifacts.append({
+                  "platform": "android",
+                  "channel": "release",
+                  "version": os.environ["GITHUB_SHA"],
+                  "sha256": sha_android,
+                  "download_url": f"{raw_base}/android/neuralv-android-release.apk",
+                  "install_command": "",
+                  "file_name": "neuralv-android-release.apk",
+                  "notes": ["Android APK"],
+                  "metadata": {}
+              })
+          artifacts.extend([
               {
-                "platform": "android",
-                "channel": "release",
-                "version": "${GITHUB_SHA}",
-                "sha256": "${sha_android}",
-                "download_url": "${raw_base}/android/neuralv-android-release.apk",
-                "install_command": "",
-                "file_name": "neuralv-android-release.apk",
-                "notes": ["Android APK"],
-                "metadata": {}
+                  "platform": "windows",
+                  "channel": "beta",
+                  "version": os.environ["GITHUB_SHA"],
+                  "sha256": os.environ["SHA_WINDOWS"],
+                  "download_url": f"{raw_base}/windows/neuralv-windows.zip",
+                  "install_command": "",
+                  "file_name": "neuralv-windows.zip",
+                  "notes": ["Compose Desktop Windows GUI"],
+                  "metadata": {}
               },
               {
-                "platform": "windows",
-                "channel": "beta",
-                "version": "${GITHUB_SHA}",
-                "sha256": "${sha_windows}",
-                "download_url": "${raw_base}/windows/neuralv-windows.zip",
-                "install_command": "",
-                "file_name": "neuralv-windows.zip",
-                "notes": ["Compose Desktop Windows GUI"],
-                "metadata": {}
+                  "platform": "linux",
+                  "channel": "beta",
+                  "version": os.environ["GITHUB_SHA"],
+                  "sha256": os.environ["SHA_LINUX"],
+                  "download_url": f"{raw_base}/linux/neuralv-linux.tar.gz",
+                  "install_command": "",
+                  "file_name": "neuralv-linux.tar.gz",
+                  "notes": ["Compose Desktop Linux GUI"],
+                  "metadata": {
+                      "daemonUrl": f"{raw_base}/shell/neuralvd-linux.tar.gz",
+                      "daemonSha256": os.environ["SHA_DAEMON"]
+                  }
               },
               {
-                "platform": "linux",
-                "channel": "beta",
-                "version": "${GITHUB_SHA}",
-                "sha256": "${sha_linux}",
-                "download_url": "${raw_base}/linux/neuralv-linux.tar.gz",
-                "install_command": "",
-                "file_name": "neuralv-linux.tar.gz",
-                "notes": ["Compose Desktop Linux GUI"],
-                "metadata": {
-                  "daemonUrl": "${raw_base}/shell/neuralvd-linux.tar.gz",
-                  "daemonSha256": "${sha_daemon}"
-                }
+                  "platform": "shell",
+                  "channel": "beta",
+                  "version": os.environ["GITHUB_SHA"],
+                  "sha256": os.environ["SHA_SHELL"],
+                  "download_url": f"{raw_base}/shell/neuralv-shell-linux.tar.gz",
+                  "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash",
+                  "file_name": "neuralv-shell-linux.tar.gz",
+                  "notes": ["Bubble Tea shell client"],
+                  "metadata": {
+                      "daemonUrl": f"{raw_base}/shell/neuralvd-linux.tar.gz",
+                      "daemonSha256": os.environ["SHA_DAEMON"]
+                  }
               },
               {
-                "platform": "shell",
-                "channel": "beta",
-                "version": "${GITHUB_SHA}",
-                "sha256": "${sha_shell}",
-                "download_url": "${raw_base}/shell/neuralv-shell-linux.tar.gz",
-                "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash",
-                "file_name": "neuralv-shell-linux.tar.gz",
-                "notes": ["Bubble Tea shell client"],
-                "metadata": {
-                  "daemonUrl": "${raw_base}/shell/neuralvd-linux.tar.gz",
-                  "daemonSha256": "${sha_daemon}"
-                }
-              },
-              {
-                "platform": "site",
-                "channel": "main",
-                "version": "${GITHUB_SHA}",
-                "sha256": "${sha_site}",
-                "download_url": "${raw_base}/site/neuralv-site.zip",
-                "install_command": "",
-                "file_name": "neuralv-site.zip",
-                "notes": ["Static web bundle for /neuralv/"],
-                "metadata": {}
+                  "platform": "site",
+                  "channel": "main",
+                  "version": os.environ["GITHUB_SHA"],
+                  "sha256": os.environ["SHA_SITE"],
+                  "download_url": f"{raw_base}/site/neuralv-site.zip",
+                  "install_command": "",
+                  "file_name": "neuralv-site.zip",
+                  "notes": ["Static web bundle for /neuralv/"],
+                  "metadata": {}
               }
-            ]
-          }
-JSON
-
-          cat > publish/BUILD_INFO.txt <<EOF2
-          Repository: ${GITHUB_REPOSITORY}
-          Commit: ${GITHUB_SHA}
-          Workflow Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          Built At: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          EOF2
+          ])
+          with open("publish/manifest.json", "w", encoding="utf-8") as f:
+              json.dump({
+                  "success": True,
+                  "generated_at": generated_at,
+                  "release_channel": "main",
+                  "artifacts": artifacts
+              }, f, ensure_ascii=False, indent=2)
+          with open("publish/BUILD_INFO.txt", "w", encoding="utf-8") as f:
+              f.write(
+                  f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Commit: {os.environ['GITHUB_SHA']}\n"
+                  f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
+                  f"Built At: {generated_at}\n"
+              )
+          PY
 
       - name: Publish release-builds branch
         shell: bash

@@ -1,299 +1,276 @@
-import { ManifestBanner } from '../components/ManifestBanner';
+import { useEffect, useMemo, useState } from 'react';
+import { getArtifact, isArtifactReady } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
-import { getArtifact } from '../lib/manifest';
 
-const bootstrapCommand = 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';
+type InstallMode = 'gui' | 'cli';
+type DistroKey = 'ubuntu' | 'fedora' | 'arch' | 'generic';
 
-const linuxPageStyles = `
-  .nv-linux {
-    display: grid;
-    gap: 20px;
+type DistroOption = {
+  key: DistroKey;
+  label: string;
+  title: string;
+  note: string;
+};
+
+const NV_INSTALL_URL = 'https://sosiskibot.ru/neuralv/install/nv.sh';
+
+const distroOptions: DistroOption[] = [
+  {
+    key: 'ubuntu',
+    label: 'Ubuntu / Debian',
+    title: 'Ubuntu, Debian, Pop!_OS, Mint',
+    note: 'Хороший вариант для обычного рабочего стола.'
+  },
+  {
+    key: 'fedora',
+    label: 'Fedora / RHEL',
+    title: 'Fedora, Nobara, RHEL-совместимые',
+    note: 'Подходит, если предпочитаешь RPM-мир и desktop-сессию.'
+  },
+  {
+    key: 'arch',
+    label: 'Arch / Manjaro',
+    title: 'Arch, EndeavourOS, Manjaro',
+    note: 'Удобно, если ты и так живёшь в терминале и любишь контролировать установку.'
+  },
+  {
+    key: 'generic',
+    label: 'Другое',
+    title: 'Любой совместимый x64 Linux',
+    note: 'Если твой дистрибутив не в списке, используй общий сценарий.'
   }
+];
 
-  .nv-linux-hero,
-  .nv-linux-grid,
-  .nv-linux-commands,
-  .nv-linux-steps {
-    display: grid;
-    gap: 18px;
+const featureCards = [
+  {
+    title: 'GUI',
+    text: 'Для рабочего стола, когда хочется обычное окно и историю проверок.'
+  },
+  {
+    title: 'CLI',
+    text: 'Для терминала, SSH и машин, где не нужен тяжёлый интерфейс.'
+  },
+  {
+    title: 'Daemon',
+    text: 'Для фоновой защиты, если нужен постоянный контроль в системе.'
   }
+];
 
-  .nv-linux-hero {
-    padding: clamp(24px, 4vw, 38px);
-    grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
-    background:
-      radial-gradient(circle at 0 0, rgba(255, 196, 92, 0.16), transparent 24%),
-      radial-gradient(circle at 100% 0, rgba(90, 195, 176, 0.12), transparent 22%),
-      linear-gradient(180deg, var(--nv-surface-strong), var(--nv-surface));
-  }
+function buildCliCommands(): string {
+  return [
+    '# 1) Установите nv',
+    `curl -fsSL ${NV_INSTALL_URL} | sh`,
+    '',
+    '# 2) Поставьте NeuralV CLI',
+    'nv install neuralv@latest',
+    '',
+    '# 3) Проверьте версии',
+    'nv -v',
+    'neuralv -v'
+  ].join('\n');
+}
 
-  .nv-linux-copy,
-  .nv-linux-side,
-  .nv-linux-card,
-  .nv-linux-command,
-  .nv-linux-step {
-    display: grid;
-    gap: 12px;
-  }
+function buildGuiCommands(distro: DistroOption, downloadUrl?: string): string {
+  const sourceLine = downloadUrl
+    ? `curl -L "${downloadUrl}" -o neuralv-linux.tar.gz`
+    : 'curl -L "<ссылка-на-gui-архив>" -o neuralv-linux.tar.gz';
 
-  .nv-linux-copy h1,
-  .nv-linux-card h3,
-  .nv-linux-command h3,
-  .nv-linux-step h3 {
-    margin: 0;
-    letter-spacing: -0.04em;
-  }
-
-  .nv-linux-copy h1 {
-    font-size: clamp(2.5rem, 6vw, 4.8rem);
-    line-height: 0.92;
-    max-width: 11ch;
-  }
-
-  .nv-linux-copy p,
-  .nv-linux-card p,
-  .nv-linux-command p,
-  .nv-linux-step p,
-  .nv-linux-side p {
-    margin: 0;
-    color: var(--nv-text-soft);
-    line-height: 1.65;
-  }
-
-  .nv-linux-actions,
-  .nv-linux-chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-  .nv-linux-chip,
-  .nv-linux-pill {
-    padding: 10px 14px;
-    border-radius: 999px;
-    border: 1px solid var(--nv-stroke);
-    background: var(--nv-surface-muted);
-    color: var(--nv-text-soft);
-    font-size: 0.92rem;
-  }
-
-  .nv-linux-pill strong {
-    color: var(--nv-text);
-    font-size: 1rem;
-  }
-
-  .nv-linux-grid,
-  .nv-linux-commands,
-  .nv-linux-steps {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .nv-linux-card,
-  .nv-linux-command,
-  .nv-linux-step {
-    padding: 24px;
-    border-radius: var(--nv-radius-xl);
-    border: 1px solid var(--nv-stroke);
-    background: var(--nv-surface);
-  }
-
-  .nv-linux-command code {
-    display: block;
-    padding: 16px 18px;
-    border-radius: 20px;
-    background: rgba(6, 12, 24, 0.92);
-    color: #eef4ff;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.92rem;
-    line-height: 1.6;
-    word-break: break-word;
-    white-space: pre-wrap;
-  }
-
-  .nv-linux-list {
-    margin: 0;
-    padding-left: 18px;
-    display: grid;
-    gap: 8px;
-    color: var(--nv-text-soft);
-    line-height: 1.55;
-  }
-
-  .nv-linux-index,
-  .nv-linux-eyebrow {
-    color: var(--nv-text-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    font-size: 0.74rem;
-  }
-
-  .nv-linux-command.wide {
-    grid-column: span 2;
-  }
-
-  @media (max-width: 980px) {
-    .nv-linux-hero,
-    .nv-linux-grid,
-    .nv-linux-commands,
-    .nv-linux-steps {
-      grid-template-columns: 1fr;
-    }
-
-    .nv-linux-command.wide {
-      grid-column: auto;
-    }
-  }
-`;
+  return [
+    `# ${distro.title}`,
+    '# 1) Скачайте GUI-архив',
+    sourceLine,
+    '',
+    '# 2) Распакуйте его в домашнюю папку',
+    'mkdir -p ~/.local/opt/neuralv',
+    'tar -xzf neuralv-linux.tar.gz -C ~/.local/opt/neuralv',
+    '',
+    '# 3) Запустите приложение',
+    '~/.local/opt/neuralv/neuralv'
+  ].join('\n');
+}
 
 export function LinuxPage() {
   const manifestState = useReleaseManifest();
   const guiArtifact = getArtifact(manifestState.manifest, 'linux');
-  const shellArtifact = getArtifact(manifestState.manifest, 'shell');
+  const cliArtifact = getArtifact(manifestState.manifest, 'shell');
   const nvArtifact = getArtifact(manifestState.manifest, 'nv');
+  const guiReady = isArtifactReady(guiArtifact);
+  const cliReady = isArtifactReady(cliArtifact) || isArtifactReady(nvArtifact);
+
+  const [installMode, setInstallMode] = useState<InstallMode>(() => (guiReady ? 'gui' : 'cli'));
+  const [distro, setDistro] = useState<DistroKey>('ubuntu');
+  const [copyState, setCopyState] = useState<'idle' | 'done'>('idle');
+
+  useEffect(() => {
+    if (installMode === 'gui' && !guiReady) {
+      setInstallMode('cli');
+    }
+  }, [guiReady, installMode]);
+
+  const selectedDistro = distroOptions.find((item) => item.key === distro) ?? distroOptions[0];
+
+  const commandText = useMemo(() => {
+    if (installMode === 'gui') {
+      return buildGuiCommands(selectedDistro, guiArtifact?.downloadUrl);
+    }
+    return buildCliCommands();
+  }, [guiArtifact?.downloadUrl, installMode, selectedDistro]);
+
+  const installTitle = installMode === 'gui' ? 'Установка GUI' : 'Установка CLI';
+  const installLead = installMode === 'gui'
+    ? 'Выбери дистрибутив и бери готовые команды для desktop-версии.'
+    : 'CLI ставится через nv и хорошо подходит для терминала, SSH и headless-машин.';
+
+  const handleCopy = async () => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(commandText);
+      setCopyState('done');
+      window.setTimeout(() => setCopyState('idle'), 1600);
+    } catch {
+      setCopyState('idle');
+    }
+  };
 
   return (
-    <>
-      <style>{linuxPageStyles}</style>
-      <div className="nv-linux">
-        <ManifestBanner {...manifestState} />
-
-        <section className="surface-card nv-linux-hero">
-          <div className="nv-linux-copy">
-            <div className="nv-linux-eyebrow">Linux</div>
-            <h1>GUI, shell и daemon через один nv flow.</h1>
-            <p>
-              На Linux мы больше не ведём пользователя в старый bootstrap. Сначала ставится маленький `nv`, потом он подтягивает NeuralV нужной версии.
-            </p>
-            <div className="nv-linux-chip-row">
-              <span className="nv-linux-chip">Compose Desktop GUI</span>
-              <span className="nv-linux-chip">Shell/TUI</span>
-              <span className="nv-linux-chip">neuralvd daemon</span>
-            </div>
-            <div className="nv-linux-actions">
-              <a href="#linux-install">
-                <md-filled-button>Установить через nv</md-filled-button>
-              </a>
-              {guiArtifact?.downloadUrl ? (
-                <a href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">
-                  <md-filled-tonal-button>Скачать Linux GUI</md-filled-tonal-button>
-                </a>
-              ) : (
-                <md-outlined-button disabled>GUI готовится</md-outlined-button>
-              )}
-            </div>
-          </div>
-
-          <div className="nv-linux-side">
-            <div className="nv-linux-pill">
-              <div className="nv-linux-eyebrow">nv</div>
-              <strong>{nvArtifact?.version ?? shellArtifact?.version ?? 'pending'}</strong>
-            </div>
-            <div className="nv-linux-pill">
-              <div className="nv-linux-eyebrow">NeuralV</div>
-              <strong>{guiArtifact?.version ?? shellArtifact?.version ?? 'pending'}</strong>
-            </div>
-            <div className="nv-linux-pill">
-              <div className="nv-linux-eyebrow">Подходит для</div>
-              <p>Рабочей станции, терминала по SSH и узла, где нужен daemon с systemd.</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="nv-linux-grid">
-          <article className="nv-linux-card surface-card">
-            <div className="nv-linux-eyebrow">GUI</div>
-            <h3>Для рабочего стола</h3>
-            <ul className="nv-linux-list">
-              <li>Обычный визуальный клиент для workstation.</li>
-              <li>История, статусы и вход тем же аккаунтом.</li>
-              <li>Хорошо подходит, если не хочется жить только в терминале.</li>
-            </ul>
-          </article>
-
-          <article className="nv-linux-card surface-card">
-            <div className="nv-linux-eyebrow">Shell</div>
-            <h3>Для терминала</h3>
-            <ul className="nv-linux-list">
-              <li>Полноэкранный TUI для SSH и headless-сценариев.</li>
-              <li>Быстрый старт без тяжёлой GUI-сборки.</li>
-              <li>Тот же backend и тот же аккаунт, что у GUI.</li>
-            </ul>
-          </article>
-
-          <article className="nv-linux-card surface-card">
-            <div className="nv-linux-eyebrow">Daemon</div>
-            <h3>Для фоновой защиты</h3>
-            <ul className="nv-linux-list">
-              <li>Отдельный `neuralvd`, если нужен постоянный мониторинг.</li>
-              <li>Ставится отдельно и живёт как systemd service.</li>
-              <li>Не навязывается там, где нужен только on-demand скан.</li>
-            </ul>
-          </article>
-        </section>
-
-        <section id="linux-install" className="nv-linux-commands">
-          <article className="nv-linux-command wide surface-card">
-            <div className="nv-linux-eyebrow">Шаг 1</div>
-            <h3>Поставить nv</h3>
-            <p>Этот bootstrap ставит только менеджер `nv`. Он потом уже скачивает нужную версию NeuralV.</p>
-            <code>{bootstrapCommand}</code>
-          </article>
-
-          <article className="nv-linux-command surface-card">
-            <div className="nv-linux-eyebrow">Шаг 2</div>
-            <h3>Поставить NeuralV</h3>
-            <code>nv install neuralv@latest</code>
-          </article>
-
-          <article className="nv-linux-command surface-card">
-            <div className="nv-linux-eyebrow">Шаг 3</div>
-            <h3>Проверить версии</h3>
-            <code>nv -v\nneuralv -v</code>
-          </article>
-
-          <article className="nv-linux-command surface-card">
-            <div className="nv-linux-eyebrow">Версия по номеру</div>
-            <h3>Поставить конкретный релиз</h3>
-            <code>{`nv install neuralv@${shellArtifact?.version ?? 'VERSION'}`}</code>
-          </article>
-
-          <article className="nv-linux-command surface-card">
-            <div className="nv-linux-eyebrow">Удаление</div>
-            <h3>Снять пакет</h3>
-            <code>nv uninstall neuralv</code>
-          </article>
-
-          <article className="nv-linux-command surface-card">
-            <div className="nv-linux-eyebrow">GUI</div>
-            <h3>Скачать архив вручную</h3>
-            {guiArtifact?.downloadUrl ? (
-              <a href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">
-                <md-filled-tonal-button>Скачать Linux GUI</md-filled-tonal-button>
-              </a>
+    <div className="page-stack">
+      <section className="hero-card platform-hero linux-hero">
+        <div className="hero-copy">
+          <span className="section-kicker">Linux</span>
+          <h1>Выбери GUI или CLI и возьми готовые команды.</h1>
+          <p>
+            Сайт не гоняет тебя по длинным инструкциям. Ты выбираешь формат, дистрибутив и сразу получаешь нормальный install flow.
+          </p>
+          <div className="hero-actions">
+            <a className="nv-button" href="#linux-install">Открыть установку</a>
+            {guiReady && guiArtifact?.downloadUrl ? (
+              <a className="nv-button tonal" href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">Скачать GUI</a>
             ) : (
-              <md-outlined-button disabled>GUI готовится</md-outlined-button>
+              <button className="nv-button tonal is-disabled" type="button" disabled>GUI скоро появится</button>
             )}
-          </article>
-        </section>
+          </div>
+        </div>
 
-        <section className="nv-linux-steps">
-          <article className="nv-linux-step surface-card">
-            <div className="nv-linux-index">01</div>
-            <h3>Поставить nv</h3>
-            <p>Небольшой менеджер ложится в `~/.local/bin` и дальше работает без длинных shell-скриптов.</p>
-          </article>
-          <article className="nv-linux-step surface-card">
-            <div className="nv-linux-index">02</div>
-            <h3>Поставить пакет NeuralV</h3>
-            <p>`nv install neuralv@latest` тянет актуальную shell-сборку и daemon-файлы.</p>
-          </article>
-          <article className="nv-linux-step surface-card">
-            <div className="nv-linux-index">03</div>
-            <h3>Запустить GUI или shell</h3>
-            <p>GUI скачивается отдельно, shell запускается командой `neuralv` после установки пакета.</p>
-          </article>
-        </section>
-      </div>
-    </>
+        <div className="hero-panel">
+          <div className="mini-stat">
+            <span className="mini-stat-label">Подходит для</span>
+            <strong>Desktop, терминала и daemon-сценариев</strong>
+          </div>
+          <div className="mini-stat">
+            <span className="mini-stat-label">CLI</span>
+            <strong>{cliReady ? 'Готов' : 'Скоро'}</strong>
+          </div>
+          <div className="mini-stat">
+            <span className="mini-stat-label">GUI</span>
+            <strong>{guiReady ? 'Готов' : 'Скоро'}</strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="card-grid three-up compact-grid">
+          {featureCards.map((card) => (
+            <article key={card.title} className="content-card compact-card">
+              <h3>{card.title}</h3>
+              <p>{card.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="linux-install" className="section-block">
+        <div className="section-head">
+          <span className="section-kicker">Установка</span>
+          <h2>Выбери формат и систему</h2>
+        </div>
+
+        <div className="install-layout">
+          <aside className="content-card chooser-card">
+            <div className="chooser-section">
+              <span className="chooser-label">Формат</span>
+              <div className="segmented-row">
+                <button
+                  type="button"
+                  className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
+                  onClick={() => setInstallMode('gui')}
+                  disabled={!guiReady}
+                >
+                  GUI
+                </button>
+                <button
+                  type="button"
+                  className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
+                  onClick={() => setInstallMode('cli')}
+                >
+                  CLI
+                </button>
+              </div>
+              {!guiReady && <p className="chooser-note">GUI-архив ещё готовится, поэтому по умолчанию открыт CLI.</p>}
+            </div>
+
+            <div className="chooser-section">
+              <span className="chooser-label">Дистрибутив</span>
+              <div className="distro-grid">
+                {distroOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`distro-pill${distro === option.key ? ' is-active' : ''}`}
+                    onClick={() => setDistro(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className="chooser-note">{selectedDistro.note}</p>
+            </div>
+
+            <div className="chooser-section helper-box">
+              <span className="chooser-label">Что выбрать</span>
+              <p><strong>GUI</strong> — если хочешь обычное окно и мышку.</p>
+              <p><strong>CLI</strong> — если живёшь в терминале, SSH или ставишь на слабую машину.</p>
+            </div>
+          </aside>
+
+          <div className="content-card install-card">
+            <div className="install-card-head">
+              <div>
+                <span className="section-kicker">{installMode === 'gui' ? 'GUI' : 'CLI'}</span>
+                <h3>{installTitle}</h3>
+                <p>{installLead}</p>
+              </div>
+              <button className="copy-button" type="button" onClick={handleCopy}>
+                {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
+              </button>
+            </div>
+
+            <div className="command-shell">
+              <pre>{commandText}</pre>
+            </div>
+
+            <div className="install-card-footer">
+              {installMode === 'gui' ? (
+                guiReady && guiArtifact?.downloadUrl ? (
+                  <a className="nv-button tonal" href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">Скачать GUI</a>
+                ) : (
+                  <button className="nv-button tonal is-disabled" type="button" disabled>GUI скоро появится</button>
+                )
+              ) : (
+                <a className="nv-button tonal" href={NV_INSTALL_URL} target="_blank" rel="noreferrer">Открыть nv.sh</a>
+              )}
+
+              <span className="install-hint">
+                {installMode === 'gui'
+                  ? 'Если нужен фоновой режим, потом можно поставить CLI и daemon через nv.'
+                  : 'CLI подходит и для обычного терминала, и для headless-сценариев.'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

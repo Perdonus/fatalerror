@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	nvVersion        = "0.1.0"
 	defaultBaseURL   = "https://sosiskibot.ru/basedata"
 	defaultBinaryDir = ".local/bin"
 )
+
+var nvVersion = "dev"
 
 func main() {
 	client := api.NewClient(resolveBaseURL())

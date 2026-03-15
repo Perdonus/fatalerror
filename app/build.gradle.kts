@@ -5,6 +5,20 @@ plugins {
     alias(libs.plugins.kotlin.kapt)
 }
 
+val neuralvVersion = providers.gradleProperty("neuralv.version").get()
+
+fun semverToAndroidVersionCode(version: String): Int {
+    val parts = version.trim().split('.')
+    require(parts.size == 3) { "neuralv.version must use MAJOR.MINOR.PATCH semver" }
+    val major = parts[0].toInt()
+    val minor = parts[1].toInt()
+    val patch = parts[2].toInt()
+    require(major in 0..99 && minor in 0..99 && patch in 0..99) {
+        "Semver components must stay within 0..99 for Android versionCode"
+    }
+    return (major * 10_000) + (minor * 100) + patch
+}
+
 android {
     namespace = "com.shield.antivirus"
     compileSdk = 35
@@ -13,8 +27,8 @@ android {
         applicationId = "com.shield.antivirus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.3.0"
+        versionCode = semverToAndroidVersionCode(neuralvVersion)
+        versionName = neuralvVersion
     }
 
     signingConfigs {

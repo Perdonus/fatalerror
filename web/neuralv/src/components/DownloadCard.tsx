@@ -12,7 +12,7 @@ export function DownloadCard({
   secondaryLabel?: string;
 }) {
   const hasDownload = Boolean(artifact?.downloadUrl);
-  const version = artifact?.version ?? 'pending';
+  const version = artifact?.version && artifact.version !== 'pending' ? artifact.version : 'Скоро';
 
   return (
     <article className="surface-card download-card">
@@ -21,7 +21,6 @@ export function DownloadCard({
         <h3>{version}</h3>
       </div>
       <p>{description}</p>
-      {artifact?.sha256 && <p className="muted mono">SHA256: {artifact.sha256}</p>}
       {artifact?.installCommand && (
         <pre className="command-block">
           <code>{artifact.installCommand}</code>
@@ -36,13 +35,6 @@ export function DownloadCard({
           <md-outlined-button disabled>{secondaryLabel ?? 'Скоро'}</md-outlined-button>
         )}
       </div>
-      {artifact?.notes?.length ? (
-        <ul className="bullet-list muted">
-          {artifact.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      ) : null}
     </article>
   );
 }

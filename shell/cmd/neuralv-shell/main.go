@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	cliVersion     = "0.1.0"
 	defaultBaseURL = "https://sosiskibot.ru/basedata"
 )
+
+var cliVersion = "dev"
 
 func main() {
 	if handled := handleCLI(os.Args[1:]); handled {

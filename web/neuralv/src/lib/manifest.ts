@@ -1,3 +1,10 @@
+export type ArtifactMetadata = Record<string, unknown> & {
+  available?: boolean;
+  source_branch?: string;
+  source_label?: string;
+  daemonUrl?: string;
+};
+
 export type ReleaseArtifact = {
   platform: 'android' | 'windows' | 'linux' | 'shell' | 'site' | 'nv' | 'linux_shell' | string;
   channel?: string;
@@ -7,7 +14,7 @@ export type ReleaseArtifact = {
   fileName?: string;
   installCommand?: string;
   notes?: string[];
-  metadata?: Record<string, unknown>;
+  metadata?: ArtifactMetadata;
 };
 
 export type ReleaseManifest = {
@@ -17,55 +24,14 @@ export type ReleaseManifest = {
 };
 
 export const fallbackManifest: ReleaseManifest = {
-  generatedAt: 'pending-backend-release',
+  generatedAt: 'pending',
   releaseChannel: 'main',
   artifacts: [
-    {
-      platform: 'android',
-      channel: 'release',
-      version: 'pending',
-      notes: ['APK будет подтягиваться автоматически после первого desktop/web release manifest.']
-    },
-    {
-      platform: 'windows',
-      channel: 'beta',
-      version: 'pending',
-      installCommand: 'winget install --id NeuralV.NeuralV -e',
-      metadata: {
-        wingetPackageId: 'NeuralV.NeuralV',
-        wingetInstallCommand: 'winget install --id NeuralV.NeuralV -e',
-        wingetUpgradeCommand: 'winget upgrade --id NeuralV.NeuralV -e',
-        wingetUninstallCommand: 'winget uninstall --id NeuralV.NeuralV -e',
-        nvBootstrapUrl: 'https://sosiskibot.ru/neuralv/install/nv.ps1',
-        nvBootstrapCommand:
-          'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex"',
-        nvInstallCommand: 'nv install neuralv@latest',
-        nvUpdateCommand: 'nv install neuralv@latest',
-        nvUninstallCommand: 'nv uninstall neuralv',
-        directDownloadLabel: 'Скачать GUI zip'
-      },
-      notes: ['Windows GUI готовится, загрузка появится после CI pipeline.']
-    },
-    {
-      platform: 'linux',
-      channel: 'beta',
-      version: 'pending',
-      notes: ['Linux GUI готовится, загрузка появится после CI pipeline.']
-    },
-    {
-      platform: 'nv',
-      channel: 'beta',
-      version: 'pending',
-      installCommand: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh',
-      notes: ['nv bootstrap появится после публикации Linux shell artifacts.']
-    },
-    {
-      platform: 'shell',
-      channel: 'beta',
-      version: 'pending',
-      installCommand: 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest',
-      notes: ['Shell installer будет доступен после публикации Linux artifact.']
-    }
+    { platform: 'android', channel: 'release', version: 'pending' },
+    { platform: 'windows', channel: 'beta', version: 'pending' },
+    { platform: 'linux', channel: 'beta', version: 'pending' },
+    { platform: 'nv', channel: 'beta', version: 'pending' },
+    { platform: 'shell', channel: 'beta', version: 'pending' }
   ]
 };
 
@@ -75,9 +41,7 @@ const manifestUrl =
 export async function fetchReleaseManifest(signal?: AbortSignal): Promise<ReleaseManifest> {
   const response = await fetch(manifestUrl, {
     method: 'GET',
-    headers: {
-      Accept: 'application/json'
-    },
+    headers: { Accept: 'application/json' },
     signal
   });
 
@@ -91,6 +55,7 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
     nestedManifest && typeof nestedManifest === 'object' && 'artifacts' in nestedManifest
       ? (nestedManifest.artifacts as unknown)
       : undefined;
+
   const rawArtifacts =
     (Array.isArray(data.artifacts) ? data.artifacts : undefined) ??
     (Array.isArray(nestedArtifacts)
@@ -103,10 +68,11 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
     .map((item) => {
       const platformRaw = String(item.platform ?? '').toLowerCase();
-      const platform =
-        platformRaw === 'linux_shell' ? 'shell' :
-        platformRaw === 'website' ? 'site' :
-        platformRaw;
+      const platform = platformRaw === 'linux_shell' ? 'shell' : platformRaw === 'website' ? 'site' : platformRaw;
+      const metadata = item.metadata && typeof item.metadata === 'object'
+        ? (item.metadata as ArtifactMetadata)
+        : undefined;
+
       return {
         platform,
         channel: typeof item.channel === 'string' ? item.channel : undefined,
@@ -126,11 +92,10 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
           typeof item.installCommand === 'string'
             ? item.installCommand
             : (typeof item.install_command === 'string' ? item.install_command : undefined),
-        notes: Array.isArray(item.notes) ? item.notes.filter((note): note is string => typeof note === 'string') : undefined,
-        metadata:
-          typeof item.metadata === 'object' && item.metadata !== null
-            ? (item.metadata as Record<string, unknown>)
-            : undefined
+        notes: Array.isArray(item.notes)
+          ? item.notes.filter((note): note is string => typeof note === 'string')
+          : undefined,
+        metadata
       } satisfies ReleaseArtifact;
     });
 
@@ -144,11 +109,23 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
     releaseChannel:
       typeof data.releaseChannel === 'string'
         ? data.releaseChannel
-        : (typeof data.release_channel === 'string' ? (data.release_channel as string) : 'stable'),
+        : (typeof data.release_channel === 'string' ? (data.release_channel as string) : 'main'),
     artifacts
   };
 }
 
 export function getArtifact(manifest: ReleaseManifest, platform: ReleaseArtifact['platform']): ReleaseArtifact | undefined {
   return manifest.artifacts.find((artifact) => artifact.platform === platform);
+}
+
+export function isArtifactReady(artifact?: ReleaseArtifact): boolean {
+  if (!artifact?.downloadUrl) {
+    return false;
+  }
+
+  if (artifact.metadata && typeof artifact.metadata.available === 'boolean') {
+    return artifact.metadata.available;
+  }
+
+  return artifact.version !== 'pending';
 }

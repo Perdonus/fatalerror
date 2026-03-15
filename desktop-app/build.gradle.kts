@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.compose.desktop)
 }
 
+val neuralvVersion = providers.gradleProperty("neuralv.version").get()
+
 kotlin {
     jvmToolchain(17)
 }
@@ -23,7 +25,7 @@ compose.desktop {
 
         nativeDistributions {
             packageName = "NeuralV"
-            packageVersion = "1.0.0"
+            packageVersion = neuralvVersion
             description = "NeuralV desktop security client"
             vendor = "NeuralV"
         }

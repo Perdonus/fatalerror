@@ -19,7 +19,7 @@ const navItems = [
 ];
 
 const themeOptions: ThemeOption[] = [
-  { value: 'system', label: 'Система' },
+  { value: 'system', label: 'Авто' },
   { value: 'light', label: 'Светлая' },
   { value: 'dark', label: 'Тёмная' }
 ];
@@ -86,52 +86,50 @@ export function AppShell() {
     }
   }, [resolvedTheme, themePreference]);
 
+  const themeLabel = themeOptions.find((option) => option.value === themePreference)?.label ?? 'Авто';
+
   return (
     <div className="app-shell">
-      <header className="topbar surface-card">
-        <div className="topbar-main">
-          <a className="topbar-brand" href="/neuralv/" aria-label="NeuralV home">
-            <span className="brand-mark" aria-hidden="true">
-              <span className="brand-core" />
+      <header className="shell-header">
+        <div className="shell-header-inner">
+          <a className="brand-link" href="/neuralv/" aria-label="NeuralV home">
+            <span className="brand-badge" aria-hidden="true">
+              <span className="brand-badge-core" />
             </span>
-            <span className="brand-copy">
-              <span className="brand-kicker">NeuralV</span>
-              <strong className="brand-title">Защита для Android, Windows и Linux</strong>
-              <span className="brand-summary">Скачать, установить и войти тем же аккаунтом.</span>
+            <span className="brand-text">
+              <span className="brand-name">NeuralV</span>
+              <span className="brand-tagline">Проверка для Android, Windows и Linux</span>
             </span>
           </a>
 
-          <a className="topbar-action" href="/neuralv/linux#linux-install">
-            Linux через nv
-          </a>
-        </div>
-
-        <div className="topbar-tray">
-          <nav className="tab-nav" aria-label="Навигация NeuralV">
+          <nav className="shell-nav" aria-label="Навигация NeuralV">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
-                className={({ isActive }) => `nav-pill${isActive ? ' is-active' : ''}`}
+                className={({ isActive }) => `shell-nav-link${isActive ? ' is-active' : ''}`}
               >
                 {item.label}
               </NavLink>
             ))}
           </nav>
 
-          <div className="theme-toggle" role="group" aria-label="Тема сайта">
-            {themeOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`theme-option${themePreference === option.value ? ' is-active' : ''}`}
-                aria-pressed={themePreference === option.value}
-                onClick={() => setThemePreference(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
+          <div className="theme-picker" aria-label="Тема сайта">
+            <span className="theme-current">Тема: {themeLabel}</span>
+            <div className="theme-options" role="group" aria-label="Выбор темы">
+              {themeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`theme-pill${themePreference === option.value ? ' is-active' : ''}`}
+                  aria-pressed={themePreference === option.value}
+                  onClick={() => setThemePreference(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
@@ -140,19 +138,15 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      <footer className="footer-shell surface-card">
-        <div className="footer-copy">
-          <div className="eyebrow">NeuralV</div>
-          <strong>Скачать, поставить и начать проверку без лишнего шума.</strong>
+      <footer className="site-footer">
+        <div>
+          <strong>NeuralV</strong>
+          <p>Скачал, вошёл, проверил.</p>
         </div>
-
-        <div className="footer-links">
+        <div className="site-footer-links">
           <a href="/neuralv/android">Android</a>
           <a href="/neuralv/windows">Windows</a>
           <a href="/neuralv/linux">Linux</a>
-          <a href="/basedata/api/releases/manifest" target="_blank" rel="noreferrer">
-            Manifest
-          </a>
         </div>
       </footer>
     </div>

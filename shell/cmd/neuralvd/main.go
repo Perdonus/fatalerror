@@ -8,12 +8,14 @@ import (
 	"time"
 )
 
+var daemonVersion = "dev"
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Println("neuralvd: resident scaffold started")
-	defer log.Println("neuralvd: stopped")
+	log.Printf("neuralvd %s: resident scaffold started", daemonVersion)
+	defer log.Printf("neuralvd %s: stopped", daemonVersion)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()

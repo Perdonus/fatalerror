@@ -1,0 +1,142 @@
+name: Site Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/site-build.yml'
+      - 'web/neuralv/**'
+      - 'branding/**'
+      - 'shell/install/linux.sh'
+      - 'shell/install/nv.sh'
+  workflow_dispatch:
+
+concurrency:
+  group: site-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-site:
+    name: Build NeuralV Site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/neuralv
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build site
+        run: npm run build
+
+      - name: Package site bundle
+        shell: bash
+        run: |
+          mkdir -p dist-export
+          (cd dist && zip -qr ../dist-export/neuralv-site.zip .)
+
+      - name: Upload site bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuralv-site
+          path: web/neuralv/dist-export/*
+          if-no-files-found: error
+
+  publish-site:
+    name: Publish Site Branch
+    needs:
+      - build-site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download site bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: neuralv-site
+          path: stage/site
+
+      - name: Prepare site branch payload
+        shell: bash
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          rm -rf publish-site
+          mkdir -p publish-site/site publish-site/install
+          unzip -q stage/site/neuralv-site.zip -d publish-site
+          cp stage/site/neuralv-site.zip publish-site/site/neuralv-site.zip
+          cp shell/install/linux.sh publish-site/install/linux.sh
+          cp shell/install/nv.sh publish-site/install/nv.sh
+          sha_site="$(sha256sum publish-site/site/neuralv-site.zip | awk '{print $1}')"
+          raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/site-builds"
+          export SHA_SITE="$sha_site"
+          export RAW_BASE="$raw_base"
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          manifest = {
+              "success": True,
+              "generated_at": generated_at,
+              "release_channel": "main",
+              "artifacts": [
+                  {
+                      "platform": "site",
+                      "channel": "main",
+                      "version": os.environ["GITHUB_SHA"],
+                      "sha256": os.environ["SHA_SITE"],
+                      "download_url": f"{os.environ['RAW_BASE']}/site/neuralv-site.zip",
+                      "install_command": "",
+                      "file_name": "neuralv-site.zip",
+                      "notes": ["Static web bundle for /neuralv/"],
+                      "metadata": {}
+                  }
+              ]
+          }
+          with open("publish-site/manifest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          with open("publish-site/BUILD_INFO.txt", "w", encoding="utf-8") as f:
+              f.write(
+                  f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
+                  f"Commit: {os.environ['GITHUB_SHA']}\n"
+                  f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
+                  f"Built At: {generated_at}\n"
+              )
+          PY
+
+      - name: Publish site-builds branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/site-builds
+          mkdir -p /tmp/site-builds
+          cp -R publish-site/. /tmp/site-builds/
+          cd /tmp/site-builds
+          git init
+          git checkout -b site-builds
+          git add .
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish site bundle for ${GITHUB_SHA} [skip ci]"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin site-builds

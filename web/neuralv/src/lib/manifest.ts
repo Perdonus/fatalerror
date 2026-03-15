@@ -7,6 +7,7 @@ export type ReleaseArtifact = {
   fileName?: string;
   installCommand?: string;
   notes?: string[];
+  metadata?: Record<string, unknown>;
 };
 
 export type ReleaseManifest = {
@@ -29,6 +30,20 @@ export const fallbackManifest: ReleaseManifest = {
       platform: 'windows',
       channel: 'beta',
       version: 'pending',
+      installCommand: 'winget install --id NeuralV.NeuralV -e',
+      metadata: {
+        wingetPackageId: 'NeuralV.NeuralV',
+        wingetInstallCommand: 'winget install --id NeuralV.NeuralV -e',
+        wingetUpgradeCommand: 'winget upgrade --id NeuralV.NeuralV -e',
+        wingetUninstallCommand: 'winget uninstall --id NeuralV.NeuralV -e',
+        nvBootstrapUrl: 'https://sosiskibot.ru/neuralv/install/nv.ps1',
+        nvBootstrapCommand:
+          'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex"',
+        nvInstallCommand: 'nv install neuralv@latest',
+        nvUpdateCommand: 'nv install neuralv@latest',
+        nvUninstallCommand: 'nv uninstall neuralv',
+        directDownloadLabel: 'Скачать GUI zip'
+      },
       notes: ['Windows GUI готовится, загрузка появится после CI pipeline.']
     },
     {
@@ -111,7 +126,11 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
           typeof item.installCommand === 'string'
             ? item.installCommand
             : (typeof item.install_command === 'string' ? item.install_command : undefined),
-        notes: Array.isArray(item.notes) ? item.notes.filter((note): note is string => typeof note === 'string') : undefined
+        notes: Array.isArray(item.notes) ? item.notes.filter((note): note is string => typeof note === 'string') : undefined,
+        metadata:
+          typeof item.metadata === 'object' && item.metadata !== null
+            ? (item.metadata as Record<string, unknown>)
+            : undefined
       } satisfies ReleaseArtifact;
     });
 

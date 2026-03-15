@@ -8,6 +8,7 @@ on:
       - '.github/workflows/windows-build.yml'
       - 'desktop-app/**'
       - 'desktop-core/**'
+      - 'shell/**'
       - 'gradle/**'
       - 'gradlew'
       - 'gradlew.bat'
@@ -68,6 +69,17 @@ jobs:
           $sourcePath = if ($appDir) { $appDir.FullName } else { $appRoot }
           Compress-Archive -Path "$sourcePath\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build Windows nv bootstrap binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
+          go build -trimpath -ldflags="-s -w" -o dist\windows\nv.exe .\shell\cmd\nv
+
       - name: Upload Windows build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,7 +92,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: neuralv-windows-gui
-          path: dist/windows/*
+          path: |
+            dist/windows/neuralv-windows.zip
+            dist/windows/nv.exe
           if-no-files-found: error
 
   publish-windows:
@@ -110,9 +124,12 @@ jobs:
           rm -rf publish-windows
           mkdir -p publish-windows/windows
           cp stage/windows/neuralv-windows.zip publish-windows/windows/
+          cp stage/windows/nv.exe publish-windows/windows/
           sha_windows="$(sha256sum publish-windows/windows/neuralv-windows.zip | awk '{print $1}')"
+          sha_nv="$(sha256sum publish-windows/windows/nv.exe | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/windows-builds"
           export SHA_WINDOWS="$sha_windows"
+          export SHA_NV="$sha_nv"
           export RAW_BASE="$raw_base"
           python3 - <<'PY'
           import json
@@ -130,10 +147,23 @@ jobs:
                       "version": os.environ["GITHUB_SHA"],
                       "sha256": os.environ["SHA_WINDOWS"],
                       "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
-                      "install_command": "",
+                      "install_command": "winget install --id NeuralV.NeuralV -e",
                       "file_name": "neuralv-windows.zip",
-                      "notes": ["Compose Desktop Windows GUI"],
-                      "metadata": {}
+                      "notes": ["Windows GUI with short install flow via winget or nv."],
+                      "metadata": {
+                          "wingetPackageId": "NeuralV.NeuralV",
+                          "wingetInstallCommand": "winget install --id NeuralV.NeuralV -e",
+                          "wingetUpgradeCommand": "winget upgrade --id NeuralV.NeuralV -e",
+                          "wingetUninstallCommand": "winget uninstall --id NeuralV.NeuralV -e",
+                          "nvBootstrapUrl": "https://sosiskibot.ru/neuralv/install/nv.ps1",
+                          "nvBootstrapCommand": "powershell -NoProfile -ExecutionPolicy Bypass -Command \\\"irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex\\\"",
+                          "nvInstallCommand": "nv install neuralv@latest",
+                          "nvUpdateCommand": "nv install neuralv@latest",
+                          "nvUninstallCommand": "nv uninstall neuralv",
+                          "nvDownloadUrl": f"{os.environ['RAW_BASE']}/windows/nv.exe",
+                          "nvSha256": os.environ["SHA_NV"],
+                          "directDownloadLabel": "Скачать GUI zip"
+                      }
                   }
               ]
           }

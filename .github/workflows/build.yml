@@ -198,7 +198,7 @@ jobs:
         run: |
           mkdir -p dist/shell
           cd shell
-          go mod download
+          go mod tidy
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralv-shell ./cmd/neuralv-shell
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../dist/shell/neuralvd ./cmd/neuralvd
           cd ..

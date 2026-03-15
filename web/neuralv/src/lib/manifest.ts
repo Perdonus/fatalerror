@@ -65,9 +65,17 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
 
   const data = (await response.json()) as Record<string, unknown>;
   const nestedManifest = (data.manifest as Record<string, unknown> | undefined) ?? undefined;
+  const nestedArtifacts =
+    nestedManifest && typeof nestedManifest === 'object' && 'artifacts' in nestedManifest
+      ? (nestedManifest.artifacts as unknown)
+      : undefined;
   const rawArtifacts =
     (Array.isArray(data.artifacts) ? data.artifacts : undefined) ??
-    (nestedManifest && Array.isArray(nestedManifest.artifacts) ? Object.values(nestedManifest.artifacts as Record<string, unknown>) : []);
+    (Array.isArray(nestedArtifacts)
+      ? nestedArtifacts
+      : (nestedArtifacts && typeof nestedArtifacts === 'object'
+          ? Object.values(nestedArtifacts as Record<string, unknown>)
+          : []));
 
   const artifacts = rawArtifacts
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)

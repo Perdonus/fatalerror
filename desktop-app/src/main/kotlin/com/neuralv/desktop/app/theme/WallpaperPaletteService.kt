@@ -6,6 +6,23 @@ import java.io.File
 import javax.imageio.ImageIO
 
 object WallpaperPaletteService {
+    fun load(): NeuralVPalette {
+        val accent = resolveDominantAccent() ?: return NeuralVPalettes.fallback
+        return NeuralVPalette(
+            primary = accent,
+            primaryContainer = accent.mix(Color.White, 0.78f),
+            secondary = accent.rotateWarm().mix(NeuralVPalettes.fallback.secondary, 0.45f),
+            tertiary = accent.rotateWarm(),
+            background = NeuralVPalettes.fallback.background,
+            surface = NeuralVPalettes.fallback.surface,
+            surfaceVariant = accent.mix(NeuralVPalettes.fallback.surfaceVariant, 0.72f),
+            outline = accent.mix(NeuralVPalettes.fallback.outline, 0.58f),
+            danger = NeuralVPalettes.fallback.danger,
+            success = NeuralVPalettes.fallback.success,
+            source = "wallpaper"
+        )
+    }
+
     fun resolveDominantAccent(): Color? {
         val wallpaper = resolveWallpaperPath() ?: return null
         val image = runCatching { ImageIO.read(File(wallpaper)) }.getOrNull() ?: return null

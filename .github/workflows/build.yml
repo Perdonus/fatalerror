@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: neuralv-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -226,7 +230,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build site
         run: npm run build
@@ -235,7 +239,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist-export
-          zip -qr dist-export/neuralv-site.zip dist
+          (cd dist && zip -qr ../dist-export/neuralv-site.zip .)
 
       - name: Upload site bundle
         uses: actions/upload-artifact@v4
@@ -297,15 +301,18 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
-          mkdir -p publish/android publish/windows publish/linux publish/shell publish/site publish/install
+          mkdir -p publish/android publish/windows publish/linux publish/desktop/windows publish/desktop/linux publish/shell publish/site publish/install
           if [ -f stage/android/neuralv-android-release.apk ]; then
             cp stage/android/neuralv-android-release.apk publish/android/
           fi
           cp stage/windows/neuralv-windows.zip publish/windows/
+          cp stage/windows/neuralv-windows.zip publish/desktop/windows/
           cp stage/linux/neuralv-linux.tar.gz publish/linux/
+          cp stage/linux/neuralv-linux.tar.gz publish/desktop/linux/
           cp stage/shell/neuralv-shell-linux.tar.gz publish/shell/
           cp stage/shell/neuralvd-linux.tar.gz publish/shell/
           cp stage/site/neuralv-site.zip publish/site/
+          unzip -q publish/site/neuralv-site.zip -d publish/site
           cp shell/install/linux.sh publish/install/linux.sh
 
           sha_android=""

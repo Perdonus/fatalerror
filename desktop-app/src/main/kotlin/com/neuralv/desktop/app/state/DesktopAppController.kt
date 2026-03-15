@@ -30,7 +30,7 @@ class DesktopAppController(
     private var apiClient = NeuralVApiClient(initialBackendUrl)
     private var authRepository = AuthRepository(apiClient, sessionStore, initialBackendUrl)
     private var scanRepository = DesktopScanRepository(apiClient)
-    private val paletteService = WallpaperPaletteService()
+    private val paletteService = WallpaperPaletteService
 
     private val _state = MutableStateFlow(DesktopUiState(backendBaseUrl = initialBackendUrl))
     val state: StateFlow<DesktopUiState> = _state.asStateFlow()

@@ -957,6 +957,12 @@ function chooseNextAction(normalized) {
         };
     }
 
+    if (!normalized.sha256 && wantsFullServerAnalysis) {
+        return {
+            nextAction: 'poll',
+            reason: 'Hash unavailable: running metadata-only server analysis without APK upload.'
+        };
+    }
     if (!normalized.sha256) {
         return {
             nextAction: 'upload_apk',
@@ -981,6 +987,36 @@ function chooseNextAction(normalized) {
     };
 }
 
+function hasEscalationSignalsForHeavyStage({ vt, heuristics }) {
+    const vtMalicious = Number(vt?.malicious || 0);
+    const vtSuspicious = Number(vt?.suspicious || 0);
+    if (vtMalicious > 0) {
+        return true;
+    }
+    if (vtSuspicious >= 2) {
+        return true;
+    }
+
+    const riskScore = Number(heuristics?.riskScore || 0);
+    if (riskScore >= 70) {
+        return true;
+    }
+
+    const findings = normalizeFindingsList(heuristics?.findings);
+    const strongHighSeverity = findings.some((finding) => {
+        if (severityRank(finding.severity) < 3) {
+            return false;
+        }
+        return [
+            'virustotal',
+            'certificate_profile',
+            'build_combo',
+            'package_profile'
+        ].includes(String(finding.type || ''));
+    });
+    return strongHighSeverity;
+}
+
 function shouldRunHeavyApkStage({ normalized, vt, heuristics }) {
     const mode = normalizeScanMode(normalized?.scanMode);
     if (mode === 'APK') {
@@ -990,10 +1026,10 @@ function shouldRunHeavyApkStage({ normalized, vt, heuristics }) {
         };
     }
 
-    if (normalized?.uploadedApkPath) {
+    if (mode === 'FULL') {
         return {
-            enabled: true,
-            reason: 'uploaded_apk_present'
+            enabled: false,
+            reason: 'full_bulk_metadata_only'
         };
     }
 
@@ -1004,27 +1040,30 @@ function shouldRunHeavyApkStage({ normalized, vt, heuristics }) {
         };
     }
 
-    const vtMalicious = Number(vt?.malicious || 0);
-    const vtSuspicious = Number(vt?.suspicious || 0);
-    if (vtMalicious > 0 || vtSuspicious > 0) {
+    if (!normalized?.uploadedApkPath) {
         return {
-            enabled: true,
-            reason: 'virustotal_signal'
+            enabled: false,
+            reason: 'no_uploaded_apk'
         };
     }
 
-    const riskScore = Number(heuristics?.riskScore || 0);
-    const verdict = String(heuristics?.verdict || '').toLowerCase();
-    if (verdict === 'malicious' || verdict === 'suspicious' || riskScore >= 45) {
+    if (mode !== 'SELECTIVE') {
+        return {
+            enabled: false,
+            reason: 'unsupported_mode'
+        };
+    }
+
+    if (hasEscalationSignalsForHeavyStage({ vt, heuristics })) {
         return {
             enabled: true,
-            reason: 'heuristics_signal'
+            reason: 'selective_escalation_signal'
         };
     }
 
     return {
         enabled: false,
-        reason: 'lightweight_signals_only'
+        reason: 'selective_below_escalation_threshold'
     };
 }
 
@@ -1630,8 +1669,12 @@ async function runDeepScanJob(jobId) {
             heuristics = analyzeHeuristics(normalized, vt);
         }
 
+        const analyzerProfile = normalizeScanMode(normalized?.scanMode) === 'APK' ? 'apk' : 'selective';
         const apkAnalysis = (heavyStage.enabled && normalized.uploadedApkPath)
-            ? await runAnalyzer(normalized.uploadedApkPath, { signal: controller.signal })
+            ? await runAnalyzer(normalized.uploadedApkPath, {
+                signal: controller.signal,
+                profile: analyzerProfile
+            })
             : { ok: false, findings: [], metadata: {}, risk_bonus: 0, sources: [], skipped: true };
         if (apkAnalysis?.cancelled) {
             throw createCancelledError();
@@ -1665,7 +1708,8 @@ async function runDeepScanJob(jobId) {
                 metadata: {
                     ...(apkAnalysis.metadata || {}),
                     heavy_stage_enabled: heavyStage.enabled,
-                    heavy_stage_reason: heavyStage.reason
+                    heavy_stage_reason: heavyStage.reason,
+                    analyzer_profile: analyzerProfile
                 },
                 sources: Array.isArray(apkAnalysis.sources) ? apkAnalysis.sources : [],
                 error: heavyStage.enabled ? (apkAnalysis.error || null) : null

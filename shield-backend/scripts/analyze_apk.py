@@ -745,10 +745,27 @@ def should_run_heavy_static(metadata):
     return True, 'within_limits'
 
 
+def should_run_semantic_heavy(profile, findings):
+    if profile == 'apk':
+        return True, 'apk_profile'
+
+    normalized = findings or []
+    total_score = sum(int(item.get('score') or 0) for item in normalized[:24])
+    has_high_signal = any(
+        (item.get('severity') in ('high', 'critical')) or
+        (item.get('type') in ('yara', 'apkid', 'native_endpoint_marker', 'archive_endpoint_marker'))
+        for item in normalized
+    )
+    if has_high_signal or total_score >= 24:
+        return True, 'pre_heavy_signal'
+    return False, 'low_signal_profile'
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--apk', required=True)
     parser.add_argument('--rules', default='')
+    parser.add_argument('--profile', default='apk')
     args = parser.parse_args()
 
     result = {
@@ -859,13 +876,18 @@ def main():
         extend_findings_capped(result['findings'], parse_apkid(apk_path, tool_status))
         extend_findings_capped(result['findings'], parse_yara(apk_path, args.rules, tool_status))
 
+        analysis_profile = str(args.profile or 'apk').strip().lower() or 'apk'
         run_heavy_static, heavy_reason = should_run_heavy_static(result['metadata'])
+        run_semantic_heavy, semantic_reason = should_run_semantic_heavy(analysis_profile, result['findings'])
+        effective_heavy = run_heavy_static and run_semantic_heavy
         result['metadata']['heavy_static_stage'] = {
-            'enabled': run_heavy_static,
-            'reason': heavy_reason
+            'enabled': effective_heavy,
+            'profile': analysis_profile,
+            'archive_limits_reason': heavy_reason,
+            'semantic_reason': semantic_reason
         }
 
-        if run_heavy_static:
+        if effective_heavy:
             androguard_findings, androguard_metadata = parse_androguard(apk_path, tool_status)
             extend_findings_capped(result['findings'], androguard_findings)
             if androguard_metadata:
@@ -876,8 +898,9 @@ def main():
             if quark_metadata:
                 result['metadata']['quark'] = quark_metadata
         else:
-            tool_status['androguard'] = f'skipped_{heavy_reason}'
-            tool_status['quark'] = f'skipped_{heavy_reason}'
+            skip_reason = heavy_reason if not run_heavy_static else semantic_reason
+            tool_status['androguard'] = f'skipped_{skip_reason}'
+            tool_status['quark'] = f'skipped_{skip_reason}'
 
         if len(result['findings']) > MAX_FINDINGS_TOTAL:
             result['findings'] = result['findings'][:MAX_FINDINGS_TOTAL]

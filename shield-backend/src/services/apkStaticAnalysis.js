@@ -1,4 +1,5 @@
 const path = require('path');
+const os = require('os');
 const { spawn } = require('child_process');
 
 const ANALYZER_TIMEOUT_MS = parseInt(process.env.APK_ANALYZER_TIMEOUT_MS || '1200000', 10);
@@ -6,6 +7,7 @@ const ANALYZER_PYTHON = process.env.APK_ANALYZER_PYTHON || 'python3';
 
 function runAnalyzer(apkPath, options = {}) {
     const signal = options?.signal;
+    const profile = String(options?.profile || 'apk').trim().toLowerCase() || 'apk';
     return new Promise((resolve) => {
         const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'analyze_apk.py');
         const rulesPath = path.join(__dirname, '..', '..', 'rules', 'deep_scan.yar');
@@ -21,9 +23,16 @@ function runAnalyzer(apkPath, options = {}) {
             });
             return;
         }
-        const child = spawn(ANALYZER_PYTHON, [scriptPath, '--apk', apkPath, '--rules', rulesPath], {
-            stdio: ['ignore', 'pipe', 'pipe']
+        const child = spawn(ANALYZER_PYTHON, [scriptPath, '--apk', apkPath, '--rules', rulesPath, '--profile', profile], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            env: {
+                ...process.env,
+                PYTHONUNBUFFERED: '1'
+            }
         });
+        try {
+            os.setPriority(child.pid, 15);
+        } catch (_) {}
 
         let stdout = '';
         let stderr = '';

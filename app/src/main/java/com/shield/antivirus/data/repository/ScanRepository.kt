@@ -427,8 +427,15 @@ class ScanRepository(private val context: Context) {
                     }
                     "FULL" -> PackageUtils.getAllInstalledApps(context, includeSystem = false)
                     "SELECTIVE" -> {
-                        val installedApps = PackageUtils.getAllInstalledApps(context, includeSystem = false)
-                        if (selectedPackages.isEmpty()) installedApps else installedApps.filter { it.packageName in selectedPackages }
+                        if (selectedPackages.isEmpty()) {
+                            PackageUtils.getAllInstalledApps(context, includeSystem = false)
+                        } else {
+                            PackageUtils.getAppsByPackageNames(
+                                context = context,
+                                packageNames = selectedPackages,
+                                includeSystem = false
+                            )
+                        }
                     }
                     else -> PackageUtils.getAllInstalledApps(context, includeSystem = true)
                 }
@@ -592,8 +599,9 @@ class ScanRepository(private val context: Context) {
         val apkFile = File(app.apkPath)
         val sha256 = if (apkFile.exists()) HashUtils.sha256(apkFile) else null
         val canUploadApk = apkFile.exists() && apkFile.canRead()
-        val canAutoUploadApkSecondStage = (scanType == "FULL" || scanType == "SELECTIVE") &&
-            canUploadApk
+        val canAutoUploadApkSecondStage = scanType == "SELECTIVE" &&
+            canUploadApk &&
+            !app.isSystemApp
         var apkUploaded = false
 
         val startResponse = ApiClient.executeShieldCall { api ->
@@ -796,18 +804,30 @@ class ScanRepository(private val context: Context) {
     private fun shouldAutoUploadAfterFirstCompletion(job: DeepScanJob): Boolean {
         val verdict = job.verdict?.lowercase().orEmpty()
         val score = job.riskScore ?: 0
-        if (verdict == "malicious" || verdict == "suspicious") return true
-        if (score >= 40) return true
+        if (verdict == "malicious") return true
+        if (score >= 70) return true
 
         val findings = job.findings.orEmpty()
-        val hasMediumOrHigherFinding = findings.any { severityRank(it.severity) >= 2 }
+        val hasHighOrCriticalFinding = findings.any { severityRank(it.severity) >= 3 }
         val hasStrongSignalType = findings.any { finding ->
             when (finding.type.lowercase()) {
-                "permission", "permission_combo", "virustotal", "network_flag", "build_flag", "size_profile" -> true
+                "virustotal",
+                "apkid",
+                "yara",
+                "dynamic_loader",
+                "shell_exec",
+                "accessibility_automation",
+                "telegram_c2",
+                "discord_webhook",
+                "anti_analysis",
+                "hardcoded_ip",
+                "cleartext_endpoint",
+                "certificate_profile",
+                "build_combo" -> true
                 else -> false
             }
         }
-        return hasMediumOrHigherFinding && hasStrongSignalType
+        return hasHighOrCriticalFinding && hasStrongSignalType
     }
 
     private fun prepareApkForScan(uriString: String): Pair<File, String>? {

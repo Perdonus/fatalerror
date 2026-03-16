@@ -178,14 +178,14 @@ public sealed class NeuralVApiClient : IDisposable
     private static SessionData ParseSession(JsonElement? root, string deviceId)
     {
         var element = root ?? throw new InvalidOperationException("Session payload is missing");
-        var session = JsonSerializer.Deserialize<SessionData>(element.Value.GetRawText(), JsonOptions) ?? new SessionData();
+        var session = JsonSerializer.Deserialize<SessionData>(element.GetRawText(), JsonOptions) ?? new SessionData();
         session.DeviceId = deviceId;
         session.User ??= new SessionUser();
-        session.User.Id = element.Value.GetPropertyOrDefault("id")?.GetString() ?? session.User.Id;
-        session.User.Name = element.Value.GetPropertyOrDefault("name")?.GetString() ?? session.User.Name;
-        session.User.Email = element.Value.GetPropertyOrDefault("email")?.GetString() ?? session.User.Email;
-        session.User.IsPremium = element.Value.GetPropertyOrDefault("is_premium")?.GetBoolean() ?? session.User.IsPremium;
-        session.User.IsDeveloperMode = element.Value.GetPropertyOrDefault("is_developer_mode")?.GetBoolean() ?? session.User.IsDeveloperMode;
+        session.User.Id = element.GetPropertyOrDefault("id")?.GetString() ?? session.User.Id;
+        session.User.Name = element.GetPropertyOrDefault("name")?.GetString() ?? session.User.Name;
+        session.User.Email = element.GetPropertyOrDefault("email")?.GetString() ?? session.User.Email;
+        session.User.IsPremium = element.GetPropertyOrDefault("is_premium")?.GetBoolean() ?? session.User.IsPremium;
+        session.User.IsDeveloperMode = element.GetPropertyOrDefault("is_developer_mode")?.GetBoolean() ?? session.User.IsDeveloperMode;
         if (!session.IsValid)
         {
             throw new InvalidOperationException("Сервер вернул неполную сессию");

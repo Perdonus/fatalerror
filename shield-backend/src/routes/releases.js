@@ -8,14 +8,23 @@ function normalizePlatform(input) {
         case 'win':
         case 'win32':
         case 'windows':
+        case 'windows-gui':
+        case 'windows-native':
+        case 'desktop':
             return 'windows';
         case 'linux':
         case 'linux-gui':
             return 'linux';
         case 'shell':
         case 'linux-cli':
+        case 'linux-shell':
         case 'cli':
             return 'shell';
+        case 'nv-win':
+        case 'nv-windows':
+            return 'nv-windows';
+        case 'nv-linux':
+            return 'nv-linux';
         case 'android':
             return 'android';
         case 'site':

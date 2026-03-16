@@ -21,7 +21,7 @@ public static class HistoryStore
         {
             await using var stream = File.OpenRead(SessionStore.HistoryFilePath);
             var items = await JsonSerializer.DeserializeAsync<List<StoredScanRecord>>(stream, JsonOptions, cancellationToken);
-            return items ?? Array.Empty<StoredScanRecord>();
+            return items ?? new List<StoredScanRecord>();
         }
         catch
         {

@@ -27,6 +27,9 @@
           },
           "metadata": {
             "updateChannel": "beta",
+            "artifactPlatform": "windows",
+            "desktopTrack": "windows-gui",
+            "versionSourceFile": "versions/windows.txt",
             "versionSource": {
               "repo": "Perdonus/fatalerror",
               "branch": "windows-builds",
@@ -35,6 +38,8 @@
             "publishPayloadRoot": "windows/NeuralV/",
             "portableArtifactPath": "windows/neuralv-windows.zip",
             "setupArtifactPath": "windows/neuralv-setup.exe",
+            "stablePortableArtifactPath": "windows/neuralv-windows.zip",
+            "stableSetupArtifactPath": "windows/neuralv-setup.exe",
             "portableVersionPattern": "windows/neuralv-windows-{version}.zip",
             "setupVersionPattern": "windows/neuralv-setup-{version}.exe",
             "commands": {
@@ -69,12 +74,16 @@
             "platform": "linux"
           },
           "metadata": {
+            "artifactPlatform": "linux",
+            "desktopTrack": "linux-gui",
+            "versionSourceFile": "versions/linux-gui.txt",
             "versionSource": {
               "repo": "Perdonus/fatalerror",
               "branch": "linux-gui-builds",
               "platform": "linux"
             },
             "updateChannel": "main",
+            "stableArtifactPath": "linux/neuralv-linux.tar.gz",
             "packages": {
               "ubuntu": {
                 "packageType": "deb",
@@ -162,11 +171,16 @@
             "platform": "shell"
           },
           "metadata": {
+            "artifactPlatform": "shell",
+            "desktopTrack": "linux-cli",
+            "versionSourceFile": "versions/linux-cli.txt",
             "versionSource": {
               "repo": "Perdonus/fatalerror",
               "branch": "linux-cli-builds",
               "platform": "shell"
             },
+            "stableArtifactPath": "shell/neuralv-shell-linux.tar.gz",
+            "stableDaemonArtifactPath": "shell/neuralvd-linux.tar.gz",
             "notifyOnStart": true,
             "updateChannel": "main"
           }
@@ -198,6 +212,8 @@
             "platform": "nv-linux"
           },
           "metadata": {
+            "artifactPlatform": "nv-linux",
+            "packageTrack": "nv-linux",
             "updateChannel": "main"
           }
         },
@@ -220,6 +236,8 @@
             "platform": "nv-windows"
           },
           "metadata": {
+            "artifactPlatform": "nv-windows",
+            "packageTrack": "nv-windows",
             "updateChannel": "main"
           }
         }

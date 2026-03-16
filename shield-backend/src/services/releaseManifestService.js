@@ -6,7 +6,7 @@ const RELEASE_BRANCH_TIMEOUT_MS = parseInt(process.env.RELEASE_BRANCH_TIMEOUT_MS
 const RELEASE_MANIFEST_CACHE_TTL_MS = parseInt(process.env.RELEASE_MANIFEST_CACHE_TTL_MS || '600000', 10);
 const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'Perdonus/fatalerror').trim();
 const ANDROID_FALLBACK_VERSION = loadConfiguredProductVersion();
-const DESKTOP_FALLBACK_VERSIONS = Object.freeze({
+const PLATFORM_FALLBACK_VERSIONS = Object.freeze({
     windows: loadVersionFile('windows.txt'),
     linux: loadVersionFile('linux-gui.txt'),
     shell: loadVersionFile('linux-cli.txt')
@@ -17,14 +17,9 @@ const GITHUB_API_HEADERS = {
     'User-Agent': 'NeuralVBackend/1.0'
 };
 
-const BRANCH_SOURCES = [
+const STATIC_BRANCH_SOURCES = [
     { repo: PUBLIC_REPOSITORY, branch: 'site-builds', label: 'site', platforms: ['site'] },
-    { repo: PUBLIC_REPOSITORY, branch: 'android-builds', label: 'android', platforms: ['android'] },
-    { repo: PUBLIC_REPOSITORY, branch: 'windows-builds', label: 'windows', platforms: ['windows'] },
-    { repo: PUBLIC_REPOSITORY, branch: 'linux-gui-builds', label: 'linux-gui', platforms: ['linux'] },
-    { repo: PUBLIC_REPOSITORY, branch: 'linux-cli-builds', label: 'linux-cli', platforms: ['shell'] },
-    { repo: 'Perdonus/NV', branch: 'windows-builds', label: 'nv-windows', platforms: ['nv-windows'] },
-    { repo: 'Perdonus/NV', branch: 'linux-builds', label: 'nv-linux', platforms: ['nv-linux'] }
+    { repo: PUBLIC_REPOSITORY, branch: 'android-builds', label: 'android', platforms: ['android'] }
 ];
 
 const PLATFORM_ORDER = ['android', 'windows', 'linux', 'shell', 'nv-windows', 'nv-linux', 'site'];
@@ -33,6 +28,25 @@ let manifestCacheExpiresAt = 0;
 
 function rawBaseForSource(source) {
     return `https://raw.githubusercontent.com/${source.repo}/${source.branch}`;
+}
+
+function normalizeReleasePlatform(platform) {
+    const value = String(platform || '').trim().toLowerCase();
+    switch (value) {
+        case 'win':
+        case 'win32':
+        case 'windows-gui':
+        case 'windows-native':
+            return 'windows';
+        case 'linux-gui':
+            return 'linux';
+        case 'linux-cli':
+        case 'linux-shell':
+        case 'cli':
+            return 'shell';
+        default:
+            return value;
+    }
 }
 
 function branchManifestUrl(source, { bust = false } = {}) {
@@ -75,6 +89,47 @@ function loadVersionFile(fileName) {
     return 'pending';
 }
 
+function buildBranchSources(registryPackages) {
+    const sources = STATIC_BRANCH_SOURCES.map((source) => ({ ...source, platforms: [...source.platforms] }));
+    const sourceIndex = new Map(
+        sources.map((source, index) => [`${source.repo}::${source.branch}`, index])
+    );
+
+    for (const pkg of Array.isArray(registryPackages) ? registryPackages : []) {
+        for (const variant of Array.isArray(pkg?.variants) ? pkg.variants : []) {
+            const repo = String(variant?.source?.repo || '').trim();
+            const branch = String(variant?.source?.branch || '').trim();
+            const platform = normalizeReleasePlatform(variant?.source?.platform);
+            if (!repo || !branch || !platform) {
+                continue;
+            }
+
+            const key = `${repo}::${branch}`;
+            const existingIndex = sourceIndex.get(key);
+            if (typeof existingIndex === 'number') {
+                const existing = sources[existingIndex];
+                if (!existing.platforms.includes(platform)) {
+                    existing.platforms.push(platform);
+                }
+                if (!existing.label && variant?.id) {
+                    existing.label = String(variant.id).trim();
+                }
+                continue;
+            }
+
+            sourceIndex.set(key, sources.length);
+            sources.push({
+                repo,
+                branch,
+                label: String(variant?.id || platform).trim() || platform,
+                platforms: [platform]
+            });
+        }
+    }
+
+    return sources;
+}
+
 function fallbackArtifacts() {
     return [
         {
@@ -99,7 +154,7 @@ function fallbackArtifacts() {
         {
             platform: 'windows',
             channel: 'beta',
-            version: DESKTOP_FALLBACK_VERSIONS.windows,
+            version: PLATFORM_FALLBACK_VERSIONS.windows,
             sha256: '',
             download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/windows-builds/windows/neuralv-windows.zip`,
             install_command: 'winget install --id NeuralV.NeuralV -e',
@@ -113,53 +168,64 @@ function fallbackArtifacts() {
                 source_branch: 'windows-builds',
                 source_label: 'windows',
                 available: false,
+                artifactPlatform: 'windows',
+                desktopTrack: 'windows-gui',
                 version_source: 'versions/windows.txt',
                 payloadRootPath: 'windows/NeuralV/',
                 portableArtifactPath: 'windows/neuralv-windows.zip',
                 setupArtifactPath: 'windows/neuralv-setup.exe',
-                versionedPortableArtifactPath: `windows/neuralv-windows-${DESKTOP_FALLBACK_VERSIONS.windows}.zip`,
-                versionedSetupArtifactPath: `windows/neuralv-setup-${DESKTOP_FALLBACK_VERSIONS.windows}.exe`
+                stablePortableArtifactPath: 'windows/neuralv-windows.zip',
+                stableSetupArtifactPath: 'windows/neuralv-setup.exe',
+                versionedPortableArtifactPath: `windows/neuralv-windows-${PLATFORM_FALLBACK_VERSIONS.windows}.zip`,
+                versionedSetupArtifactPath: `windows/neuralv-setup-${PLATFORM_FALLBACK_VERSIONS.windows}.exe`
             }
         },
         {
             platform: 'linux',
             channel: 'main',
-            version: DESKTOP_FALLBACK_VERSIONS.linux,
+            version: PLATFORM_FALLBACK_VERSIONS.linux,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-gui-builds/linux/neuralv-linux-${DESKTOP_FALLBACK_VERSIONS.linux}.tar.gz`,
+            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-gui-builds/linux/neuralv-linux-${PLATFORM_FALLBACK_VERSIONS.linux}.tar.gz`,
             install_command: 'sudo apt install neuralv',
             update_command: 'sudo apt update && sudo apt install --only-upgrade neuralv',
             update_policy: 'startup-auto',
             auto_update: true,
-            file_name: `neuralv-linux-${DESKTOP_FALLBACK_VERSIONS.linux}.tar.gz`,
+            file_name: `neuralv-linux-${PLATFORM_FALLBACK_VERSIONS.linux}.tar.gz`,
             notes: ['Linux GUI будет опубликован в linux-gui-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-gui-builds',
                 source_label: 'linux-gui',
                 available: false,
+                artifactPlatform: 'linux',
+                desktopTrack: 'linux-gui',
+                stableArtifactPath: 'linux/neuralv-linux.tar.gz',
                 version_source: 'versions/linux-gui.txt'
             }
         },
         {
             platform: 'shell',
             channel: 'main',
-            version: DESKTOP_FALLBACK_VERSIONS.shell,
+            version: PLATFORM_FALLBACK_VERSIONS.shell,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralv-shell-linux-${DESKTOP_FALLBACK_VERSIONS.shell}.tar.gz`,
+            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralv-shell-linux-${PLATFORM_FALLBACK_VERSIONS.shell}.tar.gz`,
             install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh && nv install neuralv@latest',
             update_command: 'nv install neuralv@latest',
             update_policy: 'nv-command',
             auto_update: false,
-            file_name: `neuralv-shell-linux-${DESKTOP_FALLBACK_VERSIONS.shell}.tar.gz`,
+            file_name: `neuralv-shell-linux-${PLATFORM_FALLBACK_VERSIONS.shell}.tar.gz`,
             notes: ['Linux CLI будет опубликован в linux-cli-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-cli-builds',
                 source_label: 'linux-cli',
                 available: false,
+                artifactPlatform: 'shell',
+                desktopTrack: 'linux-cli',
+                stableArtifactPath: 'shell/neuralv-shell-linux.tar.gz',
+                stableDaemonArtifactPath: 'shell/neuralvd-linux.tar.gz',
                 version_source: 'versions/linux-cli.txt',
-                daemonUrl: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralvd-linux-${DESKTOP_FALLBACK_VERSIONS.shell}.tar.gz`
+                daemonUrl: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralvd-linux-${PLATFORM_FALLBACK_VERSIONS.shell}.tar.gz`
             }
         },
         {
@@ -178,7 +244,9 @@ function fallbackArtifacts() {
                 source_repo: 'Perdonus/NV',
                 source_branch: 'windows-builds',
                 source_label: 'nv-windows',
-                available: false
+                available: false,
+                artifactPlatform: 'nv-windows',
+                packageTrack: 'nv-windows'
             }
         },
         {
@@ -197,7 +265,9 @@ function fallbackArtifacts() {
                 source_repo: 'Perdonus/NV',
                 source_branch: 'linux-builds',
                 source_label: 'nv-linux',
-                available: false
+                available: false,
+                artifactPlatform: 'nv-linux',
+                packageTrack: 'nv-linux'
             }
         },
         {
@@ -361,28 +431,53 @@ function attachRegistryMetadata(artifact, registryMatch) {
     const autoUpdate = typeof variantDef.auto_update === 'boolean'
         ? variantDef.auto_update
         : (typeof artifact.auto_update === 'boolean' ? artifact.auto_update : updatePolicy === 'startup-auto');
+    const sourceRepo = String(variantDef?.source?.repo || artifact?.metadata?.source_repo || '').trim();
+    const sourceBranch = String(variantDef?.source?.branch || artifact?.metadata?.source_branch || '').trim();
+    const rawBase = sourceRepo && sourceBranch ? rawBaseForSource({ repo: sourceRepo, branch: sourceBranch }) : '';
+    const buildRawUrl = (relativePath) => {
+        const cleanPath = String(relativePath || '').trim().replace(/^\/+/, '');
+        return rawBase && cleanPath ? `${rawBase}/${cleanPath}` : '';
+    };
+    const metadata = {
+        ...variantMetadata,
+        package_name: String(packageDef.name || '').trim(),
+        package_title: String(packageDef.title || packageDef.name || '').trim(),
+        variant_id: String(variantDef.id || '').trim(),
+        install_strategy: String(variantDef.install_strategy || '').trim(),
+        uninstall_strategy: String(variantDef.uninstall_strategy || '').trim(),
+        install_root: String(variantDef.install_root || '').trim(),
+        binary_name: String(variantDef.binary_name || '').trim(),
+        wrapper_name: String(variantDef.wrapper_name || '').trim(),
+        launcher_path: String(variantDef.launcher_path || '').trim(),
+        manifest_url: sourceRepo && sourceBranch ? branchManifestUrl({ repo: sourceRepo, branch: sourceBranch }) : '',
+        package_registry_url: PACKAGE_REGISTRY_URL,
+        update_policy: updatePolicy,
+        auto_update: autoUpdate,
+        artifact_platform: normalizeReleasePlatform(variantMetadata.artifactPlatform || artifact.platform),
+        desktop_track: String(variantMetadata.desktopTrack || '').trim(),
+        package_track: String(variantMetadata.packageTrack || '').trim(),
+        version_source_file: String(variantMetadata.versionSourceFile || '').trim()
+    };
+
+    if (!metadata.portableUrl && variantMetadata.stablePortableArtifactPath) {
+        metadata.portableUrl = buildRawUrl(variantMetadata.stablePortableArtifactPath);
+    }
+    if (!metadata.setupUrl && variantMetadata.stableSetupArtifactPath) {
+        metadata.setupUrl = buildRawUrl(variantMetadata.stableSetupArtifactPath);
+    }
+    if (!metadata.daemonUrl && variantMetadata.stableDaemonArtifactPath) {
+        metadata.daemonUrl = buildRawUrl(variantMetadata.stableDaemonArtifactPath);
+    }
+    if (!metadata.stableArtifactUrl && variantMetadata.stableArtifactPath) {
+        metadata.stableArtifactUrl = buildRawUrl(variantMetadata.stableArtifactPath);
+    }
 
     return mergeArtifact(artifact, {
         install_command: String(variantDef.install_command || artifact.install_command || '').trim(),
         update_command: String(variantDef.update_command || artifact.update_command || '').trim(),
         update_policy: updatePolicy,
         auto_update: autoUpdate,
-        metadata: {
-            ...variantMetadata,
-            package_name: String(packageDef.name || '').trim(),
-            package_title: String(packageDef.title || packageDef.name || '').trim(),
-            variant_id: String(variantDef.id || '').trim(),
-            install_strategy: String(variantDef.install_strategy || '').trim(),
-            uninstall_strategy: String(variantDef.uninstall_strategy || '').trim(),
-            install_root: String(variantDef.install_root || '').trim(),
-            binary_name: String(variantDef.binary_name || '').trim(),
-            wrapper_name: String(variantDef.wrapper_name || '').trim(),
-            launcher_path: String(variantDef.launcher_path || '').trim(),
-            manifest_url: branchManifestUrl({ repo: variantDef.source.repo, branch: variantDef.source.branch }),
-            package_registry_url: PACKAGE_REGISTRY_URL,
-            update_policy: updatePolicy,
-            auto_update: autoUpdate
-        }
+        metadata
     });
 }
 
@@ -397,12 +492,13 @@ async function getReleaseManifest() {
 
     const registry = await loadRegistryConfig();
     const registryIndex = indexRegistryVariants(registry.packages);
+    const branchSources = buildBranchSources(registry.packages);
 
     const settled = await Promise.allSettled(
-        BRANCH_SOURCES.map(async (source) => ({ source, manifest: await fetchBranchManifest(source) }))
+        branchSources.map(async (source) => ({ source, manifest: await fetchBranchManifest(source) }))
     );
 
-    const sources = settled.map((result, index) => buildSourceStatus(BRANCH_SOURCES[index], result));
+    const sources = settled.map((result, index) => buildSourceStatus(branchSources[index], result));
 
     for (const result of settled) {
         if (result.status !== 'fulfilled') {

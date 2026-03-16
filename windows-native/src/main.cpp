@@ -76,6 +76,7 @@ HWND g_logout = nullptr;
 
 constexpr wchar_t kWindowClass[] = L"NeuralVNativeWindow";
 constexpr UINT_PTR kSplashTimer = 1;
+constexpr UINT_PTR kInputSubclassId = 100;
 
 RECT GetClientArea(HWND hwnd) {
     RECT rect{};
@@ -392,6 +393,42 @@ void PaintWindow(HWND hwnd) {
     EndPaint(hwnd, &ps);
 }
 
+LRESULT CALLBACK InputSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
+    if (message == WM_KEYDOWN) {
+        if (wParam == VK_RETURN) {
+            switch (g_app.screen) {
+            case Screen::Login:
+            case Screen::Register:
+                SubmitAuth();
+                return 0;
+            case Screen::Code:
+                VerifyCode();
+                return 0;
+            default:
+                break;
+            }
+        }
+
+        if (wParam == VK_ESCAPE) {
+            switch (g_app.screen) {
+            case Screen::Login:
+            case Screen::Register:
+            case Screen::Code:
+                SetScreen(Screen::Welcome);
+                return 0;
+            case Screen::History:
+            case Screen::Settings:
+                SetScreen(Screen::Home);
+                return 0;
+            default:
+                break;
+            }
+        }
+    }
+
+    return DefSubclassProc(hwnd, message, wParam, lParam);
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_CREATE: {
@@ -424,6 +461,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 
         for (HWND control : { g_name, g_email, g_password, g_passwordRepeat, g_code, g_primary, g_secondary, g_tertiary, g_scan, g_history, g_settings, g_logout }) {
             ApplyModernControlTheme(control);
+        }
+        for (HWND control : { g_name, g_email, g_password, g_passwordRepeat, g_code, g_primary, g_secondary, g_tertiary, g_scan, g_history, g_settings, g_logout }) {
+            SetWindowSubclass(control, InputSubclassProc, kInputSubclassId, 0);
         }
         SetCue(g_name, L"Имя");
         SetCue(g_email, L"Email");
@@ -512,6 +552,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         PaintWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        for (HWND control : { g_name, g_email, g_password, g_passwordRepeat, g_code, g_primary, g_secondary, g_tertiary, g_scan, g_history, g_settings, g_logout }) {
+            if (control) {
+                RemoveWindowSubclass(control, InputSubclassProc, kInputSubclassId);
+            }
+        }
         DeleteObject(g_app.titleFont);
         DeleteObject(g_app.bodyFont);
         DeleteObject(g_app.smallFont);

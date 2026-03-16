@@ -9,6 +9,7 @@ const {
 router.get('/', async (req, res) => {
     try {
         const payload = await getPackageRegistry({ os: req.query.os || req.query.host_os || '' });
+        res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(payload);
     } catch (error) {
         console.error('Package registry error:', error);
@@ -19,6 +20,7 @@ router.get('/', async (req, res) => {
 router.get('/registry', async (req, res) => {
     try {
         const payload = await getPackageRegistry({ os: req.query.os || req.query.host_os || '' });
+        res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(payload);
     } catch (error) {
         console.error('Package registry alias error:', error);
@@ -33,6 +35,7 @@ router.get('/:name/resolve', async (req, res) => {
             version: req.query.version || 'latest',
             variant: req.query.variant || ''
         });
+        res.set('Cache-Control', 'no-store, max-age=0');
         return res.status(result.status).json(result.payload);
     } catch (error) {
         console.error('Package resolve error:', error);
@@ -46,6 +49,7 @@ router.get('/:name', async (req, res) => {
         if (!payload) {
             return res.status(404).json({ error: 'Пакет не найден' });
         }
+        res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(payload);
     } catch (error) {
         console.error('Package details error:', error);

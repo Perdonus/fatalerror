@@ -34,6 +34,36 @@ export type PackageCatalog = {
 
 const registryUrl = (import.meta.env.VITE_PACKAGE_REGISTRY_URL as string | undefined) || '/basedata/api/packages';
 
+function stableVariantDownloadUrl(entry: Record<string, unknown>, fallbackUrl: string): string {
+  const metadata = entry.metadata && typeof entry.metadata === 'object'
+    ? (entry.metadata as Record<string, unknown>)
+    : undefined;
+  const source = metadata?.source && typeof metadata.source === 'object'
+    ? (metadata.source as Record<string, unknown>)
+    : undefined;
+  const repo = String(source?.repo ?? '').trim();
+  const branch = String(source?.branch ?? '').trim();
+  const platform = String(source?.platform ?? '').trim();
+
+  if (!repo || !branch) {
+    return fallbackUrl;
+  }
+
+  const base = `https://raw.githubusercontent.com/${repo}/${branch}`;
+  if (repo === 'Perdonus/fatalerror') {
+    if (platform === 'windows') return `${base}/windows/neuralv-windows.zip`;
+    if (platform === 'linux') return `${base}/linux/neuralv-linux.tar.gz`;
+    if (platform === 'shell') return `${base}/shell/neuralv-shell-linux.tar.gz`;
+  }
+
+  if (repo === 'Perdonus/NV') {
+    if (platform === 'nv-windows') return `${base}/windows/nv.exe`;
+    if (platform === 'nv-linux') return `${base}/linux/nv-linux.tar.gz`;
+  }
+
+  return fallbackUrl;
+}
+
 export async function fetchPackageCatalog(signal?: AbortSignal): Promise<PackageCatalog> {
   const response = await fetch(registryUrl, {
     method: 'GET',
@@ -67,7 +97,7 @@ export async function fetchPackageCatalog(signal?: AbortSignal): Promise<Package
               version: String(entry.version ?? ''),
               channel: String(entry.channel ?? ''),
               file_name: String(entry.file_name ?? ''),
-              download_url: String(entry.download_url ?? ''),
+              download_url: stableVariantDownloadUrl(entry, String(entry.download_url ?? '')),
               install_command: String(entry.install_command ?? ''),
               sha256: String(entry.sha256 ?? ''),
               install_strategy: String(entry.install_strategy ?? ''),

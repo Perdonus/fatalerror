@@ -31,7 +31,7 @@ type InstallVariant = {
   buttonLabel?: string;
 };
 
-const NV_INSTALL_URL = 'https://sosiskibot.ru/neuralv/install/nv.sh';
+const NV_INSTALL_URL = 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh';
 const REPO_ROOT = 'https://sosiskibot.ru/neuralv/repo';
 
 const distroOptions: DistroOption[] = [
@@ -203,9 +203,7 @@ function buildCliVariant(artifact?: PackageVariant): InstallVariant {
       '',
       '# 3) Запусти клиент',
       'neuralv'
-    ].join('\n'),
-    downloadUrl: artifact?.download_url,
-    buttonLabel: 'Скачать CLI'
+    ].join('\n')
   };
 }
 
@@ -259,6 +257,17 @@ export function LinuxPage() {
             )}
           </div>
         </div>
+
+        <div className="hero-panel compact-panel">
+          <article className="mini-stat">
+            <strong>GUI {guiArtifact?.version || 'pending'}</strong>
+            <span className="hero-support-text">{guiArtifact?.file_name || 'Desktop GUI build'}</span>
+          </article>
+          <article className="mini-stat">
+            <strong>CLI {cliArtifact?.version || 'pending'}</strong>
+            <span className="hero-support-text">{cliArtifact?.file_name || 'CLI через NV'}</span>
+          </article>
+        </div>
       </section>
 
       <section id="linux-install" className="section-block">
@@ -266,56 +275,56 @@ export function LinuxPage() {
           <h2>Установка</h2>
         </div>
 
-        <div className="install-layout">
-          <aside className="content-card chooser-card">
+        <article className="content-card chooser-card">
+          <div className="chooser-section">
+            <div className="segmented-row" style={compactSegmentsStyle}>
+              <button
+                type="button"
+                className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
+                style={compactSegmentStyle}
+                onClick={() => setInstallMode('gui')}
+                disabled={!guiReady}
+              >
+                GUI
+              </button>
+              <button
+                type="button"
+                className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
+                style={compactSegmentStyle}
+                onClick={() => setInstallMode('cli')}
+              >
+                CLI
+              </button>
+            </div>
+          </div>
+
+          {installMode === 'gui' ? (
             <div className="chooser-section">
-              <div className="segmented-row" style={compactSegmentsStyle}>
-                <button
-                  type="button"
-                  className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
-                  style={compactSegmentStyle}
-                  onClick={() => setInstallMode('gui')}
-                  disabled={!guiReady}
-                >
-                  GUI
-                </button>
-                <button
-                  type="button"
-                  className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
-                  style={compactSegmentStyle}
-                  onClick={() => setInstallMode('cli')}
-                >
-                  CLI
-                </button>
+              <span className="chooser-label">Дистрибутив</span>
+              <div className="distro-grid">
+                {distroOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`distro-pill${distro === option.key ? ' is-active' : ''}`}
+                    onClick={() => setDistro(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
+          ) : null}
+        </article>
 
-            {installMode === 'gui' ? (
-              <div className="chooser-section">
-                <span className="chooser-label">Дистрибутив</span>
-                <div className="distro-grid">
-                  {distroOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={`distro-pill${distro === option.key ? ' is-active' : ''}`}
-                      onClick={() => setDistro(option.key)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </aside>
-
+        <div className="install-layout install-layout-static">
           <div className="content-card install-card">
             <div className="install-card-head">
               <div>
                 <h3>{activeVariant.title}</h3>
               </div>
               <div className="install-card-head-actions">
-                {activeVariant.downloadUrl ? (
+                {installMode === 'gui' && activeVariant.downloadUrl ? (
                   <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
                 ) : installMode === 'gui' ? (
                   <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>

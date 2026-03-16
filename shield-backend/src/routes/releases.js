@@ -5,6 +5,7 @@ const { getReleaseManifest } = require('../services/releaseManifestService');
 router.get('/manifest', async (req, res) => {
     try {
         const manifest = await getReleaseManifest();
+        res.set('Cache-Control', 'no-store, max-age=0');
         const artifacts = Array.isArray(manifest.artifacts)
             ? manifest.artifacts
             : Object.values(manifest.artifacts || {});

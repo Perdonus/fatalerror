@@ -67,6 +67,7 @@ export async function fetchReleaseManifest(signal?: AbortSignal): Promise<Releas
   const response = await fetch(manifestUrl, {
     method: 'GET',
     headers: { Accept: 'application/json' },
+    cache: 'no-store',
     signal
   });
 

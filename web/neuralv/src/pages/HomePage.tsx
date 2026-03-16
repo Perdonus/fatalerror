@@ -1,4 +1,7 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { getPackage, getPackageVariant } from '../lib/packages';
+import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
 const productPoints = [
   'Один вход для всех версий.',
@@ -13,6 +16,11 @@ const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
 // Положи файлы в web/neuralv/public/media/screenshots/ с именами:
 // android-home.png, windows-home.png, linux-home.png.
 export function HomePage() {
+  const { catalog } = usePackageRegistry();
+  const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
+  const linuxGui = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
+  const linuxCli = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
+
   return (
     <div className="page-stack">
       <section className="hero-card home-hero">
@@ -82,7 +90,9 @@ export function HomePage() {
                 <h3>Linux</h3>
               </div>
             </div>
-            <div className="platform-meta">x64 desktop и серверные сценарии</div>
+            <div className="platform-meta">
+              GUI {linuxGui?.version || 'pending'} · CLI {linuxCli?.version || 'pending'}
+            </div>
             <div className="card-actions" style={{ flexWrap: 'nowrap' }}>
               <Link className="nv-button tonal" to="/linux">GUI</Link>
               <Link className="nv-button tonal" to="/linux">CLI</Link>

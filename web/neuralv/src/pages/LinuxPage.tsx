@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useReleaseManifest } from '../hooks/useReleaseManifest';
+import { getArtifact } from '../lib/manifest';
 import { getPackage, getPackageVariant, PackageVariant } from '../lib/packages';
 import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
@@ -208,10 +210,31 @@ function buildCliVariant(artifact?: PackageVariant): InstallVariant {
 }
 
 export function LinuxPage() {
+  const guiManifestState = useReleaseManifest('linux');
+  const cliManifestState = useReleaseManifest('shell');
   const { catalog } = usePackageRegistry();
   const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
-  const guiArtifact = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
-  const cliArtifact = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
+  const guiPackageVariant = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
+  const cliPackageVariant = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
+  const guiManifestArtifact = useMemo(() => getArtifact(guiManifestState.manifest, 'linux'), [guiManifestState.manifest]);
+  const cliManifestArtifact = useMemo(() => getArtifact(cliManifestState.manifest, 'shell'), [cliManifestState.manifest]);
+  const guiArtifact = useMemo(() => {
+    if (!guiPackageVariant) return guiPackageVariant;
+    return {
+      ...guiPackageVariant,
+      version: guiManifestArtifact?.version || guiPackageVariant.version,
+      download_url: guiManifestArtifact?.downloadUrl || guiPackageVariant.download_url,
+      file_name: guiManifestArtifact?.fileName || guiPackageVariant.file_name
+    };
+  }, [guiManifestArtifact?.downloadUrl, guiManifestArtifact?.fileName, guiManifestArtifact?.version, guiPackageVariant]);
+  const cliArtifact = useMemo(() => {
+    if (!cliPackageVariant) return cliPackageVariant;
+    return {
+      ...cliPackageVariant,
+      version: cliManifestArtifact?.version || cliPackageVariant.version,
+      file_name: cliManifestArtifact?.fileName || cliPackageVariant.file_name
+    };
+  }, [cliManifestArtifact?.fileName, cliManifestArtifact?.version, cliPackageVariant]);
   const guiReady = Boolean(guiArtifact?.download_url);
 
   const [installMode, setInstallMode] = useState<InstallMode>(() => (guiReady ? 'gui' : 'cli'));
@@ -271,72 +294,61 @@ export function LinuxPage() {
       </section>
 
       <section id="linux-install" className="section-block">
-        <div className="section-head section-head-tight">
-          <h2>Установка</h2>
-        </div>
+        <div className="content-card install-card install-card-wide">
+          <div className="segmented-row" style={compactSegmentsStyle}>
+            <button
+              type="button"
+              className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
+              style={compactSegmentStyle}
+              onClick={() => setInstallMode('gui')}
+              disabled={!guiReady}
+            >
+              GUI
+            </button>
+            <button
+              type="button"
+              className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
+              style={compactSegmentStyle}
+              onClick={() => setInstallMode('cli')}
+            >
+              CLI
+            </button>
+          </div>
 
-        <article className="content-card chooser-card">
-          <div className="chooser-section">
-            <div className="segmented-row" style={compactSegmentsStyle}>
-              <button
-                type="button"
-                className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
-                style={compactSegmentStyle}
-                onClick={() => setInstallMode('gui')}
-                disabled={!guiReady}
-              >
-                GUI
-              </button>
-              <button
-                type="button"
-                className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
-                style={compactSegmentStyle}
-                onClick={() => setInstallMode('cli')}
-              >
-                CLI
+          {installMode === 'gui' ? (
+            <div className="distro-grid distro-grid-top">
+              {distroOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className={`distro-pill${distro === option.key ? ' is-active' : ''}`}
+                  onClick={() => setDistro(option.key)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="install-card-head">
+            <div>
+              <h3>{activeVariant.title}</h3>
+            </div>
+            <div className="install-card-head-actions">
+              {installMode === 'gui' && activeVariant.downloadUrl ? (
+                <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
+              ) : installMode === 'gui' ? (
+                <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>
+              ) : null}
+              <button className="copy-button" type="button" onClick={handleCopy}>
+                {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
               </button>
             </div>
           </div>
 
-          {installMode === 'gui' ? (
-            <div className="chooser-section">
-              <span className="chooser-label">Дистрибутив</span>
-              <div className="distro-grid">
-                {distroOptions.map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    className={`distro-pill${distro === option.key ? ' is-active' : ''}`}
-                    onClick={() => setDistro(option.key)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </article>
-
-        <div className="content-card install-card install-card-wide">
-            <div className="install-card-head">
-              <div>
-                <h3>{activeVariant.title}</h3>
-              </div>
-              <div className="install-card-head-actions">
-                {installMode === 'gui' && activeVariant.downloadUrl ? (
-                  <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
-                ) : installMode === 'gui' ? (
-                  <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>
-                ) : null}
-                <button className="copy-button" type="button" onClick={handleCopy}>
-                  {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
-                </button>
-              </div>
-            </div>
-
-            <div className="command-shell">
-              <pre>{activeVariant.commandText}</pre>
-            </div>
+          <div className="command-shell">
+            <pre>{activeVariant.commandText}</pre>
+          </div>
         </div>
       </section>
     </div>

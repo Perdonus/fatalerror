@@ -63,8 +63,12 @@ export const fallbackManifest: ReleaseManifest = {
 const manifestUrl =
   (import.meta.env.VITE_RELEASE_MANIFEST_URL as string | undefined) || '/basedata/api/releases/manifest';
 
-export async function fetchReleaseManifest(signal?: AbortSignal): Promise<ReleaseManifest> {
-  const response = await fetch(manifestUrl, {
+export async function fetchReleaseManifest(signal?: AbortSignal, platform?: string): Promise<ReleaseManifest> {
+  const manifestRequestUrl = platform
+    ? `${manifestUrl}${manifestUrl.includes('?') ? '&' : '?'}platform=${encodeURIComponent(platform)}`
+    : manifestUrl;
+
+  const response = await fetch(manifestRequestUrl, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     cache: 'no-store',

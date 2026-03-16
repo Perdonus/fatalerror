@@ -8,7 +8,7 @@ export type ManifestState = {
   error: string | null;
 };
 
-export function useReleaseManifest(): ManifestState {
+export function useReleaseManifest(platform?: string): ManifestState {
   const [state, setState] = useState<ManifestState>({
     manifest: fallbackManifest,
     loading: true,
@@ -19,7 +19,7 @@ export function useReleaseManifest(): ManifestState {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetchReleaseManifest(controller.signal)
+    fetchReleaseManifest(controller.signal, platform)
       .then((manifest) => {
         setState({
           manifest: manifest.artifacts.length > 0 ? manifest : fallbackManifest,
@@ -38,7 +38,7 @@ export function useReleaseManifest(): ManifestState {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [platform]);
 
   return useMemo(() => state, [state]);
 }

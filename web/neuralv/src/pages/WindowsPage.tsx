@@ -1,63 +1,86 @@
 import { useMemo, useState } from 'react';
+import { useReleaseManifest } from '../hooks/useReleaseManifest';
+import { getArtifact } from '../lib/manifest';
 import { getPackage, getPackageVariant } from '../lib/packages';
 import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
 type WindowsInstallMode = 'setup' | 'portable' | 'powershell' | 'cmd';
 
-const windowsSetupUrl = '/neuralv/install/neuralv.cmd';
+type WindowsMetadata = {
+  wingetPackageId?: string;
+  wingetInstallCommand?: string;
+  wingetUpgradeCommand?: string;
+  wingetUninstallCommand?: string;
+  directDownloadLabel?: string;
+};
+
 const windowsPowerShellUrl = 'https://sosiskibot.ru/neuralv/install/neuralv.ps1';
 const windowsCmdUrl = 'https://sosiskibot.ru/neuralv/install/neuralv.cmd';
 
-function getWindowsInstallContent(mode: WindowsInstallMode, downloadUrl?: string) {
+function getWindowsMetadata(value: unknown): WindowsMetadata | undefined {
+  return value && typeof value === 'object' ? (value as WindowsMetadata) : undefined;
+}
+
+function getWindowsInstallContent(mode: WindowsInstallMode, options: {
+  setupUrl?: string;
+  portableUrl?: string;
+  metadata?: WindowsMetadata;
+}) {
   const powershellCommand =
     `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${windowsPowerShellUrl} | iex"`;
   const cmdCommand =
-    `curl.exe -fsSL ${windowsCmdUrl} -o "%TEMP%\\\\neuralv-install.cmd" && cmd /c "%TEMP%\\\\neuralv-install.cmd"`;
+    `curl.exe -fsSL ${windowsCmdUrl} -o "%TEMP%\\neuralv-install.cmd" && cmd /c "%TEMP%\\neuralv-install.cmd"`;
 
   switch (mode) {
     case 'setup':
       return {
         title: 'Setup',
-        description: 'Скачай установщик-скрипт. Он подтянет последнюю Windows-сборку и разложит NeuralV по папкам Windows.',
-        downloadUrl: windowsSetupUrl,
         buttonLabel: 'Скачать setup',
+        downloadUrl: options.setupUrl,
         command: ''
       };
     case 'portable':
       return {
         title: 'Portable',
-        description: 'Портативная сборка без системной установки.',
-        downloadUrl,
-        buttonLabel: 'Скачать portable',
+        buttonLabel: options.metadata?.directDownloadLabel || 'Скачать portable',
+        downloadUrl: options.portableUrl,
         command: ''
       };
     case 'powershell':
       return {
         title: 'PowerShell',
-        description: 'Одна команда ставит последнюю Windows-версию NeuralV через PowerShell-скрипт.',
-        downloadUrl: undefined,
         buttonLabel: '',
+        downloadUrl: undefined,
         command: powershellCommand
       };
     default:
       return {
         title: 'CMD',
-        description: 'Та же установка через обычный cmd, без ручного поиска пакетов.',
-        downloadUrl: undefined,
         buttonLabel: '',
+        downloadUrl: undefined,
         command: cmdCommand
       };
   }
 }
 
 export function WindowsPage() {
+  const manifestState = useReleaseManifest('windows');
   const { catalog } = usePackageRegistry();
   const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
-  const artifact = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
-  const ready = Boolean(artifact?.download_url);
+  const packageVariant = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
+  const manifestArtifact = useMemo(() => getArtifact(manifestState.manifest, 'windows'), [manifestState.manifest]);
+  const metadata = useMemo(
+    () => getWindowsMetadata(manifestArtifact?.metadata ?? packageVariant?.metadata),
+    [manifestArtifact?.metadata, packageVariant?.metadata]
+  );
+
+  const version = manifestState.manifest.version || manifestArtifact?.version || packageVariant?.version || '';
+  const portableUrl = manifestState.manifest.downloadUrl || manifestArtifact?.downloadUrl || packageVariant?.download_url;
+  const setupUrl = manifestState.manifest.setupUrl || portableUrl;
+  const ready = Boolean(portableUrl || setupUrl);
   const [mode, setMode] = useState<WindowsInstallMode>('setup');
   const [copyState, setCopyState] = useState<'idle' | 'done'>('idle');
-  const active = getWindowsInstallContent(mode, artifact?.download_url);
+  const active = getWindowsInstallContent(mode, { setupUrl, portableUrl, metadata });
 
   const handleCopy = async () => {
     if (!active.command || typeof navigator === 'undefined' || !navigator.clipboard) {
@@ -78,93 +101,86 @@ export function WindowsPage() {
       <section className="hero-card platform-hero">
         <div className="hero-copy">
           <h1>NeuralV для Windows.</h1>
-          <p>
-            Нативный настольный клиент для проверки файлов, фонового контроля и работы с тем же
-            аккаунтом, что на Android и Linux.
-          </p>
+          <p>Ставь графический клиент так, как тебе удобнее: setup, portable или одной командой из терминала.</p>
           <div className="hero-actions">
+            <a className="nv-button" href="#windows-install">
+              Установка
+            </a>
             {ready ? (
-              <a className="nv-button" href={artifact?.download_url} target="_blank" rel="noreferrer">
-                Скачать Windows
+              <a className="nv-button tonal" href={portableUrl || setupUrl} target="_blank" rel="noreferrer">
+                Скачать
               </a>
             ) : (
-              <button className="nv-button is-disabled" type="button" disabled>
+              <button className="nv-button tonal is-disabled" type="button" disabled>
                 Сборка скоро
               </button>
             )}
-            <a className="nv-button tonal" href="#windows-install">
-              Установка
-            </a>
           </div>
         </div>
 
         <div className="hero-panel compact-panel">
           <article className="mini-stat">
-            <strong>{artifact?.version || 'Windows 10 / 11'}</strong>
+            <strong>{version || 'pending'}</strong>
             <span className="hero-support-text">
-              {artifact?.file_name || 'Windows GUI-клиент с единым аккаунтом и локальной проверкой файлов.'}
+              {manifestArtifact?.fileName || packageVariant?.file_name || 'Windows GUI build'}
             </span>
           </article>
         </div>
       </section>
 
       <section id="windows-install" className="section-block">
-        <div className="section-head section-head-tight">
-          <h2>Установка</h2>
-        </div>
+        <article className="content-card install-card install-card-wide install-card-unified">
+          <div className="install-card-head">
+            <div>
+              <h3>Установка</h3>
+            </div>
+            <div className="install-card-head-actions">
+              <span className="status-chip">{version || 'pending'}</span>
+            </div>
+          </div>
 
-        <article className="content-card chooser-card">
-          <div className="segmented-row" style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <div className="segmented-row install-mode-row">
             {(['setup', 'portable', 'powershell', 'cmd'] as WindowsInstallMode[]).map((item) => (
               <button
                 key={item}
                 type="button"
                 className={`segment${mode === item ? ' is-active' : ''}`}
-                style={{ flex: '0 0 auto', minWidth: 'unset', width: 'auto' }}
                 onClick={() => setMode(item)}
               >
                 {item === 'powershell' ? 'PowerShell' : item === 'cmd' ? 'CMD' : item[0].toUpperCase() + item.slice(1)}
               </button>
             ))}
           </div>
-        </article>
 
-        <div className="install-layout install-layout-static">
-          <article className="content-card install-card">
-            <div className="install-card-head">
+          <div className="install-mode-body">
+            <div className="install-card-head compact-head">
               <div>
                 <h3>{active.title}</h3>
-                <p>{active.description}</p>
               </div>
-            </div>
-
-            {mode === 'setup' || mode === 'portable' ? (
-              <div className="card-actions">
-                {active.downloadUrl ? (
+              <div className="install-card-head-actions">
+                {(mode === 'setup' || mode === 'portable') && active.downloadUrl ? (
                   <a className="nv-button" href={active.downloadUrl} target="_blank" rel="noreferrer">
                     {active.buttonLabel}
                   </a>
-                ) : (
+                ) : (mode === 'setup' || mode === 'portable') ? (
                   <button className="nv-button is-disabled" type="button" disabled>
                     {active.buttonLabel}
                   </button>
+                ) : (
+                  <button className="copy-button" type="button" onClick={handleCopy}>
+                    {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
+                  </button>
                 )}
               </div>
-            ) : (
+            </div>
+
+            {mode === 'powershell' || mode === 'cmd' ? (
               <div className="command-shell light-shell">
                 <pre>{active.command}</pre>
               </div>
-            )}
-
-            {mode === 'powershell' || mode === 'cmd' ? (
-              <div className="card-actions">
-                <button className="copy-button" type="button" onClick={handleCopy}>
-                  {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
-                </button>
-              </div>
             ) : null}
-          </article>
-        </div>
+          </div>
+        </article>
       </section>
     </div>
   );

@@ -41,29 +41,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Windows desktop GUI portable jar
+      - name: Build Windows desktop GUI distributable
         shell: pwsh
         run: |
-          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:portableDesktopJar --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:createReleaseDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
           "WINDOWS_GUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Package Windows archive
         shell: pwsh
         run: |
+          Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          $jar = Get-ChildItem -Path "desktop-app/build/libs" -Recurse -Filter "*portable*.jar" | Select-Object -First 1
-          if (-not $jar) { throw "Desktop portable jar not found under desktop-app/build/libs" }
-          New-Item -ItemType Directory -Force -Path dist\windows\gui\bin | Out-Null
-          New-Item -ItemType Directory -Force -Path dist\windows\gui\lib | Out-Null
-          Copy-Item $jar.FullName dist\windows\gui\lib\neuralv-desktop.jar -Force
-          @'
-          @echo off
-          setlocal
-          set "SCRIPT_DIR=%~dp0"
-          set "APP_HOME=%SCRIPT_DIR%.."
-          java -jar "%APP_HOME%\lib\neuralv-desktop.jar" %*
-          '@ | Set-Content -Path dist\windows\gui\bin\neuralv.bat -NoNewline
-          Compress-Archive -Path "dist\windows\gui\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
+          $appDir = Get-ChildItem -Path "desktop-app/build/compose/binaries" -Directory -Recurse |
+            Where-Object { $_.Name -eq "NeuralV" -and $_.FullName -match "main-release[\\\\/]app" } |
+            Select-Object -First 1
+          if (-not $appDir) { throw "Bundled Windows app directory not found under desktop-app/build/compose/binaries" }
+          Copy-Item $appDir.FullName dist\windows\NeuralV -Recurse -Force
+          Compress-Archive -Path dist\windows\NeuralV -DestinationPath dist\windows\neuralv-windows.zip -Force
 
       - name: Upload Windows build log
         if: always()

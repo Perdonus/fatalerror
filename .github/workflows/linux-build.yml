@@ -44,12 +44,12 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build Linux desktop GUI portable jar
+      - name: Build Linux desktop GUI distributable
         shell: bash
         run: |
           set -uo pipefail
           set +e
-          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:portableDesktopJar --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
+          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:createReleaseDistributable --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
           set -e
           echo "LINUX_GUI_BUILD_EXIT=$status" >> "$GITHUB_ENV"
@@ -58,19 +58,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/linux/gui/bin dist/linux/gui/lib
-          GUI_JAR="$(find desktop-app/build/libs -type f -name '*portable*.jar' | head -n 1)"
-          test -n "$GUI_JAR"
-          cp "$GUI_JAR" dist/linux/gui/lib/neuralv-desktop.jar
-          cat > dist/linux/gui/bin/neuralv <<'SH'
-          #!/bin/sh
-          set -eu
-          SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-          APP_HOME="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-          exec java -jar "$APP_HOME/lib/neuralv-desktop.jar" "$@"
-          SH
-          chmod +x dist/linux/gui/bin/neuralv
-          tar -C dist/linux/gui -czf dist/linux/neuralv-linux.tar.gz .
+          rm -rf dist/linux
+          mkdir -p dist/linux
+          APP_DIR="$(find desktop-app/build/compose/binaries -type d -name 'NeuralV' -path '*main-release/app/*' | head -n 1)"
+          test -n "$APP_DIR"
+          cp -R "$APP_DIR" dist/linux/NeuralV
+          tar -C dist/linux -czf dist/linux/neuralv-linux.tar.gz NeuralV
 
       - name: Upload Linux GUI log
         if: always()

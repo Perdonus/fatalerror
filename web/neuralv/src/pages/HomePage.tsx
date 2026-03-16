@@ -1,152 +1,156 @@
-import { Link } from 'react-router-dom';
-import { getArtifact, isArtifactReady } from '../lib/manifest';
+import { getArtifact, isArtifactReady, ReleaseArtifact } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
-type PlatformCard = {
-  key: 'android' | 'windows' | 'linux';
-  route: string;
-  title: string;
-  subtitle: string;
-  hint: string;
-  cta: string;
-};
+const productPoints = [
+  'Один аккаунт для телефона, ноутбука и рабочего ПК.',
+  'Понятные проверки без перегруженного интерфейса.',
+  'Отдельные версии для Android, Windows и Linux.'
+];
 
-const platformCards: PlatformCard[] = [
-  {
-    key: 'android',
-    route: '/android',
-    title: 'Android',
-    subtitle: 'Проверка приложений и фоновая защита на телефоне.',
-    hint: 'Android 10+',
-    cta: 'Открыть Android'
-  },
-  {
-    key: 'windows',
-    route: '/windows',
-    title: 'Windows',
-    subtitle: 'Проверка EXE и DLL, плюс фоновый контроль на ПК.',
-    hint: 'Windows 10/11',
-    cta: 'Открыть Windows'
-  },
-  {
-    key: 'linux',
-    route: '/linux',
-    title: 'Linux',
-    subtitle: 'GUI для рабочего стола и CLI через nv.',
-    hint: 'x64 desktop',
-    cta: 'Открыть Linux'
+const baseUrl = import.meta.env.BASE_URL;
+const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
+
+// Помести реальные скриншоты в web/neuralv/public/media/screenshots/
+// и пропиши src в формате `${baseUrl}media/screenshots/android-home.png`.
+// Если src пустой, на сайте останется аккуратная заглушка.
+const screenshotSlots = [
+  { title: 'Android', caption: 'Главный экран', src: '' },
+  { title: 'Windows', caption: 'Проверка файлов', src: '' },
+  { title: 'Linux', caption: 'GUI и CLI', src: '' }
+];
+
+function DownloadButton({ artifact, label, disabledLabel }: { artifact?: ReleaseArtifact; label: string; disabledLabel: string }) {
+  const ready = isArtifactReady(artifact);
+
+  if (ready && artifact?.downloadUrl) {
+    return (
+      <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">
+        {label}
+      </a>
+    );
   }
-];
 
-const quickPoints = [
-  {
-    title: 'Один аккаунт',
-    text: 'Один вход для телефона, ПК и Linux.'
-  },
-  {
-    title: 'Локально там, где это быстро',
-    text: 'Базовые проверки идут сразу на устройстве.'
-  },
-  {
-    title: 'Сервер там, где нужен тяжёлый проход',
-    text: 'Глубокие сценарии не грузят твой девайс зря.'
-  }
-];
-
-const starterSteps = [
-  'Выбери свою платформу.',
-  'Скачай нужную версию.',
-  'Войди и запусти проверку.'
-];
+  return (
+    <button className="nv-button is-disabled" type="button" disabled>
+      {disabledLabel}
+    </button>
+  );
+}
 
 export function HomePage() {
   const manifestState = useReleaseManifest();
+  const androidArtifact = getArtifact(manifestState.manifest, 'android');
+  const windowsArtifact = getArtifact(manifestState.manifest, 'windows');
+  const linuxGuiArtifact = getArtifact(manifestState.manifest, 'linux');
+  const linuxShellArtifact = getArtifact(manifestState.manifest, 'shell') ?? getArtifact(manifestState.manifest, 'nv');
 
   return (
     <div className="page-stack">
       <section className="hero-card home-hero">
-        <div className="hero-copy">
-          <span className="section-kicker">NeuralV</span>
-          <h1>Спокойная защита без перегруженного сайта.</h1>
+        <div className="hero-copy hero-copy-wide">
+          <h1>NeuralV для телефона, ноутбука и рабочего ПК.</h1>
           <p>
-            Тут только главное: выбрать платформу, скачать свою версию и быстро понять, что тебе подойдёт.
+            Выбираешь свою платформу, скачиваешь нужную версию и сразу переходишь к проверке.
           </p>
           <div className="hero-actions">
-            <a className="nv-button" href="#downloads">Выбрать версию</a>
-            <Link className="nv-button tonal" to="/linux">Linux через nv</Link>
+            <a className="nv-button" href="#downloads">Скачать</a>
+            <a className="nv-button tonal" href="#overview">О продукте</a>
           </div>
         </div>
+      </section>
 
-        <div className="hero-panel compact-panel">
-          <div className="mini-stat">
-            <span className="mini-stat-label">Сейчас на сайте</span>
-            <strong>Android, Windows, Linux</strong>
+      <section id="overview" className="showcase-band">
+        <article className="content-card showcase-card">
+          <div className="showcase-copy">
+            <h2>Одна система, несколько устройств.</h2>
+            <p>
+              NeuralV собирает под одной крышей телефон, настольный клиент и Linux-инструменты. Всё коротко, понятно и без перегруженных инструкций.
+            </p>
+            <ul className="showcase-points">
+              {productPoints.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ul>
           </div>
-          <div className="mini-stat">
-            <span className="mini-stat-label">Для кого</span>
-            <strong>Телефон, ПК и терминал</strong>
+
+          <div className="showcase-visual">
+            <div className="device-glow device-glow-a" aria-hidden="true" />
+            <div className="device-glow device-glow-b" aria-hidden="true" />
+            <img className="device-showcase" src={deviceShowcaseUrl} alt="Телефон, ноутбук и монитор с NeuralV" />
           </div>
-          <div className="mini-stat">
-            <span className="mini-stat-label">Главный принцип</span>
-            <strong>Меньше шума, больше понятных действий</strong>
+        </article>
+
+        <article className="content-card screenshot-card">
+          <div className="screenshot-head">
+            <h3>Скриншоты интерфейса</h3>
+            <p>Здесь можно показать Android, Windows и Linux рядом, без отдельной галереи.</p>
           </div>
-        </div>
+
+          <div className="screenshot-grid">
+            {screenshotSlots.map((slot) => (
+              <div key={slot.title} className="shot-card">
+                {slot.src ? (
+                  <img src={slot.src} alt={`${slot.title} — ${slot.caption}`} />
+                ) : (
+                  <div className="shot-placeholder" aria-hidden="true">
+                    <span>{slot.title}</span>
+                  </div>
+                )}
+                <div className="shot-meta">
+                  <strong>{slot.title}</strong>
+                  <span>{slot.caption}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
       </section>
 
       <section id="downloads" className="section-block">
-        <div className="section-head">
-          <span className="section-kicker">Скачать</span>
-          <h2>Выбери свою версию</h2>
+        <div className="section-head section-head-tight">
+          <h2>Скачать свою версию</h2>
         </div>
 
         <div className="card-grid three-up">
-          {platformCards.map((card) => {
-            const artifact = getArtifact(manifestState.manifest, card.key);
-            const ready = isArtifactReady(artifact);
+          <article className="content-card platform-card">
+            <div className="platform-card-head">
+              <div>
+                <h3>Android</h3>
+                <p>Проверка приложений и фоновые сценарии на телефоне.</p>
+              </div>
+            </div>
+            <div className="platform-meta">Android 10 и новее</div>
+            <div className="card-actions">
+              <DownloadButton artifact={androidArtifact} label="Скачать" disabledLabel="APK скоро" />
+            </div>
+          </article>
 
-            return (
-              <article key={card.key} className="content-card platform-card">
-                <div className="platform-card-head">
-                  <div>
-                    <h3>{card.title}</h3>
-                    <p>{card.subtitle}</p>
-                  </div>
-                  <span className={`status-dot${ready ? ' is-ready' : ''}`}>{ready ? 'Доступно' : 'Скоро'}</span>
-                </div>
-                <div className="platform-meta">{card.hint}</div>
-                <div className="card-actions">
-                  <Link className="nv-button tonal" to={card.route}>{card.cta}</Link>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
+          <article className="content-card platform-card">
+            <div className="platform-card-head">
+              <div>
+                <h3>Windows</h3>
+                <p>Настольный клиент для файлов, автозапуска и фоновой защиты.</p>
+              </div>
+            </div>
+            <div className="platform-meta">Windows 10 и 11</div>
+            <div className="card-actions">
+              <DownloadButton artifact={windowsArtifact} label="Скачать" disabledLabel="Сборка скоро" />
+            </div>
+          </article>
 
-      <section className="section-block">
-        <div className="card-grid three-up compact-grid">
-          {quickPoints.map((point) => (
-            <article key={point.title} className="content-card compact-card">
-              <h3>{point.title}</h3>
-              <p>{point.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="section-block slim-section">
-        <div className="section-head">
-          <span className="section-kicker">Старт</span>
-          <h2>Как начать</h2>
-        </div>
-
-        <div className="step-row">
-          {starterSteps.map((step, index) => (
-            <article key={step} className="content-card step-card">
-              <span className="step-index">0{index + 1}</span>
-              <p>{step}</p>
-            </article>
-          ))}
+          <article className="content-card platform-card linux-home-card">
+            <div className="platform-card-head">
+              <div>
+                <h3>Linux</h3>
+                <p>GUI для рабочего стола и CLI для терминала.</p>
+              </div>
+            </div>
+            <div className="platform-meta">x64 desktop и серверные сценарии</div>
+            <div className="card-actions card-actions-stacked">
+              <DownloadButton artifact={linuxGuiArtifact} label="Скачать GUI" disabledLabel="GUI скоро" />
+              <DownloadButton artifact={linuxShellArtifact} label="Скачать CLI" disabledLabel="CLI скоро" />
+            </div>
+          </article>
         </div>
       </section>
     </div>

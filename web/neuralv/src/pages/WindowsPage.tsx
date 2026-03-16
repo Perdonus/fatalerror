@@ -3,23 +3,23 @@ import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
 const features = [
   {
-    title: 'Проверка EXE и DLL',
-    text: 'Подходит для обычного ПК, где важно быстро понять, что за файл перед тобой.'
+    title: 'Проверка файлов',
+    text: 'Для EXE, DLL и обычных пользовательских сценариев.'
   },
   {
-    title: 'Фоновый контроль',
-    text: 'Следит за важными зонами и подхватывает подозрительные события без ручной рутины.'
+    title: 'Фоновый режим',
+    text: 'Контроль важных зон без перегруженного интерфейса.'
   },
   {
-    title: 'Серверный фильтр',
-    text: 'Если случай спорный, сервер дочищает вывод до понятного результата.'
+    title: 'Один аккаунт',
+    text: 'Тот же вход, что на Android и Linux.'
   }
 ];
 
 const installSteps = [
-  'Скачай Windows-версию и распакуй её в удобную папку.',
-  'Запусти клиент и войди тем же аккаунтом, что на Android или Linux.',
-  'Включи фоновую защиту, если нужен постоянный контроль.'
+  'Скачай архив или установщик.',
+  'Открой приложение и войди в аккаунт.',
+  'Запусти первую проверку или включи фоновой режим.'
 ];
 
 export function WindowsPage() {
@@ -31,28 +31,23 @@ export function WindowsPage() {
     <div className="page-stack">
       <section className="hero-card platform-hero">
         <div className="hero-copy">
-          <span className="section-kicker">Windows</span>
-          <h1>Спокойная проверка файлов и автозапуска на ПК.</h1>
+          <h1>NeuralV для Windows.</h1>
           <p>
-            NeuralV для Windows нужен там, где хочется понятный GUI, нормальный фоновой режим и минимум лишнего текста.
+            Обычное настольное приложение для проверки файлов и фонового контроля на ПК.
           </p>
           <div className="hero-actions">
             {ready && artifact?.downloadUrl ? (
               <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать Windows</a>
             ) : (
-              <button className="nv-button is-disabled" type="button" disabled>Windows-версия скоро появится</button>
+              <button className="nv-button is-disabled" type="button" disabled>Сборка скоро</button>
             )}
           </div>
         </div>
 
-        <div className="hero-panel">
+        <div className="hero-panel compact-panel">
           <div className="mini-stat">
-            <span className="mini-stat-label">Подходит для</span>
-            <strong>Windows 10 и 11</strong>
-          </div>
-          <div className="mini-stat">
-            <span className="mini-stat-label">Лучше всего для</span>
-            <strong>EXE, DLL и фонового контроля</strong>
+            <strong>Windows 10 / 11</strong>
+            <span className="hero-support-text">GUI-клиент для обычного рабочего стола.</span>
           </div>
         </div>
       </section>
@@ -68,19 +63,27 @@ export function WindowsPage() {
         </div>
       </section>
 
-      <section className="section-block slim-section">
-        <div className="section-head">
-          <span className="section-kicker">Старт</span>
-          <h2>Как начать</h2>
+      <section className="section-block">
+        <div className="section-head section-head-tight">
+          <h2>Установка</h2>
         </div>
 
-        <div className="step-row">
-          {installSteps.map((step, index) => (
-            <article key={step} className="content-card step-card">
-              <span className="step-index">0{index + 1}</span>
-              <p>{step}</p>
-            </article>
-          ))}
+        <div className="install-layout install-layout-static">
+          <article className="content-card chooser-card">
+            <h3>Что внутри</h3>
+            <p>Скачиваешь сборку, входишь в аккаунт и сразу переходишь к проверке.</p>
+          </article>
+
+          <article className="content-card install-card">
+            <div className="install-card-head simple-head">
+              <div>
+                <h3>Три шага</h3>
+              </div>
+            </div>
+            <div className="command-shell light-shell">
+              <pre>{installSteps.map((step, index) => `${index + 1}. ${step}`).join('\n')}</pre>
+            </div>
+          </article>
         </div>
       </section>
     </div>

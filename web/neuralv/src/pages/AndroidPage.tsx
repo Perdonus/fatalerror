@@ -3,23 +3,23 @@ import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
 const features = [
   {
-    title: 'Быстрая проверка',
-    text: 'Проверка приложений и новых установок прямо на телефоне.'
+    title: 'Проверка приложений',
+    text: 'Быстрый старт прямо на телефоне.'
   },
   {
     title: 'Фоновая защита',
-    text: 'NeuralV остаётся рядом и ловит важные события без лишнего шума.'
+    text: 'NeuralV остаётся рядом и реагирует на важные события.'
   },
   {
-    title: 'Глубокий серверный проход',
-    text: 'Тяжёлый анализ уходит на сервер, а на экране остаётся только итог.'
+    title: 'История и аккаунт',
+    text: 'Один вход для телефона и остальных версий.'
   }
 ];
 
 const installSteps = [
-  'Скачай APK и открой его на телефоне.',
-  'Разреши установку, если Android это попросит.',
-  'Запусти NeuralV и войди, если нужна история и серверные проверки.'
+  'Скачай APK на телефон.',
+  'Разреши установку, если Android попросит.',
+  'Открой NeuralV и войди в аккаунт.'
 ];
 
 export function AndroidPage() {
@@ -31,29 +31,24 @@ export function AndroidPage() {
     <div className="page-stack">
       <section className="hero-card platform-hero">
         <div className="hero-copy">
-          <span className="section-kicker">Android</span>
-          <h1>Проверка приложений на телефоне без тяжёлой витрины.</h1>
+          <h1>NeuralV для Android.</h1>
           <p>
-            Оставь быстрые действия на устройстве, а сложную перепроверку — серверу. Так проще и быстрее.
+            Проверка приложений, история и защита на телефоне без тяжёлой витрины и лишних действий.
           </p>
           <div className="hero-actions">
             {ready && artifact?.downloadUrl ? (
               <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать APK</a>
             ) : (
-              <button className="nv-button is-disabled" type="button" disabled>APK скоро появится</button>
+              <button className="nv-button is-disabled" type="button" disabled>APK скоро</button>
             )}
             <a className="nv-button tonal" href="#android-install">Как установить</a>
           </div>
         </div>
 
-        <div className="hero-panel">
+        <div className="hero-panel compact-panel">
           <div className="mini-stat">
-            <span className="mini-stat-label">Подходит для</span>
-            <strong>Android 10 и новее</strong>
-          </div>
-          <div className="mini-stat">
-            <span className="mini-stat-label">Лучше всего для</span>
-            <strong>Проверки установленных и новых приложений</strong>
+            <strong>Android 10+</strong>
+            <span className="hero-support-text">Подходит для современных телефонов и планшетов.</span>
           </div>
         </div>
       </section>
@@ -69,19 +64,27 @@ export function AndroidPage() {
         </div>
       </section>
 
-      <section id="android-install" className="section-block slim-section">
-        <div className="section-head">
-          <span className="section-kicker">Установка</span>
-          <h2>Три простых шага</h2>
+      <section id="android-install" className="section-block">
+        <div className="section-head section-head-tight">
+          <h2>Установка</h2>
         </div>
 
-        <div className="step-row">
-          {installSteps.map((step, index) => (
-            <article key={step} className="content-card step-card">
-              <span className="step-index">0{index + 1}</span>
-              <p>{step}</p>
-            </article>
-          ))}
+        <div className="install-layout install-layout-static">
+          <article className="content-card chooser-card">
+            <h3>Что нужно</h3>
+            <p>Обычная установка APK. Без длинного мастера и без отдельных утилит.</p>
+          </article>
+
+          <article className="content-card install-card">
+            <div className="install-card-head simple-head">
+              <div>
+                <h3>Три шага</h3>
+              </div>
+            </div>
+            <div className="command-shell light-shell">
+              <pre>{installSteps.map((step, index) => `${index + 1}. ${step}`).join('\n')}</pre>
+            </div>
+          </article>
         </div>
       </section>
     </div>

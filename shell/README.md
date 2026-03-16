@@ -1,27 +1,48 @@
 # NeuralV Linux shell
 
-Linux shell/TUI flow for NeuralV now starts with `nv`.
+NeuralV shell — лёгкий Linux-клиент для общего backend NeuralV. Он даёт полноэкранный TUI, единый вход и простой установочный поток через `nv`.
 
-## Bootstrap nv
+## Установить `nv`
 
 ```sh
 curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh
 ```
 
-## Install NeuralV
+## Установить NeuralV
 
 ```sh
 nv install neuralv@latest
 ```
 
-## Common commands
+## Открыть TUI
 
 ```sh
-nv install neuralv@latest
-nv install neuralv@<version>
-nv uninstall neuralv
-nv -v
+neuralv
+```
+
+Полезные флаги:
+
+```sh
+neuralv --low-motion
+neuralv --motion
 neuralv -v
 ```
 
-`nv` installs the NeuralV shell client into `~/.local/bin`. After install, run `neuralv` to open the TUI client.
+## Что даёт TUI
+
+- единый вход через `/basedata`
+- лёгкий полноэкранный интерфейс для Linux-терминалов
+- low-motion режим для SSH-сессий и слабых машин
+- серверную проверку хоста с живым статусом и отменой
+- хранение последнего завершённого результата прямо в потоке сессии
+
+## Основные команды `nv`
+
+```sh
+nv install neuralv@latest
+nv install neuralv@1.3.1
+nv uninstall neuralv
+nv -v
+```
+
+`nv` ставит `neuralv`, `neuralv-shell` и, когда он опубликован, `neuralvd` в `~/.local/bin`.

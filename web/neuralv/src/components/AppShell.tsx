@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 
-type ThemePreference = 'system' | 'light' | 'dark';
-
-type ThemeOption = {
-  value: ThemePreference;
-  label: string;
-};
+type ThemePreference = 'light' | 'dark';
 
 const THEME_STORAGE_KEY = 'neuralv-site-theme';
 const MEDIA_QUERY = '(prefers-color-scheme: dark)';
@@ -18,22 +13,16 @@ const navItems = [
   { to: '/linux', label: 'Linux' }
 ];
 
-const themeOptions: ThemeOption[] = [
-  { value: 'system', label: 'Авто' },
-  { value: 'light', label: 'Светлая' },
-  { value: 'dark', label: 'Тёмная' }
-];
-
-function readStoredPreference(): ThemePreference {
+function readStoredPreference(): ThemePreference | null {
   if (typeof window === 'undefined') {
-    return 'system';
+    return null;
   }
 
   const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+  return stored === 'light' || stored === 'dark' ? stored : null;
 }
 
-function getSystemTheme(): 'light' | 'dark' {
+function getSystemTheme(): ThemePreference {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     return 'light';
   }
@@ -41,9 +30,35 @@ function getSystemTheme(): 'light' | 'dark' {
   return window.matchMedia(MEDIA_QUERY).matches ? 'dark' : 'light';
 }
 
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+      <path
+        d="M12 1.75v3M12 19.25v3M4.75 4.75l2.1 2.1M17.15 17.15l2.1 2.1M1.75 12h3M19.25 12h3M4.75 19.25l2.1-2.1M17.15 6.85l2.1-2.1"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M15.6 2.55a8.95 8.95 0 1 0 5.85 15.7 8.35 8.35 0 0 1-3.95 1 8.95 8.95 0 0 1-8.95-8.95 8.37 8.37 0 0 1 7.05-8.25Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 export function AppShell() {
-  const [themePreference, setThemePreference] = useState<ThemePreference>(() => readStoredPreference());
-  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(() => getSystemTheme());
+  const [themePreference, setThemePreference] = useState<ThemePreference | null>(() => readStoredPreference());
+  const [systemTheme, setSystemTheme] = useState<ThemePreference>(() => getSystemTheme());
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -66,10 +81,7 @@ export function AppShell() {
     return () => media.removeListener(handleChange);
   }, []);
 
-  const resolvedTheme = useMemo(
-    () => (themePreference === 'system' ? systemTheme : themePreference),
-    [systemTheme, themePreference]
-  );
+  const resolvedTheme = useMemo(() => themePreference ?? systemTheme, [systemTheme, themePreference]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -78,15 +90,20 @@ export function AppShell() {
 
     const root = document.documentElement;
     root.dataset.theme = resolvedTheme;
-    root.dataset.themePreference = themePreference;
+    root.dataset.themePreference = themePreference ?? 'system';
     root.style.colorScheme = resolvedTheme;
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+      if (themePreference) {
+        window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+      } else {
+        window.localStorage.removeItem(THEME_STORAGE_KEY);
+      }
     }
   }, [resolvedTheme, themePreference]);
 
-  const themeLabel = themeOptions.find((option) => option.value === themePreference)?.label ?? 'Авто';
+  const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
+  const themeLabel = resolvedTheme === 'dark' ? 'Тёмная тема' : 'Светлая тема';
 
   return (
     <div className="app-shell">
@@ -98,7 +115,6 @@ export function AppShell() {
             </span>
             <span className="brand-text">
               <span className="brand-name">NeuralV</span>
-              <span className="brand-tagline">Проверка для Android, Windows и Linux</span>
             </span>
           </a>
 
@@ -115,22 +131,20 @@ export function AppShell() {
             ))}
           </nav>
 
-          <div className="theme-picker" aria-label="Тема сайта">
-            <span className="theme-current">Тема: {themeLabel}</span>
-            <div className="theme-options" role="group" aria-label="Выбор темы">
-              {themeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`theme-pill${themePreference === option.value ? ' is-active' : ''}`}
-                  aria-pressed={themePreference === option.value}
-                  onClick={() => setThemePreference(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <button
+            type="button"
+            className="theme-toggle"
+            aria-label={`${themeLabel}. Переключить на ${nextTheme === 'dark' ? 'тёмную' : 'светлую'}.`}
+            title={`${themeLabel}. Переключить.`}
+            onClick={() => setThemePreference(nextTheme)}
+          >
+            <span className={`theme-icon-sun${resolvedTheme === 'light' ? ' is-active' : ''}`}>
+              <SunIcon />
+            </span>
+            <span className={`theme-icon-moon${resolvedTheme === 'dark' ? ' is-active' : ''}`}>
+              <MoonIcon />
+            </span>
+          </button>
         </div>
       </header>
 
@@ -139,15 +153,13 @@ export function AppShell() {
       </main>
 
       <footer className="site-footer">
-        <div>
-          <strong>NeuralV</strong>
-          <p>Скачал, вошёл, проверил.</p>
-        </div>
-        <div className="site-footer-links">
+        <nav className="site-footer-links" aria-label="Навигация внизу сайта">
+          <a href="/neuralv/">Главная</a>
           <a href="/neuralv/android">Android</a>
           <a href="/neuralv/windows">Windows</a>
           <a href="/neuralv/linux">Linux</a>
-        </div>
+        </nav>
+        <p className="site-footer-copy">NeuralV © 2026</p>
       </footer>
     </div>
   );

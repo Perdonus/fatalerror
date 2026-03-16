@@ -1,3 +1,5 @@
+const path = require('path');
+
 const SUPPORTED_PLATFORMS = new Set(['WINDOWS', 'LINUX']);
 const SUPPORTED_MODES = new Set(['ON_DEMAND', 'SELECTIVE', 'ARTIFACT', 'RESIDENT_EVENT', 'QUICK', 'FULL']);
 const HARD_SIGNAL_TYPES = new Set([
@@ -29,103 +31,41 @@ function normalizeStringList(value, limit = 32, maxLength = 120) {
     )).slice(0, limit);
 }
 
+function normalizePathEntry(value, maxLength = 700) {
+    const normalized = String(value || '').trim().replace(/^["']+|["']+$/g, '');
+    return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function normalizePathList(value, limit = 256, maxLength = 700) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const result = [];
+    const seen = new Set();
+    for (const item of value) {
+        const candidate = typeof item === 'string'
+            ? normalizePathEntry(item, maxLength)
+            : normalizePathEntry(
+                item?.path || item?.root || item?.dir || item?.directory || item?.location || item?.mount || item?.mountPoint,
+                maxLength
+            );
+        if (!candidate) continue;
+        const key = candidate.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(candidate);
+        if (result.length >= limit) break;
+    }
+    return result;
+}
+
 function normalizeObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
 function normalizeBoolean(value) {
     return value === true || value === 'true' || value === 1 || value === '1';
-}
-
-function normalizeDesktopScanPayload(payload) {
-    const source = normalizeObject(payload);
-    const artifactMetadata = normalizeObject(source.artifact_metadata || source.artifactMetadata);
-    const localFindings = Array.isArray(source.local_findings || source.localFindings)
-        ? (source.local_findings || source.localFindings)
-            .slice(0, 64)
-            .map((item) => {
-                if (item && typeof item === 'object') {
-                    return {
-                        type: normalizeString(item.type, 64) || 'local_signal',
-                        severity: normalizeSeverity(item.severity),
-                        title: normalizeString(item.title, 160) || 'Локальный сигнал',
-                        detail: normalizeString(item.detail, 500) || '',
-                        source: normalizeString(item.source, 120) || 'Local Desktop Engine',
-                        score: normalizeScore(item.score),
-                        evidence: normalizeObject(item.evidence)
-                    };
-                }
-                const text = normalizeString(item, 240);
-                if (!text) return null;
-                return {
-                    type: 'local_signal',
-                    severity: 'low',
-                    title: 'Локальный сигнал',
-                    detail: text,
-                    source: 'Local Desktop Engine',
-                    score: 6,
-                    evidence: {}
-                };
-            })
-            .filter(Boolean)
-        : [];
-
-    return {
-        platform: normalizePlatform(source.platform),
-        mode: normalizeMode(source.mode),
-        artifactKind: normalizeArtifactKind(source.artifact_kind || source.artifactKind),
-        artifactMetadata: {
-            targetName: normalizeString(artifactMetadata.target_name || artifactMetadata.targetName || source.target_name || source.targetName),
-            targetPath: normalizeString(artifactMetadata.target_path || artifactMetadata.targetPath || source.target_path || source.targetPath, 512),
-            fileName: normalizeString(artifactMetadata.file_name || artifactMetadata.fileName, 255),
-            mimeType: normalizeString(artifactMetadata.mime_type || artifactMetadata.mimeType, 120),
-            originPath: normalizeString(artifactMetadata.origin_path || artifactMetadata.originPath, 512),
-            packageManager: normalizeString(artifactMetadata.package_manager || artifactMetadata.packageManager, 64),
-            publisher: normalizeString(artifactMetadata.publisher, 255),
-            signer: normalizeString(artifactMetadata.signer, 255),
-            signerTrusted: normalizeBoolean(artifactMetadata.signer_trusted || artifactMetadata.signerTrusted),
-            executable: normalizeBoolean(artifactMetadata.executable),
-            recentlyDropped: normalizeBoolean(artifactMetadata.recently_dropped || artifactMetadata.recentlyDropped),
-            fromDownloads: normalizeBoolean(artifactMetadata.from_downloads || artifactMetadata.fromDownloads),
-            fromTemp: normalizeBoolean(artifactMetadata.from_temp || artifactMetadata.fromTemp),
-            runsAsRoot: normalizeBoolean(artifactMetadata.runs_as_root || artifactMetadata.runsAsRoot),
-            hasSuid: normalizeBoolean(artifactMetadata.has_suid || artifactMetadata.hasSuid),
-            writableLauncher: normalizeBoolean(artifactMetadata.writable_launcher || artifactMetadata.writableLauncher),
-            autorunLocations: normalizeStringList(artifactMetadata.autorun_locations || artifactMetadata.autorunLocations, 24, 255),
-            persistenceSurfaces: normalizeStringList(artifactMetadata.persistence_surfaces || artifactMetadata.persistenceSurfaces, 24, 255),
-            suspiciousImports: normalizeStringList(artifactMetadata.suspicious_imports || artifactMetadata.suspiciousImports, 40, 64),
-            capabilities: normalizeStringList(artifactMetadata.capabilities, 24, 64),
-            packageSources: normalizeStringList(artifactMetadata.package_sources || artifactMetadata.packageSources, 24, 64),
-            desktopEntries: normalizeStringList(artifactMetadata.desktop_entries || artifactMetadata.desktopEntries, 24, 255),
-            uploadRequired: normalizeBoolean(artifactMetadata.upload_required || artifactMetadata.uploadRequired || source.upload_required || source.uploadRequired),
-            fileSizeBytes: normalizePositiveInt(artifactMetadata.file_size_bytes || artifactMetadata.fileSizeBytes),
-            entropy: normalizeEntropy(artifactMetadata.entropy),
-            notes: normalizeString(artifactMetadata.notes, 500)
-        },
-        sha256: normalizeSha256(source.sha256 || artifactMetadata.sha256),
-        localFindings,
-        localSummary: normalizeObject(source.local_summary || source.localSummary),
-        externalRefs: normalizeObject(source.external_refs || source.externalRefs),
-        raw: source
-    };
-}
-
-function normalizePlatform(value) {
-    const normalized = String(value || '').trim().toUpperCase();
-    return SUPPORTED_PLATFORMS.has(normalized) ? normalized : null;
-}
-
-function normalizeMode(value) {
-    const normalized = String(value || '').trim().toUpperCase();
-    if (!SUPPORTED_MODES.has(normalized)) {
-        return 'FULL';
-    }
-    return normalized;
-}
-
-function normalizeArtifactKind(value) {
-    const normalized = String(value || '').trim().toUpperCase();
-    return normalized ? normalized.slice(0, 32) : 'UNKNOWN';
 }
 
 function normalizeSeverity(value) {
@@ -163,6 +103,398 @@ function normalizeEntropy(value) {
 function normalizeSha256(value) {
     const normalized = String(value || '').trim().toLowerCase();
     return /^[a-f0-9]{64}$/.test(normalized) ? normalized : null;
+}
+
+function uniqueStrings(values, limit = 256, maxLength = 700) {
+    const result = [];
+    const seen = new Set();
+    for (const value of Array.isArray(values) ? values : []) {
+        const normalized = normalizeString(value, maxLength);
+        if (!normalized) continue;
+        const key = normalized.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(normalized);
+        if (result.length >= limit) break;
+    }
+    return result;
+}
+
+function basenameAnyPath(value) {
+    const normalized = String(value || '').trim();
+    const parts = normalized.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] || normalized;
+}
+
+function normalizePackageInventory(value, limit = 1024) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const result = [];
+    const seen = new Set();
+    for (const item of value) {
+        let entry = null;
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+            const itemPath = normalizePathEntry(
+                item.path || item.install_path || item.installPath || item.location || item.binary || item.executable,
+                700
+            );
+            const installRoot = normalizePathEntry(
+                item.install_root || item.installRoot || item.directory || item.dir,
+                700
+            );
+            const name = normalizeString(
+                item.name || item.package_name || item.packageName || item.display_name || item.displayName || basenameAnyPath(itemPath),
+                255
+            );
+            if (!name && !itemPath && !installRoot) continue;
+            entry = {
+                name: name || 'package',
+                version: normalizeString(item.version || item.package_version || item.packageVersion, 120),
+                path: itemPath,
+                source: normalizeString(item.source || item.manager || item.package_manager || item.packageManager || item.origin, 120),
+                install_root: installRoot,
+                publisher: normalizeString(item.publisher || item.vendor, 255),
+                system_managed: normalizeBoolean(item.system_managed || item.systemManaged || item.is_system_managed || item.isSystemManaged)
+            };
+        } else {
+            const name = normalizeString(item, 255);
+            if (!name) continue;
+            entry = {
+                name,
+                version: null,
+                path: null,
+                source: null,
+                install_root: null,
+                publisher: null,
+                system_managed: false
+            };
+        }
+
+        const key = [
+            String(entry.name || '').toLowerCase(),
+            String(entry.version || '').toLowerCase(),
+            String(entry.path || '').toLowerCase(),
+            String(entry.install_root || '').toLowerCase(),
+            String(entry.source || '').toLowerCase()
+        ].join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(entry);
+        if (result.length >= limit) break;
+    }
+    return result;
+}
+
+function normalizePlatform(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    return SUPPORTED_PLATFORMS.has(normalized) ? normalized : null;
+}
+
+function normalizeMode(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (!SUPPORTED_MODES.has(normalized)) {
+        return 'FULL';
+    }
+    return normalized;
+}
+
+function normalizeArtifactKind(value) {
+    const normalized = String(value || '').trim().toUpperCase();
+    return normalized ? normalized.slice(0, 32) : 'UNKNOWN';
+}
+
+function looksLikeWindowsPath(value) {
+    return /^[A-Za-z]:[\\/]/.test(String(value || '').trim()) || String(value || '').startsWith('\\\\');
+}
+
+function looksLikeFilePath(value) {
+    const base = basenameAnyPath(value);
+    return /\.[a-z0-9]{1,8}$/i.test(base);
+}
+
+function addPathAncestry(value, platform, add, depth = 4) {
+    const normalized = normalizePathEntry(value, 700);
+    if (!normalized) return;
+
+    const isWindows = platform === 'WINDOWS' || looksLikeWindowsPath(normalized);
+    const pathApi = isWindows ? path.win32 : path.posix;
+    const parsed = pathApi.parse(normalized);
+    let current = looksLikeFilePath(normalized) ? parsed.dir : normalized.replace(/[\\/]+$/, '');
+
+    while (current && depth > 0) {
+        add(current);
+        const parent = pathApi.dirname(current);
+        if (!parent || parent === current) break;
+        current = parent;
+        depth -= 1;
+    }
+
+    if (parsed.root) {
+        add(parsed.root);
+    }
+}
+
+function defaultCoverageRoots(platform) {
+    if (platform === 'WINDOWS') {
+        return [
+            'C:\\',
+            'C:\\Program Files',
+            'C:\\Program Files (x86)',
+            'C:\\ProgramData',
+            'C:\\Users\\Public',
+            '%USERPROFILE%\\Desktop',
+            '%USERPROFILE%\\Downloads',
+            '%LOCALAPPDATA%',
+            '%LOCALAPPDATA%\\Programs',
+            '%APPDATA%',
+            '%TEMP%',
+            'C:\\Users\\%USERNAME%\\AppData\\Local\\Programs',
+            'C:\\Users\\%USERNAME%\\AppData\\Local\\Microsoft\\WindowsApps'
+        ];
+    }
+
+    return [
+        '/',
+        '/bin',
+        '/sbin',
+        '/usr/bin',
+        '/usr/sbin',
+        '/usr/local/bin',
+        '/usr/local/sbin',
+        '/opt',
+        '/usr/lib',
+        '/usr/libexec',
+        '/usr/share/applications',
+        '/usr/local/share/applications',
+        '/var/lib',
+        '/var/lib/flatpak',
+        '/var/lib/flatpak/app',
+        '/var/lib/snapd/snap',
+        '/snap',
+        '/home',
+        '/mnt',
+        '/media',
+        '~/.local/bin',
+        '~/bin',
+        '~/.local/share/applications',
+        '~/.config/autostart',
+        '~/Downloads',
+        '/tmp',
+        '/var/tmp',
+        '/etc/systemd/system'
+    ];
+}
+
+function deriveRecommendedScanRoots(platform, metadata) {
+    const roots = [];
+    const seen = new Set();
+    const add = (value) => {
+        const normalized = normalizePathEntry(value, 700);
+        if (!normalized) return;
+        const key = normalized.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        roots.push(normalized);
+    };
+
+    defaultCoverageRoots(platform).forEach(add);
+
+    [
+        metadata.targetPath,
+        metadata.originPath,
+        ...(metadata.installRoots || []),
+        ...(metadata.scanRoots || [])
+    ].forEach((entry) => addPathAncestry(entry, platform, add, 4));
+
+    (metadata.candidatePaths || []).slice(0, 256).forEach((entry) => addPathAncestry(entry, platform, add, 3));
+    (metadata.packageInventory || []).slice(0, 256).forEach((entry) => {
+        addPathAncestry(entry.path, platform, add, 3);
+        addPathAncestry(entry.install_root, platform, add, 3);
+    });
+
+    const managers = uniqueStrings([
+        metadata.packageManager,
+        ...(metadata.packageManagers || []),
+        ...(metadata.packageSources || [])
+    ], 32, 120).map((value) => value.toLowerCase());
+
+    if (platform === 'WINDOWS') {
+        if (managers.some((value) => ['winget', 'msix', 'appx'].includes(value))) {
+            add('C:\\Program Files\\WindowsApps');
+        }
+        if (managers.includes('scoop')) {
+            add('%USERPROFILE%\\scoop');
+        }
+        if (managers.includes('choco') || managers.includes('chocolatey')) {
+            add('C:\\ProgramData\\chocolatey');
+        }
+    }
+
+    if (platform === 'LINUX') {
+        if (managers.includes('flatpak')) {
+            add('/var/lib/flatpak');
+            add('~/.local/share/flatpak');
+        }
+        if (managers.includes('snap')) {
+            add('/var/lib/snapd/snap');
+            add('/snap');
+        }
+        if (managers.some((value) => ['dpkg', 'apt'].includes(value))) {
+            add('/usr/lib');
+            add('/usr/share');
+        }
+        if (managers.some((value) => ['rpm', 'dnf', 'yum', 'zypper'].includes(value))) {
+            add('/usr/lib64');
+        }
+    }
+
+    return roots.slice(0, 256);
+}
+
+function summarizeDesktopCoverage(normalized) {
+    const metadata = normalizeObject(normalized?.artifactMetadata);
+    const declaredRoots = uniqueStrings([
+        ...(metadata.installRoots || []),
+        ...(metadata.scanRoots || [])
+    ], 256, 700);
+    const recommendedRoots = Array.isArray(metadata.recommendedScanRoots) && metadata.recommendedScanRoots.length > 0
+        ? metadata.recommendedScanRoots
+        : deriveRecommendedScanRoots(normalized?.platform, metadata);
+    const packageManagers = uniqueStrings([
+        metadata.packageManager,
+        ...(metadata.packageManagers || []),
+        ...(metadata.packageSources || [])
+    ], 64, 120);
+    const packageInventory = Array.isArray(metadata.packageInventory) ? metadata.packageInventory : [];
+    const candidatePaths = Array.isArray(metadata.candidatePaths) ? metadata.candidatePaths : [];
+    const packageCount = Math.max(Number(metadata.packageCount || 0), packageInventory.length);
+    const candidateCount = Math.max(Number(metadata.candidateCount || 0), candidatePaths.length);
+
+    return {
+        declaredRoots,
+        declaredRootCount: declaredRoots.length,
+        recommendedRoots,
+        recommendedRootCount: recommendedRoots.length,
+        packageManagers,
+        packageManagerCount: packageManagers.length,
+        packageCount,
+        candidateCount,
+        packagePreview: packageInventory.slice(0, 24),
+        candidatePreview: candidatePaths.slice(0, 24)
+    };
+}
+
+function normalizeDesktopScanPayload(payload) {
+    const source = normalizeObject(payload);
+    const artifactMetadata = normalizeObject(source.artifact_metadata || source.artifactMetadata);
+    const platform = normalizePlatform(source.platform);
+
+    const localFindings = Array.isArray(source.local_findings || source.localFindings)
+        ? (source.local_findings || source.localFindings)
+            .slice(0, 64)
+            .map((item) => {
+                if (item && typeof item === 'object') {
+                    return {
+                        type: normalizeString(item.type, 64) || 'local_signal',
+                        severity: normalizeSeverity(item.severity),
+                        title: normalizeString(item.title, 160) || 'Локальный сигнал',
+                        detail: normalizeString(item.detail, 500) || '',
+                        source: normalizeString(item.source, 120) || 'Local Desktop Engine',
+                        score: normalizeScore(item.score),
+                        evidence: normalizeObject(item.evidence)
+                    };
+                }
+                const text = normalizeString(item, 240);
+                if (!text) return null;
+                return {
+                    type: 'local_signal',
+                    severity: 'low',
+                    title: 'Локальный сигнал',
+                    detail: text,
+                    source: 'Local Desktop Engine',
+                    score: 6,
+                    evidence: {}
+                };
+            })
+            .filter(Boolean)
+        : [];
+
+    const normalizedMetadata = {
+        targetName: normalizeString(artifactMetadata.target_name || artifactMetadata.targetName || source.target_name || source.targetName),
+        targetPath: normalizeString(artifactMetadata.target_path || artifactMetadata.targetPath || source.target_path || source.targetPath, 512),
+        fileName: normalizeString(artifactMetadata.file_name || artifactMetadata.fileName, 255),
+        mimeType: normalizeString(artifactMetadata.mime_type || artifactMetadata.mimeType, 120),
+        originPath: normalizeString(artifactMetadata.origin_path || artifactMetadata.originPath, 512),
+        packageManager: normalizeString(artifactMetadata.package_manager || artifactMetadata.packageManager, 64),
+        packageManagers: normalizeStringList(
+            artifactMetadata.package_managers || artifactMetadata.packageManagers || source.package_managers || source.packageManagers,
+            32,
+            64
+        ),
+        publisher: normalizeString(artifactMetadata.publisher, 255),
+        signer: normalizeString(artifactMetadata.signer, 255),
+        signerTrusted: normalizeBoolean(artifactMetadata.signer_trusted || artifactMetadata.signerTrusted),
+        executable: normalizeBoolean(artifactMetadata.executable),
+        recentlyDropped: normalizeBoolean(artifactMetadata.recently_dropped || artifactMetadata.recentlyDropped),
+        fromDownloads: normalizeBoolean(artifactMetadata.from_downloads || artifactMetadata.fromDownloads),
+        fromTemp: normalizeBoolean(artifactMetadata.from_temp || artifactMetadata.fromTemp),
+        runsAsRoot: normalizeBoolean(artifactMetadata.runs_as_root || artifactMetadata.runsAsRoot),
+        hasSuid: normalizeBoolean(artifactMetadata.has_suid || artifactMetadata.hasSuid),
+        writableLauncher: normalizeBoolean(artifactMetadata.writable_launcher || artifactMetadata.writableLauncher),
+        autorunLocations: normalizeStringList(artifactMetadata.autorun_locations || artifactMetadata.autorunLocations, 48, 255),
+        persistenceSurfaces: normalizeStringList(artifactMetadata.persistence_surfaces || artifactMetadata.persistenceSurfaces, 48, 255),
+        suspiciousImports: normalizeStringList(artifactMetadata.suspicious_imports || artifactMetadata.suspiciousImports, 80, 64),
+        capabilities: normalizeStringList(artifactMetadata.capabilities, 48, 64),
+        packageSources: normalizeStringList(artifactMetadata.package_sources || artifactMetadata.packageSources, 128, 120),
+        desktopEntries: normalizeStringList(artifactMetadata.desktop_entries || artifactMetadata.desktopEntries, 128, 255),
+        installRoots: normalizePathList(
+            artifactMetadata.install_roots || artifactMetadata.installRoots || artifactMetadata.program_directories || artifactMetadata.programDirectories,
+            256,
+            700
+        ),
+        scanRoots: normalizePathList(
+            artifactMetadata.scan_roots || artifactMetadata.scanRoots || artifactMetadata.search_roots || artifactMetadata.searchRoots,
+            256,
+            700
+        ),
+        candidatePaths: normalizePathList(
+            artifactMetadata.candidate_paths || artifactMetadata.candidatePaths || artifactMetadata.paths || source.candidate_paths || source.candidatePaths,
+            4096,
+            700
+        ),
+        packageInventory: normalizePackageInventory(
+            artifactMetadata.package_inventory || artifactMetadata.packageInventory || artifactMetadata.installed_packages || artifactMetadata.installedPackages,
+            2048
+        ),
+        uploadRequired: normalizeBoolean(artifactMetadata.upload_required || artifactMetadata.uploadRequired || source.upload_required || source.uploadRequired),
+        fileSizeBytes: normalizePositiveInt(artifactMetadata.file_size_bytes || artifactMetadata.fileSizeBytes),
+        packageCount: normalizePositiveInt(
+            artifactMetadata.package_count || artifactMetadata.packageCount || source.package_count || source.packageCount
+        ),
+        candidateCount: normalizePositiveInt(
+            artifactMetadata.candidate_count || artifactMetadata.candidateCount || source.candidate_count || source.candidateCount
+        ),
+        entropy: normalizeEntropy(artifactMetadata.entropy),
+        notes: normalizeString(artifactMetadata.notes, 500)
+    };
+
+    normalizedMetadata.recommendedScanRoots = deriveRecommendedScanRoots(platform, normalizedMetadata);
+    normalizedMetadata.packageCount = normalizedMetadata.packageCount || normalizedMetadata.packageInventory.length || null;
+    normalizedMetadata.candidateCount = normalizedMetadata.candidateCount || normalizedMetadata.candidatePaths.length || null;
+
+    return {
+        platform,
+        mode: normalizeMode(source.mode),
+        artifactKind: normalizeArtifactKind(source.artifact_kind || source.artifactKind),
+        artifactMetadata: normalizedMetadata,
+        sha256: normalizeSha256(source.sha256 || artifactMetadata.sha256),
+        localFindings,
+        localSummary: normalizeObject(source.local_summary || source.localSummary),
+        externalRefs: normalizeObject(source.external_refs || source.externalRefs),
+        raw: source
+    };
 }
 
 function validateDesktopScanPayload(normalized) {
@@ -227,6 +559,8 @@ function analyzeDesktopMetadata(normalized) {
     const findings = [];
     const metadata = normalizeObject(normalized?.artifactMetadata);
     const platform = normalized?.platform;
+    const coverage = summarizeDesktopCoverage(normalized);
+    const hasReportedCoverage = coverage.candidateCount > 0 || coverage.packageCount > 0 || coverage.declaredRootCount > 0;
 
     if (platform === 'WINDOWS') {
         if (!metadata.signerTrusted && (metadata.publisher || metadata.signer)) {
@@ -308,7 +642,7 @@ function analyzeDesktopMetadata(normalized) {
                 }
             }));
         }
-        if (metadata.packageSources.length === 0 && metadata.executable) {
+        if (metadata.packageSources.length === 0 && coverage.packageCount === 0 && metadata.executable) {
             findings.push(buildFinding({
                 type: 'unknown_origin',
                 severity: 'low',
@@ -346,6 +680,26 @@ function analyzeDesktopMetadata(normalized) {
         }));
     }
 
+    if (hasReportedCoverage && (platform === 'WINDOWS' || platform === 'LINUX')) {
+        const narrowCandidates = coverage.candidateCount > 0 && coverage.candidateCount <= 5;
+        const narrowPackages = coverage.packageCount > 0 && coverage.packageCount <= 5;
+        if ((narrowCandidates || narrowPackages) && coverage.declaredRootCount < 3 && coverage.recommendedRootCount > coverage.declaredRootCount) {
+            findings.push(buildFinding({
+                type: 'limited_coverage',
+                severity: 'low',
+                title: 'Desktop scan пришёл с узким покрытием кандидатов',
+                detail: `Клиент сообщил candidates=${coverage.candidateCount}, packages=${coverage.packageCount}, scan_roots=${coverage.declaredRootCount}; для ${platform} рекомендуется обходить более широкий набор каталогов.`,
+                score: 6,
+                evidence: {
+                    declared_roots: coverage.declaredRoots.slice(0, 8),
+                    recommended_roots: coverage.recommendedRoots.slice(0, 12),
+                    candidate_preview: coverage.candidatePreview.slice(0, 8),
+                    package_preview: coverage.packagePreview.slice(0, 8).map((item) => item.name)
+                }
+            }));
+        }
+    }
+
     return findings;
 }
 
@@ -363,6 +717,7 @@ module.exports = {
     normalizeDesktopScanPayload,
     validateDesktopScanPayload,
     analyzeDesktopMetadata,
+    summarizeDesktopCoverage,
     buildFinding,
     computeRiskScore,
     classifyDesktopVerdict,

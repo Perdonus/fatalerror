@@ -9,6 +9,7 @@ const {
     normalizeDesktopScanPayload,
     validateDesktopScanPayload,
     analyzeDesktopMetadata,
+    summarizeDesktopCoverage,
     buildFinding,
     computeRiskScore,
     classifyDesktopVerdict,
@@ -24,6 +25,9 @@ const ACTIVE_JOBS = new Set();
 const QUEUE = [];
 const ENQUEUED = new Set();
 let queueRunning = false;
+let schemaCache = null;
+let schemaCacheExpiresAt = 0;
+const SCHEMA_CACHE_TTL_MS = parseInt(process.env.DESKTOP_SCAN_SCHEMA_CACHE_TTL_MS || '60000', 10);
 
 function parseJson(value, fallback) {
     if (!value) return fallback;
@@ -32,6 +36,147 @@ function parseJson(value, fallback) {
     } catch (_) {
         return fallback;
     }
+}
+
+function invalidateSchemaCache() {
+    schemaCache = null;
+    schemaCacheExpiresAt = 0;
+}
+
+async function getDesktopScanSchema(forceRefresh = false) {
+    if (!forceRefresh && schemaCache && schemaCacheExpiresAt > Date.now()) {
+        return schemaCache;
+    }
+
+    const [jobColumnsRows] = await pool.query('SHOW COLUMNS FROM desktop_scan_jobs');
+    const [artifactColumnsRows] = await pool.query('SHOW COLUMNS FROM desktop_scan_artifacts');
+    const jobColumns = new Set(jobColumnsRows.map((row) => String(row.Field || '').trim()).filter(Boolean));
+    const artifactColumns = new Set(artifactColumnsRows.map((row) => String(row.Field || '').trim()).filter(Boolean));
+
+    const modeColumn = jobColumns.has('mode') ? 'mode' : (jobColumns.has('scan_mode') ? 'scan_mode' : null);
+    if (!modeColumn) {
+        throw new Error('desktop_scan_jobs schema is missing mode/scan_mode');
+    }
+
+    const nameColumn = artifactColumns.has('file_name') ? 'file_name' : (artifactColumns.has('original_name') ? 'original_name' : null);
+    if (!nameColumn || !artifactColumns.has('storage_path')) {
+        throw new Error('desktop_scan_artifacts schema is missing file_name/original_name or storage_path');
+    }
+
+    schemaCache = {
+        jobs: {
+            modeColumn,
+            isLegacyMode: modeColumn === 'scan_mode',
+            hasArtifactRequired: jobColumns.has('artifact_required'),
+            hasSurfacedFindings: jobColumns.has('surfaced_findings'),
+            hasHiddenFindings: jobColumns.has('hidden_findings'),
+            hasUserSummary: jobColumns.has('user_summary'),
+            hasRawFindingsJson: jobColumns.has('raw_findings_json'),
+            fullReportColumn: jobColumns.has('full_report_json')
+                ? 'full_report_json'
+                : (jobColumns.has('full_report_markdown') ? 'full_report_markdown' : null)
+        },
+        artifacts: {
+            nameColumn,
+            hasStoredName: artifactColumns.has('stored_name'),
+            hasUploadedAt: artifactColumns.has('uploaded_at')
+        }
+    };
+    schemaCacheExpiresAt = Date.now() + SCHEMA_CACHE_TTL_MS;
+    return schemaCache;
+}
+
+function buildJobSelectColumns(schema, { includeUserId = true, includeRequest = true } = {}) {
+    const columns = [
+        'id',
+        includeUserId ? 'user_id' : null,
+        'platform',
+        `${schema.jobs.modeColumn} AS mode`,
+        'artifact_kind',
+        'target_name',
+        'target_path',
+        'sha256',
+        'status',
+        'verdict',
+        'risk_score',
+        schema.jobs.hasSurfacedFindings ? 'surfaced_findings' : '0 AS surfaced_findings',
+        schema.jobs.hasHiddenFindings ? 'hidden_findings' : '0 AS hidden_findings',
+        schema.jobs.hasArtifactRequired ? 'artifact_required' : '0 AS artifact_required',
+        includeRequest ? 'request_json' : null,
+        'summary_json',
+        'findings_json',
+        schema.jobs.fullReportColumn ? `${schema.jobs.fullReportColumn} AS full_report_json` : 'NULL AS full_report_json',
+        'error_message',
+        'created_at',
+        'started_at',
+        'completed_at',
+        'updated_at'
+    ];
+    return columns.filter(Boolean).join(', ');
+}
+
+function effectiveMode(row) {
+    const request = parseJson(row?.request_json, {});
+    return request?.normalized?.mode || row?.mode || null;
+}
+
+function normalizeModeForSchema(mode, schema) {
+    const normalized = String(mode || '').trim().toUpperCase() || 'FULL';
+    if (!schema?.jobs?.isLegacyMode) {
+        return normalized;
+    }
+    if (['SELECTIVE', 'ARTIFACT', 'RESIDENT_EVENT', 'ON_DEMAND'].includes(normalized)) {
+        return normalized;
+    }
+    return 'ON_DEMAND';
+}
+
+function isSchemaDriftError(error) {
+    const code = String(error?.code || '').toUpperCase();
+    const sqlMessage = String(error?.sqlMessage || error?.message || '').toLowerCase();
+    return code === 'ER_BAD_FIELD_ERROR'
+        || code === 'WARN_DATA_TRUNCATED'
+        || sqlMessage.includes('unknown column')
+        || sqlMessage.includes('data truncated');
+}
+
+function extractDesktopFailureReason(error) {
+    const code = String(error?.code || '').toUpperCase();
+    const sqlMessage = String(error?.sqlMessage || error?.message || '').trim();
+    const message = String(error?.message || '').trim();
+
+    if (isSchemaDriftError(error)) {
+        return {
+            status: 503,
+            message: `Несовместимая схема desktop scan: ${sqlMessage || message || 'unknown column or enum mismatch'}`
+        };
+    }
+
+    if (code === 'EACCES' || message.toLowerCase().includes('permission denied')) {
+        return {
+            status: 503,
+            message: `Ошибка доступа к storage desktop scan: ${message || 'permission denied'}`
+        };
+    }
+
+    if (code.startsWith('ER_')) {
+        return {
+            status: 503,
+            message: `Ошибка базы данных desktop scan: ${sqlMessage || message || code}`
+        };
+    }
+
+    if (message) {
+        return {
+            status: 500,
+            message
+        };
+    }
+
+    return {
+        status: 500,
+        message: 'Неизвестная ошибка создания desktop-задачи'
+    };
 }
 
 async function ensureStorage() {
@@ -225,6 +370,7 @@ async function sniffArtifact(jobId, uploadedArtifact, normalized) {
 }
 
 async function storeArtifact(jobId, userId, upload) {
+    const schema = await getDesktopScanSchema();
     await ensureStorage();
     const targetDir = path.join(STORAGE_ROOT, userId, jobId);
     await fs.mkdir(targetDir, { recursive: true });
@@ -238,11 +384,25 @@ async function storeArtifact(jobId, userId, upload) {
         await fs.copyFile(upload.tempFilePath, targetPath);
         await fs.rm(upload.tempFilePath, { force: true });
     });
+    const columns = ['job_id', 'user_id', schema.artifacts.nameColumn];
+    const values = [jobId, userId, originalName];
+    if (schema.artifacts.hasStoredName) {
+        columns.push('stored_name');
+        values.push(path.basename(targetPath));
+    }
+    columns.push('storage_path', 'sha256', 'size_bytes', 'mime_type', 'created_at');
+    values.push(targetPath, upload.sha256 || null, Number(upload.sizeBytes || 0), upload.mimeType || null, nowMs());
+    if (schema.artifacts.hasUploadedAt) {
+        columns.push('uploaded_at');
+        values.push(nowMs());
+    }
+
+    const placeholders = columns.map(() => '?').join(', ');
     const [result] = await pool.query(
         `INSERT INTO desktop_scan_artifacts
-         (job_id, user_id, file_name, storage_path, sha256, size_bytes, mime_type, created_at, uploaded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [jobId, userId, originalName, targetPath, upload.sha256 || null, Number(upload.sizeBytes || 0), upload.mimeType || null, nowMs(), nowMs()]
+         (${columns.join(', ')})
+         VALUES (${placeholders})`,
+        values
     );
     return {
         id: result.insertId,
@@ -254,8 +414,9 @@ async function storeArtifact(jobId, userId, upload) {
 }
 
 async function fetchArtifactByJob(jobId) {
+    const schema = await getDesktopScanSchema();
     const [rows] = await pool.query(
-        `SELECT id, file_name, storage_path, sha256, size_bytes, mime_type
+        `SELECT id, ${schema.artifacts.nameColumn} AS file_name, storage_path, sha256, size_bytes, mime_type
          FROM desktop_scan_artifacts
          WHERE job_id = ?
          ORDER BY id DESC
@@ -287,26 +448,43 @@ async function createDesktopScanJob(userId, payload) {
         || ['ARTIFACT', 'PACKAGE', 'SCRIPT', 'ARCHIVE'].includes(String(normalized.artifactKind || '').toUpperCase())
         || normalized.mode === 'ARTIFACT'
         || normalized.mode === 'SELECTIVE';
+    const schema = await getDesktopScanSchema();
+    const modeForSchema = normalizeModeForSchema(normalized.mode, schema);
+    const columns = [
+        'id',
+        'user_id',
+        'platform',
+        schema.jobs.modeColumn,
+        'artifact_kind',
+        'target_name',
+        'target_path',
+        'sha256',
+        'status'
+    ];
+    const values = [
+        id,
+        userId,
+        normalized.platform,
+        modeForSchema,
+        normalized.artifactKind,
+        normalized.artifactMetadata?.targetName || null,
+        normalized.artifactMetadata?.targetPath || null,
+        normalized.sha256 || null,
+        artifactRequired ? 'AWAITING_UPLOAD' : 'QUEUED'
+    ];
+    if (schema.jobs.hasArtifactRequired) {
+        columns.push('artifact_required');
+        values.push(artifactRequired ? 1 : 0);
+    }
+    columns.push('request_json', 'created_at', 'updated_at');
+    values.push(JSON.stringify({ normalized }), createdAt, createdAt);
 
+    const placeholders = columns.map(() => '?').join(', ');
     await pool.query(
         `INSERT INTO desktop_scan_jobs
-         (id, user_id, platform, mode, artifact_kind, target_name, target_path, sha256, status, artifact_required, request_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            id,
-            userId,
-            normalized.platform,
-            normalized.mode,
-            normalized.artifactKind,
-            normalized.artifactMetadata?.targetName || null,
-            normalized.artifactMetadata?.targetPath || null,
-            normalized.sha256 || null,
-            artifactRequired ? 'AWAITING_UPLOAD' : 'QUEUED',
-            artifactRequired ? 1 : 0,
-            JSON.stringify({ normalized }),
-            createdAt,
-            createdAt
-        ]
+         (${columns.join(', ')})
+         VALUES (${placeholders})`,
+        values
     );
 
     if (!artifactRequired) {
@@ -333,10 +511,9 @@ async function attachDesktopArtifact(jobId, userId, upload) {
 }
 
 async function getDesktopScanJob(jobId, userId, options = {}) {
+    const schema = await getDesktopScanSchema();
     const [rows] = await pool.query(
-        `SELECT id, user_id, platform, mode, artifact_kind, target_name, target_path, sha256, status, verdict, risk_score,
-                surfaced_findings, hidden_findings, artifact_required, request_json, summary_json, findings_json, full_report_json,
-                error_message, created_at, started_at, completed_at, updated_at
+        `SELECT ${buildJobSelectColumns(schema)}
          FROM desktop_scan_jobs
          WHERE id = ? AND user_id = ?
          LIMIT 1`,
@@ -350,7 +527,7 @@ async function getDesktopScanJob(jobId, userId, options = {}) {
     const scan = {
         id: row.id,
         platform: row.platform,
-        mode: row.mode,
+        mode: effectiveMode(row),
         status: row.status,
         verdict: normalizeVerdict(row.verdict || summary.verdict || 'unknown'),
         risk_score: Number(row.risk_score || 0),
@@ -414,8 +591,9 @@ async function runQueue() {
 }
 
 async function processJob(jobId) {
+    const schema = await getDesktopScanSchema();
     const [rows] = await pool.query(
-        `SELECT id, user_id, platform, mode, artifact_kind, target_name, target_path, sha256, request_json, status
+        `SELECT id, user_id, platform, ${schema.jobs.modeColumn} AS mode, artifact_kind, target_name, target_path, sha256, request_json, status
          FROM desktop_scan_jobs
          WHERE id = ? LIMIT 1`,
         [jobId]
@@ -438,11 +616,17 @@ async function processJob(jobId) {
         if (artifact?.sha256 && !normalized.sha256) {
             normalized.sha256 = artifact.sha256;
         }
+        const coverage = summarizeDesktopCoverage(normalized);
         const timeline = [
             `accepted ${new Date(nowMs()).toISOString()}`,
             'metadata heuristics',
             artifact ? 'artifact static sniff' : 'metadata-only scan'
         ];
+        if (coverage.declaredRootCount > 0 || coverage.candidateCount > 0 || coverage.packageCount > 0) {
+            timeline.push(
+                `coverage roots=${coverage.declaredRootCount}, recommended=${coverage.recommendedRootCount}, candidates=${coverage.candidateCount}, packages=${coverage.packageCount}`
+            );
+        }
         const metadataFindings = analyzeDesktopMetadata(normalized);
         const staticFindings = await sniffArtifact(jobId, artifact, normalized);
         const localFindings = Array.isArray(normalized.localFindings) ? normalized.localFindings : [];
@@ -535,6 +719,13 @@ async function processJob(jobId) {
             vt,
             ai_filter: aiFilter,
             hidden_findings: hiddenFindings,
+            coverage: {
+                declared_roots: coverage.declaredRoots,
+                recommended_roots: coverage.recommendedRoots,
+                package_managers: coverage.packageManagers,
+                candidate_count: coverage.candidateCount,
+                package_count: coverage.packageCount
+            },
             artifact: artifact ? {
                 file_name: artifact.fileName,
                 sha256: artifact.sha256,
@@ -543,33 +734,54 @@ async function processJob(jobId) {
         };
         const fullReport = {
             summary,
+            coverage: summary.coverage,
             surfaced_findings: userFacingFindings,
             hidden_findings: hiddenFindings,
             all_findings: allFindings,
             request: normalized
         };
+        const updates = [
+            `status = 'COMPLETED'`,
+            'verdict = ?',
+            'risk_score = ?'
+        ];
+        const updateValues = [verdict, riskScore];
+        if (schema.jobs.hasSurfacedFindings) {
+            updates.push('surfaced_findings = ?');
+            updateValues.push(userFacingFindings.length);
+        }
+        if (schema.jobs.hasHiddenFindings) {
+            updates.push('hidden_findings = ?');
+            updateValues.push(hiddenFindings.length);
+        }
+        if (schema.jobs.hasUserSummary) {
+            updates.push('user_summary = ?');
+            updateValues.push(String(summary.message || '').slice(0, 255) || null);
+        }
+        updates.push('summary_json = ?', 'findings_json = ?');
+        updateValues.push(JSON.stringify(summary), JSON.stringify(userFacingFindings));
+        if (schema.jobs.hasRawFindingsJson) {
+            updates.push('raw_findings_json = ?');
+            updateValues.push(JSON.stringify(allFindings));
+        }
+        if (schema.jobs.fullReportColumn) {
+            updates.push(`${schema.jobs.fullReportColumn} = ?`);
+            updateValues.push(JSON.stringify(fullReport));
+        }
+        updates.push('error_message = NULL', 'completed_at = ?', 'updated_at = ?');
+        updateValues.push(nowMs(), nowMs(), jobId);
 
         await pool.query(
             `UPDATE desktop_scan_jobs
-             SET status = 'COMPLETED', verdict = ?, risk_score = ?, surfaced_findings = ?, hidden_findings = ?,
-                 summary_json = ?, findings_json = ?, full_report_json = ?, error_message = NULL,
-                 completed_at = ?, updated_at = ?
+             SET ${updates.join(', ')}
              WHERE id = ?`,
-            [
-                verdict,
-                riskScore,
-                userFacingFindings.length,
-                hiddenFindings.length,
-                JSON.stringify(summary),
-                JSON.stringify(userFacingFindings),
-                JSON.stringify(fullReport),
-                nowMs(),
-                nowMs(),
-                jobId
-            ]
+            updateValues
         );
     } catch (error) {
         console.error('Desktop scan job failed:', error);
+        if (isSchemaDriftError(error)) {
+            invalidateSchemaCache();
+        }
         await pool.query(
             `UPDATE desktop_scan_jobs
              SET status = 'FAILED', error_message = ?, completed_at = ?, updated_at = ?
@@ -605,8 +817,13 @@ async function getDesktopFullReports(userId, ids) {
     }
 
     const placeholders = validIds.map(() => '?').join(',');
+    const schema = await getDesktopScanSchema();
     const [rows] = await pool.query(
-        `SELECT id, platform, mode, status, verdict, risk_score, surfaced_findings, hidden_findings, summary_json, findings_json, full_report_json,
+        `SELECT id, platform, ${schema.jobs.modeColumn} AS mode, status, verdict, risk_score,
+                ${schema.jobs.hasSurfacedFindings ? 'surfaced_findings' : '0 AS surfaced_findings'},
+                ${schema.jobs.hasHiddenFindings ? 'hidden_findings' : '0 AS hidden_findings'},
+                request_json, summary_json, findings_json,
+                ${schema.jobs.fullReportColumn ? `${schema.jobs.fullReportColumn} AS full_report_json` : 'NULL AS full_report_json'},
                 started_at, completed_at, error_message
          FROM desktop_scan_jobs
          WHERE user_id = ? AND id IN (${placeholders})`,
@@ -618,7 +835,7 @@ async function getDesktopFullReports(userId, ids) {
         reports: rows.map((row) => ({
             id: row.id,
             platform: row.platform,
-            mode: row.mode,
+            mode: effectiveMode(row),
             status: row.status,
             verdict: normalizeVerdict(row.verdict || 'unknown'),
             risk_score: Number(row.risk_score || 0),
@@ -655,5 +872,6 @@ module.exports = {
     cancelActiveDesktopScans,
     getDesktopFullReports,
     getReleaseManifest,
-    resumePendingDesktopScans
+    resumePendingDesktopScans,
+    extractDesktopFailureReason
 };

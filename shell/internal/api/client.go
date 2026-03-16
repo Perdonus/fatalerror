@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -48,7 +50,7 @@ type CancelResponse struct {
 }
 
 type DesktopScan struct {
-	ID               int64            `json:"id"`
+	ID               string           `json:"id"`
 	Platform         string           `json:"platform"`
 	Mode             string           `json:"mode"`
 	Status           string           `json:"status"`
@@ -95,8 +97,12 @@ func NewClient(baseURL string) *Client {
 
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 120 * time.Second},
+		http:    &http.Client{Timeout: 150 * time.Second},
 	}
+}
+
+func (c *Client) BaseURL() string {
+	return c.baseURL
 }
 
 func (c *Client) DeviceID() string {
@@ -154,8 +160,8 @@ func (c *Client) StartDesktopScan(token string, platform, mode string, artifact 
 	return response, nil
 }
 
-func (c *Client) GetDesktopScan(token string, id int64) (*DesktopScanEnvelope, error) {
-	response, err := authorizedJSON[DesktopScanEnvelope](c, http.MethodGet, fmt.Sprintf("/api/scans/desktop/%d", id), token, nil)
+func (c *Client) GetDesktopScan(token string, id string) (*DesktopScanEnvelope, error) {
+	response, err := authorizedJSON[DesktopScanEnvelope](c, http.MethodGet, fmt.Sprintf("/api/scans/desktop/%s", id), token, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +248,11 @@ func doJSON[T any](c *Client, method, route, token string, payload any) (*T, err
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		var netErr net.Error
+		if ok := errorAs(err, &netErr); ok && netErr.Timeout() {
+			return nil, fmt.Errorf("сервер отвечает слишком долго")
+		}
+		return nil, fmt.Errorf("не удалось подключиться к серверу")
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
@@ -250,11 +260,33 @@ func doJSON[T any](c *Client, method, route, token string, payload any) (*T, err
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("http %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return nil, fmt.Errorf("%s", httpErrorText(resp.StatusCode, strings.TrimSpace(string(data))))
 	}
 	var parsed T
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		return nil, err
 	}
 	return &parsed, nil
+}
+
+func httpErrorText(statusCode int, body string) string {
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "нужен повторный вход"
+	case http.StatusNotFound:
+		return "сервер не нашёл нужный маршрут"
+	case http.StatusTooManyRequests:
+		return "слишком много запросов, попробуй чуть позже"
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return "сервер сейчас недоступен"
+	}
+
+	if body == "" {
+		return fmt.Sprintf("ошибка сервера (%d)", statusCode)
+	}
+	return body
+}
+
+func errorAs(err error, target any) bool {
+	return err != nil && target != nil && errors.As(err, target)
 }

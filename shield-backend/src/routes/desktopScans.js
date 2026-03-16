@@ -11,7 +11,8 @@ const {
     attachDesktopArtifact,
     getDesktopScanJob,
     cancelActiveDesktopScans,
-    getDesktopFullReports
+    getDesktopFullReports,
+    extractDesktopFailureReason
 } = require('../services/desktopScanService');
 
 const UPLOAD_LIMIT_BYTES = parseUploadLimitBytes(process.env.DESKTOP_SCAN_UPLOAD_LIMIT || '512mb');
@@ -87,7 +88,8 @@ router.post('/start', auth, async (req, res) => {
         return res.status(202).json({ success: true, scan: job });
     } catch (error) {
         console.error('Desktop scan start error:', error);
-        return res.status(500).json({ error: 'Не удалось создать desktop-задачу' });
+        const failure = extractDesktopFailureReason(error);
+        return res.status(failure.status || 500).json({ error: failure.message });
     }
 });
 

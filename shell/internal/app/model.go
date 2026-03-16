@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -74,6 +76,7 @@ type Model struct {
 	currentScan *api.DesktopScan
 	lastScan    *api.DesktopScan
 	scanBusy    bool
+	scanLogOffset int
 
 	settingsCursor int
 }
@@ -120,9 +123,9 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		client:         client,
 		store:          store,
 		session:        saved,
-		lowMotion:      opts.LowMotion,
-		screen:         screenWelcome,
-		status:         "Готово к работе",
+		lowMotion:      true,
+		screen:         screenAuth,
+		status:         "Готово к проверке",
 		statusTone:     statusInfo,
 		emailInput:     emailInput,
 		passwordInput:  passwordInput,
@@ -132,8 +135,9 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		scanCursor:     0,
 		settingsCursor: 0,
 	}
+	_ = opts
 	if saved != nil {
-		model.screen = screenHome
+		model.screen = screenScan
 		model.status = "Сессия восстановлена"
 		model.statusTone = statusSuccess
 		model.emailInput.SetValue(saved.Email)
@@ -143,7 +147,7 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadManifestCmd(), tickCmd(m.lowMotion), textinput.Blink)
+	return tea.Batch(tickCmd(m.lowMotion), textinput.Blink, tea.EnableMouseCellMotion)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -156,12 +160,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tickCmd(m.lowMotion)
 	case manifestLoadedMsg:
 		if msg.err != nil {
-			m.setStatus("Не удалось получить список релизов", statusWarning)
+			m.setStatus("Не удалось обновить список загрузок", statusWarning)
 			return m, nil
 		}
 		m.manifest = msg.manifest
 		if msg.manifest != nil {
-			m.setStatus(fmt.Sprintf("Готово: доступно %d артефактов", len(msg.manifest.Artifacts)), statusSuccess)
+			m.setStatus("Список загрузок обновлён", statusSuccess)
 		}
 		return m, nil
 	case authStartedMsg:
@@ -187,7 +191,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.challenge = nil
 		m.authStage = authCredentials
 		m.authFocus = 0
-		m.screen = screenHome
+		m.screen = screenScan
 		m.syncAuthFocus()
 		m.setStatus("Вход выполнен", statusSuccess)
 		return m, nil
@@ -200,6 +204,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentScan = msg.scan
 		if msg.scan != nil {
 			m.lastScan = msg.scan
+			m.pinScanLogToLatest(msg.scan)
 			m.setStatus(defaultScanMessage(msg.scan), statusInfo)
 			if !isTerminalScanStatus(msg.scan.Status) {
 				return m, pollScanCmd(m.client, m.sessionToken(), msg.scan.ID)
@@ -216,6 +221,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentScan = msg.scan
 		if msg.scan != nil {
 			m.lastScan = msg.scan
+			m.pinScanLogToLatest(msg.scan)
 			if isTerminalScanStatus(msg.scan.Status) {
 				m.currentScan = nil
 				m.setStatus(defaultScanMessage(msg.scan), toneForVerdict(msg.scan.Verdict))
@@ -235,10 +241,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentScan.Status = "CANCELLED"
 			m.currentScan.Message = "Проверка остановлена"
 			m.lastScan = m.currentScan
+			m.pinScanLogToLatest(m.lastScan)
 			m.currentScan = nil
 		}
 		m.setStatus("Проверка остановлена", statusWarning)
 		return m, nil
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -257,22 +266,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.nextScreen()
 		return m, nil
 	case "1":
-		m.screen = screenWelcome
-		return m, nil
-	case "2":
-		m.screen = screenAuth
-		m.syncAuthFocus()
-		return m, nil
-	case "3":
-		m.screen = screenHome
-		return m, nil
-	case "4":
 		m.screen = screenScan
 		return m, nil
-	case "5":
+	case "2":
 		m.screen = screenHistory
 		return m, nil
-	case "6":
+	case "3":
 		m.screen = screenSettings
 		return m, nil
 	}
@@ -284,15 +283,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleScanKeys(msg)
 	case screenSettings:
 		return m.handleSettingsKeys(msg)
-	case screenWelcome:
-		if msg.String() == "enter" {
-			if m.session != nil {
-				m.screen = screenHome
-			} else {
-				m.screen = screenAuth
-				m.syncAuthFocus()
-			}
-		}
+	}
+
+	return m, nil
+}
+
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.screen != screenScan {
+		return m, nil
+	}
+
+	switch msg.Type {
+	case tea.MouseWheelUp:
+		m.scrollScanLog(-1)
+	case tea.MouseWheelDown:
+		m.scrollScanLog(1)
 	}
 
 	return m, nil
@@ -345,77 +350,68 @@ func (m Model) handleAuthKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleScanKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.scrollScanLog(-1)
+		return m, nil
+	case "down", "j":
+		m.scrollScanLog(1)
+		return m, nil
+	case "pgup":
+		m.scrollScanLog(-m.scanLogViewportHeight())
+		return m, nil
+	case "pgdown", "tab":
+		m.scrollScanLog(m.scanLogViewportHeight())
+		return m, nil
+	case "home":
+		m.scanLogOffset = 0
+		return m, nil
+	case "end":
+		entries := m.scanLogEntries(m.scanForDisplay())
+		maxOffset := len(entries) - m.scanLogViewportHeight()
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		m.scanLogOffset = maxOffset
+		return m, nil
+	}
+
 	if m.scanBusy {
 		return m, nil
 	}
-	options := m.scanOptionCount()
-	switch msg.String() {
-	case "up", "k":
-		if m.scanCursor > 0 {
-			m.scanCursor--
-		}
-		return m, nil
-	case "down", "j", "tab":
-		m.scanCursor = (m.scanCursor + 1) % options
-		return m, nil
-	case "enter":
-		if m.scanCursor == 0 {
-			if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
-				return m, nil
-			}
-			if m.session == nil {
-				m.screen = screenAuth
-				m.syncAuthFocus()
-				m.setStatus("Сначала войди в аккаунт", statusWarning)
-				return m, nil
-			}
-			m.scanBusy = true
-			m.setStatus("Отправляем профиль хоста на сервер", statusInfo)
-			return m, startHostScanCmd(m.client, m.sessionToken())
-		}
+
+	if msg.String() == "enter" {
 		if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
 			m.scanBusy = true
 			m.setStatus("Останавливаем проверку", statusWarning)
 			return m, cancelScanCmd(m.client, m.sessionToken())
 		}
+		if m.session == nil {
+			m.screen = screenAuth
+			m.syncAuthFocus()
+			m.setStatus("Сначала войди в аккаунт", statusWarning)
+			return m, nil
+		}
+		m.scanBusy = true
+		m.scanLogOffset = 0
+		m.setStatus("Отправляем профиль хоста на сервер", statusInfo)
+		return m, startHostScanCmd(m.client, m.sessionToken())
 	}
 	return m, nil
 }
 
 func (m Model) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	optionCount := 3
 	switch msg.String() {
-	case "up", "k":
-		if m.settingsCursor > 0 {
-			m.settingsCursor--
-		}
-		return m, nil
-	case "down", "j", "tab":
-		m.settingsCursor = (m.settingsCursor + 1) % optionCount
-		return m, nil
 	case "enter":
-		switch m.settingsCursor {
-		case 0:
-			m.lowMotion = !m.lowMotion
-			if m.lowMotion {
-				m.setStatus("Low-motion включён", statusSuccess)
-			} else {
-				m.setStatus("Low-motion выключён", statusSuccess)
-			}
-			return m, nil
-		case 1:
-			return m, m.loadManifestCmd()
-		case 2:
-			m.session = nil
-			m.challenge = nil
-			m.authStage = authCredentials
-			m.authFocus = 0
-			m.syncAuthFocus()
-			_ = m.store.Clear()
-			m.screen = screenWelcome
-			m.setStatus("Сессия удалена", statusWarning)
-			return m, nil
-		}
+		m.session = nil
+		m.challenge = nil
+		m.authStage = authCredentials
+		m.authFocus = 0
+		m.syncAuthFocus()
+		_ = m.store.Clear()
+		m.screen = screenAuth
+		m.setStatus("Сессия удалена", statusWarning)
+		return m, nil
 	}
 	return m, nil
 }
@@ -487,62 +483,34 @@ func (m Model) View() string {
 }
 
 func (m Model) renderHeader(width int) string {
-	brand := lipgloss.NewStyle().Bold(true).Foreground(colorAccent()).Render("NeuralV shell")
-	tagline := lipgloss.NewStyle().Foreground(colorMuted()).Render("Linux CLI / TUI")
-	meta := []string{
-		renderPill("Сессия", func() string {
-			if m.session != nil {
-				return "активна"
-			}
-			return "гость"
-		}(), func() lipgloss.Color {
-			if m.session != nil {
-				return colorGood()
-			}
-			return colorMuted()
-		}()),
-		renderPill("Motion", func() string {
-			if m.lowMotion {
-				return "low"
-			}
-			return "smooth"
-		}(), colorAccent()),
-		renderPill("Manifest", manifestStateLabel(m.manifest), colorSurfaceStrong()),
-	}
-
-	ambient := renderAmbient(width, m.frame, m.lowMotion)
-	line := lipgloss.JoinHorizontal(lipgloss.Center, brand, lipgloss.NewStyle().Foreground(colorMuted()).Render("  •  "), tagline)
-	status := lipgloss.NewStyle().Foreground(colorMuted()).Render("Статус: ") + renderStatusPill(m.status, m.statusTone)
-
-	return cardStyle(width).Render(strings.Join([]string{
-		line,
-		ambient,
-		strings.Join(meta, "  "),
-		status,
-	}, "\n"))
+	brand := lipgloss.NewStyle().Bold(true).Foreground(colorAccent()).Render("NeuralV")
+	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(brand)
 }
 
 func (m Model) renderTabs(width int) string {
-	labels := []string{"1 Обзор", "2 Вход", "3 Дом", "4 Проверка", "5 История", "6 Настройки"}
-	items := make([]string, 0, len(labels))
-	for idx, label := range labels {
+	active := m.activeNavScreen()
+	items := make([]string, 0, 3)
+	for _, item := range []struct {
+		screen screen
+		label  string
+	}{
+		{screen: screenScan, label: "1 Проверки"},
+		{screen: screenHistory, label: "2 История"},
+		{screen: screenSettings, label: "3 Настройки"},
+	} {
 		style := lipgloss.NewStyle().Padding(0, 1).Foreground(colorMuted())
-		if m.screen == screen(idx) {
+		if active == item.screen {
 			style = style.Bold(true).Foreground(colorAccent())
 		}
-		items = append(items, style.Render(label))
+		items = append(items, style.Render(item.label))
 	}
 	return lipgloss.NewStyle().Width(width).Render(strings.Join(items, "  "))
 }
 
 func (m Model) renderBody(width int) string {
 	switch m.screen {
-	case screenWelcome:
-		return m.renderWelcome(width)
 	case screenAuth:
 		return m.renderAuth(width)
-	case screenHome:
-		return m.renderHome(width)
 	case screenScan:
 		return m.renderScan(width)
 	case screenHistory:
@@ -550,32 +518,29 @@ func (m Model) renderBody(width int) string {
 	case screenSettings:
 		return m.renderSettings(width)
 	default:
-		return ""
+		return m.renderScan(width)
 	}
 }
 
 func (m Model) renderWelcome(width int) string {
 	left := cardStyle(columnWidth(width)).Render(strings.Join([]string{
-		sectionTitle("Что это"),
-		"NeuralV shell — лёгкий полноэкранный клиент для Linux. Он не пытается быть тяжёлым desktop-приложением, но даёт быстрый вход, запуск серверной проверки и понятный статус прямо в терминале.",
+		sectionTitle("Быстрый старт"),
+		"Лёгкий полноэкранный клиент для Linux: вход, запуск проверки и итог прямо в терминале.",
 		"",
-		sectionTitle("Как начать"),
 		"1. Установи nv",
 		"2. Выполни nv install neuralv@latest",
-		"3. Открой neuralv и войди в аккаунт",
+		"3. Открой neuralv",
 	}, "\n"))
 
 	right := cardStyle(columnWidth(width)).Render(strings.Join([]string{
-		sectionTitle("Почему это не лагает"),
-		"• low-motion включается автоматически на слабых и удалённых терминалах",
-		"• нет тяжёлых фоновых перерисовок",
-		"• анимация только подчёркивает состояние, а не грузит CPU",
-		"",
-		sectionTitle("Навигация"),
-		"Left / Right или 1-6 — экраны",
+		sectionTitle("Управление"),
+		"1-6 или Left / Right — экраны",
 		"Tab / j / k — фокус и списки",
 		"Enter — действие",
 		"q — выход",
+		"",
+		sectionTitle("Режим анимации"),
+		"На SSH и слабых машинах мягкий режим включается сам.",
 	}, "\n"))
 
 	return joinColumns(width, left, right)
@@ -584,7 +549,7 @@ func (m Model) renderWelcome(width int) string {
 func (m Model) renderAuth(width int) string {
 	buttonLabel := "Отправить код"
 	if m.authStage == authCode {
-		buttonLabel = "Подтвердить вход"
+		buttonLabel = "Войти"
 	}
 
 	fields := []string{
@@ -595,25 +560,29 @@ func (m Model) renderAuth(width int) string {
 		fields = []string{labeledField("Код из письма", m.codeInput.View(), m.authFocus == 0)}
 	}
 
-	left := cardStyle(columnWidth(width)).Render(strings.Join([]string{
+	leftLines := []string{
 		sectionTitle("Вход"),
 		strings.Join(fields, "\n\n"),
 		"",
 		renderActionButton(buttonLabel, m.authFocus == m.authFieldCount(), !m.authBusy),
-	}, "\n"))
+	}
+	if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
+		leftLines = append(leftLines, "", status)
+	}
+	left := cardStyle(columnWidth(width)).Render(strings.Join(leftLines, "\n"))
 
 	rightLines := []string{sectionTitle("Подсказка")}
 	if m.authStage == authCredentials {
 		rightLines = append(rightLines,
-			"После email и пароля сервер отправит код подтверждения на почту.",
+			"После email и пароля на почту придёт код подтверждения.",
 			"",
-			"Esc ничего не ломает: если уже открыт шаг с кодом, он вернёт тебя к логину.",
+			"После входа откроется экран проверок с прогрессом и живым логом.",
 		)
 	} else {
 		rightLines = append(rightLines,
-			"Код живёт недолго, поэтому шаг проверки вынесен отдельно и не прячет остальные экраны.",
+			"Код живёт недолго, поэтому шаг подтверждения вынесен отдельно.",
 			"",
-			"Если письмо не пришло, нажми Esc и запусти вход заново.",
+			"Esc возвращает к первому шагу, если код нужно запросить заново.",
 		)
 	}
 
@@ -628,116 +597,165 @@ func (m Model) renderHome(width int) string {
 	}
 
 	left := cardStyle(columnWidth(width)).Render(strings.Join([]string{
-		sectionTitle("Состояние"),
-		fmt.Sprintf("Профиль: %s", sessionLabel),
+		sectionTitle("Сейчас"),
+		fmt.Sprintf("Аккаунт: %s", sessionLabel),
 		fmt.Sprintf("Устройство: %s", m.client.DeviceID()),
 		fmt.Sprintf("Платформа: %s / %s", runtime.GOOS, runtime.GOARCH),
-		fmt.Sprintf("Менеджер пакетов: %s", detectPackageManager()),
+		fmt.Sprintf("Пакеты: %s", DetectPackageManager()),
 	}, "\n"))
 
-	right := cardStyle(columnWidth(width)).Render(strings.Join([]string{
-		sectionTitle("Что дальше"),
-		"• вкладка 'Проверка' запускает серверный разбор профиля хоста",
-		"• вкладка 'История' показывает последний результат и таймлайн",
-		"• в 'Настройках' можно переключить motion и очистить сессию",
-	}, "\n"))
+	rightLines := []string{sectionTitle("Что дальше")}
+	if m.lastScan == nil {
+		rightLines = append(rightLines,
+			"Открой экран проверки и запусти первый проход.",
+			"",
+			"Последний результат появится здесь и на вкладке истории.",
+		)
+	} else {
+		rightLines = append(rightLines,
+			fmt.Sprintf("Последний вердикт: %s", normalizeVerdict(m.lastScan.Verdict)),
+			fmt.Sprintf("Риск: %d/100", m.lastScan.RiskScore),
+			shortText(defaultScanMessage(m.lastScan), 92),
+		)
+	}
+	right := cardStyle(columnWidth(width)).Render(strings.Join(rightLines, "\n"))
 	return joinColumns(width, left, right)
 }
 
 func (m Model) renderScan(width int) string {
-	leftLines := []string{
-		sectionTitle("Действия"),
-		renderChoice(m.scanCursor == 0, "Проверить этот Linux-хост", "Отправляет метаданные системы на сервер и ждёт итоговый вердикт."),
-	}
-	if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
-		leftLines = append(leftLines, "", renderChoice(m.scanCursor == 1, "Отменить активную проверку", "Останавливает текущий серверный job без выхода из интерфейса."))
-	}
-	left := cardStyle(columnWidth(width)).Render(strings.Join(leftLines, "\n"))
+	scan := m.scanForDisplay()
+	panelHeight := m.scanPanelHeight()
+	leftWidth, rightWidth := m.scanPanelWidths(width)
 
-	scan := m.currentScan
-	if scan == nil {
-		scan = m.lastScan
+	progressLines := []string{
+		sectionTitle("Проверка"),
+		"",
+		renderStatusPill(m.scanWindowStatus(scan), m.scanWindowTone(scan)),
+		"",
+		lipgloss.NewStyle().Bold(true).Foreground(colorAccent()).Render(
+			renderScanPulse(m.frame, m.lowMotion, m.scanActive(scan)) + "  " + m.scanStageName(scan),
+		),
+		"",
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Render(fmt.Sprintf("%d%%", m.scanPercent(scan))),
+		renderProgressBar(leftWidth-8, m.scanPercent(scan)),
+		lipgloss.NewStyle().Foreground(colorMuted()).Render(
+			fmt.Sprintf("Проверено: %d из %d", m.scanChecked(scan), m.scanTotal(scan)),
+		),
 	}
-	rightLines := []string{sectionTitle("Состояние проверки")}
-	if scan == nil {
-		rightLines = append(rightLines,
-			"Здесь появится живой статус, таймлайн этапов и итог после первой проверки.",
+
+	if scan != nil {
+		progressLines = append(progressLines,
 			"",
-			renderActivityLine(m.frame, m.lowMotion, false),
-		)
-	} else {
-		rightLines = append(rightLines,
-			fmt.Sprintf("Статус: %s", normalizeScanStatus(scan.Status)),
 			fmt.Sprintf("Вердикт: %s", normalizeVerdict(scan.Verdict)),
-			fmt.Sprintf("Сигналы: %d видимых / %d скрытых", scan.SurfacedFindings, scan.HiddenFindings),
-			fmt.Sprintf("Оценка: %d/100", scan.RiskScore),
-			"",
-			renderActivityLine(m.frame, m.lowMotion, m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status)),
+			fmt.Sprintf("Риск: %d/100", scan.RiskScore),
 		)
-		if scan.Message != "" {
-			rightLines = append(rightLines, "", scan.Message)
-		}
-		if len(scan.Timeline) > 0 {
-			rightLines = append(rightLines, "", sectionTitle("Этапы"))
-			for _, stage := range scan.Timeline {
-				rightLines = append(rightLines, "• "+stage)
-			}
-		}
+	} else if m.session == nil {
+		progressLines = append(progressLines,
+			"",
+			lipgloss.NewStyle().Foreground(colorMuted()).Render("Войди в аккаунт, чтобы запустить новую проверку."),
+		)
 	}
-	return joinColumns(width, left, cardStyle(columnWidth(width)).Render(strings.Join(rightLines, "\n")))
+
+	progressLines = append(progressLines,
+		"",
+		renderActionButton(m.scanActionLabel(), true, !m.scanBusy),
+		lipgloss.NewStyle().Foreground(colorMuted()).Render("Enter запускает или останавливает проверку."),
+	)
+
+	logLines := []string{sectionTitle("Живой лог")}
+	entries := m.scanLogEntries(scan)
+	start, end := m.scanLogBounds(entries)
+	logSummary := "Строки 0-0 из 0  •  Up/Down и колесо мыши прокручивают лог"
+	if len(entries) > 0 {
+		logSummary = fmt.Sprintf("Строки %d-%d из %d  •  Up/Down и колесо мыши прокручивают лог", start+1, end, len(entries))
+	}
+	logLines = append(logLines, "")
+	for _, entry := range entries[start:end] {
+		logLines = append(logLines, renderLogEntry(entry, rightWidth-8))
+	}
+	if len(entries) == 0 {
+		logLines = append(logLines, lipgloss.NewStyle().Foreground(colorMuted()).Render("Журнал появится после первого события."))
+	}
+	logLines = append(logLines,
+		"",
+		lipgloss.NewStyle().Foreground(colorMuted()).Render(logSummary),
+	)
+
+	left := cardStyle(leftWidth).Height(panelHeight).Render(strings.Join(progressLines, "\n"))
+	right := cardStyle(rightWidth).Height(panelHeight).Render(strings.Join(logLines, "\n"))
+	if width < 96 {
+		return strings.Join([]string{left, right}, "\n\n")
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
 func (m Model) renderHistory(width int) string {
 	if m.lastScan == nil {
-		return cardStyle(width).Render(strings.Join([]string{
+		lines := []string{
 			sectionTitle("История"),
-			"Пока пусто. После первой проверки здесь останется последний итог с коротким таймлайном.",
-		}, "\n"))
+			"Пока пусто. После первой проверки здесь останется её итог.",
+		}
+		if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
+			lines = append(lines, "", status)
+		}
+		return cardStyle(width).Render(strings.Join(lines, "\n"))
 	}
 
 	lines := []string{
-		sectionTitle("Последний результат"),
+		sectionTitle("История"),
 		fmt.Sprintf("Проверка: %s", normalizeScanStatus(m.lastScan.Status)),
 		fmt.Sprintf("Вердикт: %s", normalizeVerdict(m.lastScan.Verdict)),
 		fmt.Sprintf("Риск: %d/100", m.lastScan.RiskScore),
-		fmt.Sprintf("Видимые сигналы: %d", m.lastScan.SurfacedFindings),
+		fmt.Sprintf("Найдено: %d", m.lastScan.SurfacedFindings),
 	}
 	if m.lastScan.Message != "" {
-		lines = append(lines, "", m.lastScan.Message)
+		lines = append(lines, "", shortText(m.lastScan.Message, 108))
 	}
 	if len(m.lastScan.Findings) > 0 {
-		lines = append(lines, "", sectionTitle("Что заметили"))
+		lines = append(lines, "", sectionTitle("Что нашли"))
 		for _, finding := range m.lastScan.Findings {
-			lines = append(lines, fmt.Sprintf("• %s — %s", finding.Title, normalizeVerdict(finding.Verdict)))
+			line := fmt.Sprintf("• %s — %s", finding.Title, normalizeVerdict(finding.Verdict))
+			if summary := strings.TrimSpace(finding.Summary); summary != "" {
+				line += ": " + shortText(summary, 72)
+			}
+			lines = append(lines, line)
 		}
 	}
 	if len(m.lastScan.Timeline) > 0 {
 		lines = append(lines, "", sectionTitle("Таймлайн"))
 		for _, stage := range m.lastScan.Timeline {
-			lines = append(lines, "• "+stage)
+			lines = append(lines, "• "+shortText(stage, 88))
 		}
+	}
+	if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
+		lines = append(lines, "", status)
 	}
 	return cardStyle(width).Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderSettings(width int) string {
-	choices := []string{
-		renderChoice(m.settingsCursor == 0, "Low-motion", boolLabel(m.lowMotion, "включён", "выключен")),
-		renderChoice(m.settingsCursor == 1, "Обновить manifest", "Забирает актуальные артефакты и install-команды."),
-		renderChoice(m.settingsCursor == 2, "Очистить сессию", "Удаляет сохранённый токен и возвращает на стартовый экран."),
-	}
-	return cardStyle(width).Render(strings.Join([]string{
+	lines := []string{
 		sectionTitle("Настройки"),
-		strings.Join(choices, "\n\n"),
+		"В этом экране осталось только завершение текущей сессии.",
 		"",
-		fmt.Sprintf("Хранилище сессии: %s", sessionPathHint()),
-	}, "\n"))
+		renderActionButton("Выйти", true, true),
+		lipgloss.NewStyle().Foreground(colorMuted()).Render("Enter очищает сессию и возвращает к входу."),
+	}
+	if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
+		lines = append(lines, "", status)
+	}
+	return cardStyle(width).Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderFooter(width int) string {
-	hints := []string{"1-6 экраны", "Tab / j / k фокус", "Enter действие", "q выход"}
-	if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
-		hints = append(hints, "Enter на 'Отменить' останавливает job")
+	hints := []string{"1-3 экран", "Enter действие", "q выход"}
+	switch m.screen {
+	case screenAuth:
+		hints = []string{"Tab / Shift+Tab фокус", "Enter подтвердить", "Esc назад", "1-3 экран", "q выход"}
+	case screenScan:
+		hints = []string{"Enter старт/стоп", "Up / Down лог", "Колесо мыши лог", "1-3 экран", "q выход"}
+	case screenSettings:
+		hints = []string{"Enter выйти", "1-3 экран", "q выход"}
 	}
 	return lipgloss.NewStyle().Width(width).Foreground(colorMuted()).Render(strings.Join(hints, "  •  "))
 }
@@ -751,25 +769,272 @@ func (m *Model) setStatus(text string, tone statusTone) {
 }
 
 func (m *Model) prevScreen() {
-	if m.screen == screenWelcome {
+	switch m.activeNavScreen() {
+	case screenHistory:
+		m.screen = screenScan
+	case screenSettings:
+		m.screen = screenHistory
+	default:
 		m.screen = screenSettings
-	} else {
-		m.screen--
-	}
-	if m.screen == screenAuth {
-		m.syncAuthFocus()
 	}
 }
 
 func (m *Model) nextScreen() {
-	if m.screen == screenSettings {
-		m.screen = screenWelcome
-	} else {
-		m.screen++
+	switch m.activeNavScreen() {
+	case screenHistory:
+		m.screen = screenSettings
+	case screenSettings:
+		m.screen = screenScan
+	default:
+		m.screen = screenHistory
 	}
-	if m.screen == screenAuth {
-		m.syncAuthFocus()
+}
+
+func (m Model) activeNavScreen() screen {
+	switch m.screen {
+	case screenHistory, screenSettings:
+		return m.screen
+	default:
+		return screenScan
 	}
+}
+
+func (m Model) scanForDisplay() *api.DesktopScan {
+	if m.currentScan != nil {
+		return m.currentScan
+	}
+	return m.lastScan
+}
+
+func (m *Model) scrollScanLog(delta int) {
+	entries := m.scanLogEntries(m.scanForDisplay())
+	maxOffset := len(entries) - m.scanLogViewportHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.scanLogOffset = clamp(m.scanLogOffset+delta, 0, maxOffset)
+}
+
+func (m *Model) pinScanLogToLatest(scan *api.DesktopScan) {
+	entries := m.scanLogEntries(scan)
+	maxOffset := len(entries) - m.scanLogViewportHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.scanLogOffset = maxOffset
+}
+
+func (m Model) scanPanelHeight() int {
+	if m.height == 0 {
+		return 22
+	}
+	return clamp(m.height-12, 16, 30)
+}
+
+func (m Model) scanPanelWidths(width int) (int, int) {
+	if width < 96 {
+		return width, width
+	}
+	left := clamp(width/3, 32, 40)
+	return left, width - left - 2
+}
+
+func (m Model) scanLogViewportHeight() int {
+	height := m.scanPanelHeight() - 7
+	if height < 5 {
+		return 5
+	}
+	return height
+}
+
+func (m Model) scanLogBounds(entries []string) (int, int) {
+	if len(entries) == 0 {
+		return 0, 0
+	}
+	maxOffset := len(entries) - m.scanLogViewportHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := clamp(m.scanLogOffset, 0, maxOffset)
+	end := offset + m.scanLogViewportHeight()
+	if end > len(entries) {
+		end = len(entries)
+	}
+	return offset, end
+}
+
+func (m Model) scanActive(scan *api.DesktopScan) bool {
+	return scan != nil && !isTerminalScanStatus(scan.Status)
+}
+
+func (m Model) scanActionLabel() string {
+	if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
+		return "Остановить проверку"
+	}
+	if m.session == nil {
+		return "Войти и запустить"
+	}
+	return "Запустить проверку"
+}
+
+func (m Model) scanWindowStatus(scan *api.DesktopScan) string {
+	if scan == nil {
+		if strings.TrimSpace(m.status) != "" {
+			return m.status
+		}
+		return "Проверка не запущена"
+	}
+	return normalizeScanStatus(scan.Status)
+}
+
+func (m Model) scanWindowTone(scan *api.DesktopScan) statusTone {
+	if scan == nil {
+		return m.statusTone
+	}
+	switch strings.ToUpper(strings.TrimSpace(scan.Status)) {
+	case "FAILED":
+		return statusError
+	case "CANCELLED":
+		return statusWarning
+	case "COMPLETED":
+		return toneForVerdict(scan.Verdict)
+	default:
+		return statusInfo
+	}
+}
+
+func (m Model) scanStageName(scan *api.DesktopScan) string {
+	if scan == nil {
+		if m.session == nil {
+			return "Нужен вход"
+		}
+		if m.scanBusy {
+			return "Подготовка запроса"
+		}
+		return "Готово к запуску"
+	}
+	if msg := strings.TrimSpace(scan.Message); msg != "" {
+		return shortText(msg, 42)
+	}
+	if len(scan.Timeline) > 0 {
+		return shortText(scan.Timeline[len(scan.Timeline)-1], 42)
+	}
+	switch strings.ToUpper(strings.TrimSpace(scan.Status)) {
+	case "COMPLETED":
+		return "Результат готов"
+	case "FAILED":
+		return "Проверка завершилась ошибкой"
+	case "CANCELLED":
+		return "Проверка остановлена"
+	case "QUEUED":
+		return "Ожидает запуск"
+	default:
+		return "Проверка хоста"
+	}
+}
+
+func (m Model) scanPercent(scan *api.DesktopScan) int {
+	if scan == nil {
+		if m.scanBusy {
+			return 8
+		}
+		return 0
+	}
+	switch strings.ToUpper(strings.TrimSpace(scan.Status)) {
+	case "COMPLETED", "FAILED", "CANCELLED":
+		return 100
+	case "QUEUED":
+		return 8
+	}
+	checked := m.scanChecked(scan)
+	total := m.scanTotal(scan)
+	if total == 0 {
+		return 0
+	}
+	percent := checked * 100 / total
+	if percent < 14 {
+		percent = 14
+	}
+	if percent > 92 {
+		percent = 92
+	}
+	return percent
+}
+
+func (m Model) scanChecked(scan *api.DesktopScan) int {
+	if scan == nil {
+		return 0
+	}
+	if isTerminalScanStatus(scan.Status) {
+		return m.scanTotal(scan)
+	}
+	count := len(scan.Timeline)
+	if count == 0 {
+		if strings.EqualFold(strings.TrimSpace(scan.Status), "QUEUED") {
+			return 0
+		}
+		return 1
+	}
+	return count
+}
+
+func (m Model) scanTotal(scan *api.DesktopScan) int {
+	if scan == nil {
+		return 4
+	}
+	total := len(scan.Timeline) + 1
+	if isTerminalScanStatus(scan.Status) {
+		total = len(scan.Timeline)
+		if total < 1 {
+			total = 1
+		}
+		return total
+	}
+	if total < 4 {
+		total = 4
+	}
+	return total
+}
+
+func (m Model) scanLogEntries(scan *api.DesktopScan) []string {
+	if scan == nil {
+		lines := []string{}
+		if strings.TrimSpace(m.status) != "" {
+			lines = append(lines, m.status)
+		}
+		if m.session == nil {
+			lines = append(lines, "Вход нужен только для запуска новой проверки.")
+		} else {
+			lines = append(lines, "Enter отправит профиль этого хоста на проверку.")
+		}
+		return lines
+	}
+
+	lines := []string{
+		fmt.Sprintf("Статус: %s", normalizeScanStatus(scan.Status)),
+		fmt.Sprintf("Этап: %s", m.scanStageName(scan)),
+	}
+	if msg := strings.TrimSpace(scan.Message); msg != "" && shortText(msg, 42) != m.scanStageName(scan) {
+		lines = append(lines, msg)
+	}
+	for _, stage := range scan.Timeline {
+		lines = append(lines, strings.TrimSpace(stage))
+	}
+	if isTerminalScanStatus(scan.Status) {
+		lines = append(lines,
+			fmt.Sprintf("Вердикт: %s", normalizeVerdict(scan.Verdict)),
+			fmt.Sprintf("Риск: %d/100", scan.RiskScore),
+			fmt.Sprintf("Найдено: %d", scan.SurfacedFindings),
+		)
+	}
+	for _, finding := range scan.Findings {
+		line := fmt.Sprintf("%s — %s", finding.Title, normalizeVerdict(finding.Verdict))
+		if summary := strings.TrimSpace(finding.Summary); summary != "" {
+			line += ": " + summary
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func (m Model) sessionToken() string {
@@ -846,7 +1111,7 @@ func startHostScanCmd(client *api.Client, token string) tea.Cmd {
 	}
 }
 
-func pollScanCmd(client *api.Client, token string, id int64) tea.Cmd {
+func pollScanCmd(client *api.Client, token string, id string) tea.Cmd {
 	return tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
 		response, err := client.GetDesktopScan(token, id)
 		if err != nil {
@@ -872,8 +1137,12 @@ func buildLinuxHostArtifact() map[string]any {
 		host = "linux-host"
 	}
 
-	packageManager := detectPackageManager()
-	desktop := detectDesktopSession()
+	packageManager := DetectPackageManager()
+	desktop := DetectDesktopSession()
+	installRoots := detectLinuxInstallRoots()
+	scanRoots := detectLinuxScanRoots(installRoots)
+	packageInventory := detectLinuxPackageInventory(packageManager, 192)
+	candidatePaths := detectLinuxCandidatePaths(scanRoots, 160)
 	packageSources := []string{}
 	if packageManager != "не найден" {
 		packageSources = append(packageSources, packageManager)
@@ -890,6 +1159,12 @@ func buildLinuxHostArtifact() map[string]any {
 		"package_manager":   packageManager,
 		"package_sources":   packageSources,
 		"desktop_entries":   desktopEntries,
+		"install_roots":     installRoots,
+		"scan_roots":        scanRoots,
+		"candidate_paths":   candidatePaths,
+		"candidate_count":   len(candidatePaths),
+		"package_inventory": packageInventory,
+		"package_count":     len(packageInventory),
 		"capabilities":      detectCapabilities(),
 		"runs_as_root":      os.Geteuid() == 0,
 		"executable":        true,
@@ -902,7 +1177,191 @@ func buildLinuxHostArtifact() map[string]any {
 	}
 }
 
-func detectPackageManager() string {
+func detectLinuxInstallRoots() []string {
+	home := strings.TrimSpace(os.Getenv("HOME"))
+	candidates := []string{
+		"/usr/bin",
+		"/usr/local/bin",
+		"/bin",
+		"/opt",
+		"/usr/share/applications",
+		"/var/lib/flatpak/exports/bin",
+		"/snap/bin",
+	}
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, ".local", "share", "applications"),
+		)
+	}
+	return filterExistingPaths(candidates)
+}
+
+func detectLinuxScanRoots(installRoots []string) []string {
+	home := strings.TrimSpace(os.Getenv("HOME"))
+	candidates := append([]string{}, installRoots...)
+	candidates = append(candidates,
+		"/usr/sbin",
+		"/usr/local/sbin",
+		"/sbin",
+		"/etc/systemd/system",
+		"/usr/lib/systemd/system",
+		"/etc/xdg/autostart",
+	)
+	if home != "" {
+		candidates = append(candidates,
+			filepath.Join(home, ".config", "autostart"),
+			filepath.Join(home, ".config", "systemd", "user"),
+		)
+	}
+	return filterExistingPaths(candidates)
+}
+
+func filterExistingPaths(paths []string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	filtered := make([]string, 0, len(paths))
+	for _, candidate := range paths {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		filtered = append(filtered, candidate)
+	}
+	sort.Strings(filtered)
+	return filtered
+}
+
+func detectLinuxPackageInventory(packageManager string, limit int) []string {
+	type inventoryCommand struct {
+		name string
+		args []string
+	}
+
+	commands := []inventoryCommand{}
+	switch packageManager {
+	case "apt":
+		commands = append(commands, inventoryCommand{name: "dpkg-query", args: []string{"-W", "-f=${Package}\n"}})
+	case "dnf", "yum", "zypper":
+		commands = append(commands, inventoryCommand{name: "rpm", args: []string{"-qa"}})
+	case "pacman":
+		commands = append(commands, inventoryCommand{name: "pacman", args: []string{"-Qq"}})
+	case "apk":
+		commands = append(commands, inventoryCommand{name: "apk", args: []string{"info"}})
+	}
+	commands = append(commands,
+		inventoryCommand{name: "flatpak", args: []string{"list", "--columns=application"}},
+		inventoryCommand{name: "snap", args: []string{"list"}},
+	)
+
+	seen := map[string]struct{}{}
+	packages := make([]string, 0, limit)
+	for _, command := range commands {
+		if limit > 0 && len(packages) >= limit {
+			break
+		}
+		if _, err := exec.LookPath(command.name); err != nil {
+			continue
+		}
+		output, err := exec.Command(command.name, command.args...).Output()
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(output), "\n")
+		for _, raw := range lines {
+			name := normalizePackageLine(command.name, raw)
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			packages = append(packages, name)
+			if limit > 0 && len(packages) >= limit {
+				break
+			}
+		}
+	}
+	sort.Strings(packages)
+	return packages
+}
+
+func normalizePackageLine(commandName, raw string) string {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		return ""
+	}
+	if commandName == "snap" {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || strings.EqualFold(fields[0], "Name") {
+			return ""
+		}
+		return fields[0]
+	}
+	return line
+}
+
+func detectLinuxCandidatePaths(roots []string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	candidates := make([]string, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	for _, root := range roots {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if len(candidates) >= limit {
+				sort.Strings(candidates)
+				return candidates
+			}
+			fullPath := filepath.Join(root, entry.Name())
+			if _, ok := seen[fullPath]; ok {
+				continue
+			}
+			if includeLinuxCandidate(root, entry) {
+				seen[fullPath] = struct{}{}
+				candidates = append(candidates, fullPath)
+			}
+		}
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func includeLinuxCandidate(root string, entry os.DirEntry) bool {
+	name := entry.Name()
+	if strings.HasPrefix(name, ".") {
+		return false
+	}
+	if entry.Type().IsRegular() {
+		if strings.HasSuffix(name, ".desktop") || strings.HasSuffix(name, ".service") || strings.HasSuffix(name, ".AppImage") {
+			return true
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return false
+		}
+		return info.Mode()&0o111 != 0
+	}
+	if !entry.IsDir() {
+		return false
+	}
+	base := filepath.Base(root)
+	return base == "opt" || strings.HasSuffix(root, "/applications")
+}
+
+func DetectPackageManager() string {
 	for _, candidate := range []string{"apt", "dnf", "yum", "pacman", "zypper", "xbps-install", "apk"} {
 		if _, err := exec.LookPath(candidate); err == nil {
 			return candidate
@@ -911,7 +1370,7 @@ func detectPackageManager() string {
 	return "не найден"
 }
 
-func detectDesktopSession() string {
+func DetectDesktopSession() string {
 	for _, key := range []string{"XDG_CURRENT_DESKTOP", "DESKTOP_SESSION", "GDMSESSION"} {
 		value := strings.TrimSpace(os.Getenv(key))
 		if value != "" {
@@ -1029,17 +1488,17 @@ func manifestStateLabel(manifest *api.ManifestResponse) string {
 
 func renderAmbient(width, frame int, lowMotion bool) string {
 	frames := []string{
-		"..::....::....::....::....::....::..",
-		".::....::....::....::....::....::...",
-		"::....::....::....::....::....::....",
-		"....::....::....::....::....::....::",
+		"···  •••  ···  •••  ···  •••  ···",
+		"··  •••  ···  •••  ···  •••  ··· ",
+		"·  •••  ···  •••  ···  •••  ···  •",
+		"  •••  ···  •••  ···  •••  ···  ••",
 	}
 	if !lowMotion {
 		frames = []string{
-			"__--==~~==--__..__--==~~==--__..__--",
-			"_-==~~==--__..__--==~~==--__..__--=",
-			"==~~==--__..__--==~~==--__..__--==~",
-			"~~==--__..__--==~~==--__..__--==~~=",
+			"·  ○  ·  •  ·  ○  ·  •  ·  ○  ·  •",
+			"○  ·  •  ·  ○  ·  •  ·  ○  ·  •  ·",
+			"·  •  ·  ○  ·  •  ·  ○  ·  •  ·  ○",
+			"•  ·  ○  ·  •  ·  ○  ·  •  ·  ○  ·",
 		}
 	}
 	line := frames[frame%len(frames)]
@@ -1053,11 +1512,11 @@ func renderActivityLine(frame int, lowMotion, active bool) string {
 	if !active {
 		return lipgloss.NewStyle().Foreground(colorMuted()).Render("Проверка сейчас не запущена.")
 	}
-	frames := []string{"[=     ]", "[==    ]", "[ ===  ]", "[  === ]", "[   == ]", "[    = ]"}
+	frames := []string{"●", "●", "●"}
 	if !lowMotion {
-		frames = []string{"[>     ]", "[>>    ]", "[ >>>  ]", "[  >>> ]", "[   >> ]", "[    > ]"}
+		frames = []string{"◜", "◠", "◝", "◞", "◡", "◟"}
 	}
-	return lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render(frames[frame%len(frames)] + "  Сервер обрабатывает задачу")
+	return lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render(frames[frame%len(frames)] + "  сервер проверяет хост")
 }
 
 func renderPill(label, value string, color lipgloss.Color) string {
@@ -1078,6 +1537,15 @@ func renderStatusPill(text string, tone statusTone) string {
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Background(color).Padding(0, 1).Render(text)
 }
 
+func maybeRenderStatus(text string, tone statusTone) string {
+	value := strings.TrimSpace(text)
+	switch value {
+	case "", "Готово", "Готово к проверке":
+		return ""
+	}
+	return renderStatusPill(value, tone)
+}
+
 func renderActionButton(label string, active, enabled bool) string {
 	style := lipgloss.NewStyle().Padding(0, 2).Foreground(lipgloss.Color("255")).Background(colorAccent())
 	if !enabled {
@@ -1088,10 +1556,42 @@ func renderActionButton(label string, active, enabled bool) string {
 	return style.Render(label)
 }
 
+func renderScanPulse(frame int, lowMotion, active bool) string {
+	if !active {
+		return lipgloss.NewStyle().Foreground(colorMuted()).Render("•")
+	}
+	frames := []string{"●", "○"}
+	if !lowMotion {
+		frames = []string{"◜", "◠", "◝", "◞", "◡", "◟"}
+	}
+	return lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render(frames[frame%len(frames)])
+}
+
+func renderProgressBar(width, percent int) string {
+	segments := clamp(width, 12, 40)
+	filled := percent * segments / 100
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > segments {
+		filled = segments
+	}
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		lipgloss.NewStyle().Foreground(colorAccentStrong()).Render(strings.Repeat("█", filled)),
+		lipgloss.NewStyle().Foreground(colorSurfaceStrong()).Render(strings.Repeat("░", segments-filled)),
+	)
+}
+
+func renderLogEntry(text string, width int) string {
+	content := shortText(strings.TrimSpace(text), clamp(width, 24, 120))
+	return lipgloss.NewStyle().Foreground(colorMuted()).Render("• " + content)
+}
+
 func renderChoice(active bool, title, text string) string {
 	bullet := "  "
 	if active {
-		bullet = lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render("> ")
+		bullet = lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render("▸ ")
 	}
 	return bullet + lipgloss.NewStyle().Bold(true).Render(title) + "\n" + lipgloss.NewStyle().Foreground(colorMuted()).Render(text)
 }
@@ -1182,6 +1682,18 @@ func repeatToWidth(pattern string, width int) string {
 		return result[:width]
 	}
 	return result
+}
+
+func shortText(text string, max int) string {
+	value := strings.TrimSpace(text)
+	runes := []rune(value)
+	if max <= 0 || len(runes) <= max {
+		return value
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
 }
 
 func clamp(value, low, high int) int {

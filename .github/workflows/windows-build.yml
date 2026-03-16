@@ -42,10 +42,10 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Windows desktop distributable
+      - name: Build Windows desktop GUI bundle
         shell: pwsh
         run: |
-          & .\gradlew.bat :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
+          & .\gradlew.bat :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
@@ -64,11 +64,21 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          $appRoot = "desktop-app/build/compose/binaries/main/app"
-          if (-not (Test-Path $appRoot)) { throw "Desktop app root not found: $appRoot" }
-          $appDir = Get-ChildItem $appRoot -Directory | Sort-Object Name | Select-Object -First 1
-          $sourcePath = if ($appDir) { $appDir.FullName } else { $appRoot }
-          Compress-Archive -Path "$sourcePath\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
+          $jar = Get-ChildItem -Path "desktop-app/build" -Recurse -Filter "*.jar" |
+            Where-Object { $_.FullName -match "[\\/]compose[\\/]jars[\\/]" } |
+            Select-Object -First 1
+          if (-not $jar) { throw "Desktop uber jar not found under desktop-app/build" }
+          New-Item -ItemType Directory -Force -Path dist\windows\gui\bin | Out-Null
+          New-Item -ItemType Directory -Force -Path dist\windows\gui\lib | Out-Null
+          Copy-Item $jar.FullName dist\windows\gui\lib\neuralv-desktop.jar -Force
+          @'
+          @echo off
+          setlocal
+          set "SCRIPT_DIR=%~dp0"
+          set "APP_HOME=%SCRIPT_DIR%.."
+          java -jar "%APP_HOME%\lib\neuralv-desktop.jar" %*
+          '@ | Set-Content -Path dist\windows\gui\bin\neuralv.bat -NoNewline
+          Compress-Archive -Path "dist\windows\gui\*" -DestinationPath dist\windows\neuralv-windows.zip -Force
 
       - name: Setup Go
         uses: actions/setup-go@v5

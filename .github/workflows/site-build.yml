@@ -41,6 +41,14 @@ jobs:
       - name: Build site
         run: npm run build
 
+      - name: Inject standalone NV page
+        shell: bash
+        run: |
+          if [ -d public/nv ]; then
+            mkdir -p dist/nv
+            cp -R public/nv/. dist/nv/
+          fi
+
       - name: Package site bundle
         shell: bash
         run: |

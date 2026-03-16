@@ -79,11 +79,11 @@ jobs:
       - name: Make Gradle executable
         run: chmod +x ./gradlew
 
-      - name: Build Linux desktop GUI bundle
+      - name: Build Linux desktop GUI uber jar
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:packageReleaseUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
+          ./gradlew --settings-file settings-desktop.gradle.kts :desktop-app:packageUberJarForCurrentOS --stacktrace --no-daemon --console=plain 2>&1 | tee linux-gui-build.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             echo "::group::linux-gui-build tail"

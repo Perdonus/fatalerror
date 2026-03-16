@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import { getArtifact } from '../lib/manifest';
 import { getPackage, getPackageVariant } from '../lib/packages';
@@ -30,39 +30,39 @@ function getWindowsInstallContent(mode: WindowsInstallMode, options: {
 }) {
   const powershellCommand =
     options.metadata?.powershellInstallCommand ||
-    'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/neuralv.ps1 | iex"';
+    'irm https://sosiskibot.ru/neuralv/install/neuralv.ps1 | iex';
   const cmdCommand =
     options.metadata?.cmdInstallCommand ||
-    'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/neuralv.cmd -o "%TEMP%\\neuralv-install.cmd" && cmd /c "%TEMP%\\neuralv-install.cmd"';
+    'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/neuralv.cmd -o "%TEMP%\\neuralv-install.cmd" && "%TEMP%\\neuralv-install.cmd"';
 
   switch (mode) {
     case 'setup':
       return {
-        title: 'Setup',
-        buttonLabel: options.metadata?.setupDownloadLabel || 'Скачать setup',
+        buttonLabel: options.metadata?.setupDownloadLabel || 'Скачать установщик',
         downloadUrl: options.setupUrl,
-        command: ''
+        command: '',
+        description: 'Скачай setup и запусти его.'
       };
     case 'portable':
       return {
-        title: 'Portable',
         buttonLabel: options.metadata?.directDownloadLabel || 'Скачать portable',
         downloadUrl: options.portableUrl,
-        command: ''
+        command: '',
+        description: 'Скачай portable и распакуй.'
       };
     case 'powershell':
       return {
-        title: 'PowerShell',
         buttonLabel: '',
         downloadUrl: undefined,
-        command: powershellCommand
+        command: powershellCommand,
+        description: 'Скопируй команду в PowerShell.'
       };
     default:
       return {
-        title: 'CMD',
         buttonLabel: '',
         downloadUrl: undefined,
-        command: cmdCommand
+        command: cmdCommand,
+        description: 'Скопируй команду в CMD.'
       };
   }
 }
@@ -85,65 +85,46 @@ export function WindowsPage() {
     manifestArtifact?.downloadUrl ||
     packageVariant?.download_url;
   const setupUrl = manifestState.manifest.setupUrl || metadata?.setupUrl || portableUrl;
-  const ready = Boolean(portableUrl || setupUrl);
-  const [mode, setMode] = useState<WindowsInstallMode>('setup');
-  const [copyState, setCopyState] = useState<'idle' | 'done'>('idle');
-  const active = getWindowsInstallContent(mode, { setupUrl, portableUrl, metadata });
+  const setupReady = Boolean(setupUrl);
+  const portableReady = Boolean(portableUrl);
+  const [modeOverride, setModeOverride] = useState<WindowsInstallMode | null>(null);
+  const mode = modeOverride ?? (setupReady ? 'setup' : portableReady ? 'portable' : 'powershell');
 
-  const handleCopy = async () => {
-    if (!active.command || typeof navigator === 'undefined' || !navigator.clipboard) {
+  useEffect(() => {
+    if (modeOverride === 'setup' && !setupReady) {
+      setModeOverride(null);
       return;
     }
 
-    try {
-      await navigator.clipboard.writeText(active.command);
-      setCopyState('done');
-      window.setTimeout(() => setCopyState('idle'), 1600);
-    } catch {
-      setCopyState('idle');
+    if (modeOverride === 'portable' && !portableReady) {
+      setModeOverride(null);
     }
-  };
+  }, [modeOverride, portableReady, setupReady]);
+
+  const active = getWindowsInstallContent(mode, { setupUrl, portableUrl, metadata });
+  const versionLabel = version || 'pending';
 
   return (
     <div className="page-stack">
-      <section className="hero-card platform-hero">
+      <section className="hero-card platform-hero platform-hero-simple">
         <div className="hero-copy">
-          <h1>NeuralV для Windows.</h1>
-          <p>Ставь графический клиент так, как тебе удобнее: setup, portable или одной командой из терминала.</p>
+          <h1>NeuralV для Windows</h1>
+          <p>Setup, portable или одна команда для PowerShell и CMD.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#windows-install">
-              Установка
+              Установить
             </a>
-            {ready ? (
-              <a className="nv-button tonal" href={portableUrl || setupUrl} target="_blank" rel="noreferrer">
-                Скачать
-              </a>
-            ) : (
-              <button className="nv-button tonal is-disabled" type="button" disabled>
-                Сборка скоро
-              </button>
-            )}
           </div>
-        </div>
-
-        <div className="hero-panel compact-panel">
-          <article className="mini-stat">
-            <strong>{version || 'pending'}</strong>
-            <span className="hero-support-text">
-              {manifestArtifact?.fileName || packageVariant?.file_name || 'Windows GUI build'}
-            </span>
-          </article>
+          <span className="hero-support-text">{versionLabel}</span>
         </div>
       </section>
 
       <section id="windows-install" className="section-block">
         <article className="content-card install-card install-card-wide install-card-unified">
-          <div className="install-card-head">
-            <div>
+          <div className="install-card-head simple-head">
+            <div className="install-card-copy">
               <h3>Установка</h3>
-            </div>
-            <div className="install-card-head-actions">
-              <span className="status-chip">{version || 'pending'}</span>
+              <p className="install-intro">{active.description}</p>
             </div>
           </div>
 
@@ -153,41 +134,31 @@ export function WindowsPage() {
                 key={item}
                 type="button"
                 className={`segment${mode === item ? ' is-active' : ''}`}
-                onClick={() => setMode(item)}
+                onClick={() => setModeOverride(item)}
+                disabled={(item === 'setup' && !setupReady) || (item === 'portable' && !portableReady)}
               >
                 {item === 'powershell' ? 'PowerShell' : item === 'cmd' ? 'CMD' : item[0].toUpperCase() + item.slice(1)}
               </button>
             ))}
           </div>
 
-          <div className="install-mode-body">
-            <div className="install-card-head compact-head">
-              <div>
-                <h3>{active.title}</h3>
-              </div>
-              <div className="install-card-head-actions">
-                {(mode === 'setup' || mode === 'portable') && active.downloadUrl ? (
-                  <a className="nv-button" href={active.downloadUrl} target="_blank" rel="noreferrer">
-                    {active.buttonLabel}
-                  </a>
-                ) : (mode === 'setup' || mode === 'portable') ? (
-                  <button className="nv-button is-disabled" type="button" disabled>
-                    {active.buttonLabel}
-                  </button>
-                ) : (
-                  <button className="copy-button" type="button" onClick={handleCopy}>
-                    {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
-                  </button>
-                )}
-              </div>
+          {(mode === 'setup' || mode === 'portable') ? (
+            <div className="install-card-footer install-download-row">
+              {active.downloadUrl ? (
+                <a className="nv-button" href={active.downloadUrl} target="_blank" rel="noreferrer">
+                  {active.buttonLabel}
+                </a>
+              ) : (
+                <button className="nv-button is-disabled" type="button" disabled>
+                  {active.buttonLabel}
+                </button>
+              )}
             </div>
-
-            {mode === 'powershell' || mode === 'cmd' ? (
-              <div className="command-shell light-shell">
-                <pre>{active.command}</pre>
-              </div>
-            ) : null}
-          </div>
+          ) : (
+            <div className="command-shell light-shell install-shell">
+              <pre>{active.command}</pre>
+            </div>
+          )}
         </article>
       </section>
     </div>

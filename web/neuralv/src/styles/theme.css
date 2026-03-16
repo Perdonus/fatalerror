@@ -308,6 +308,10 @@ ul {
   grid-template-columns: 1fr;
 }
 
+.platform-hero-simple {
+  grid-template-columns: 1fr;
+}
+
 .hero-copy,
 .hero-panel,
 .mini-stat,
@@ -326,6 +330,10 @@ ul {
 
 .hero-copy {
   align-content: start;
+}
+
+.platform-hero-simple .hero-copy {
+  max-width: 720px;
 }
 
 .hero-copy h1 {
@@ -351,6 +359,10 @@ ul {
 .showcase-points li {
   color: var(--nv-text-soft);
   line-height: 1.65;
+}
+
+.hero-support-text {
+  display: block;
 }
 
 .section-kicker,
@@ -445,6 +457,13 @@ ul {
 .mini-stat strong {
   font-size: 1.06rem;
   letter-spacing: -0.03em;
+}
+
+.version-list {
+  display: grid;
+  gap: 4px;
+  color: var(--nv-text-soft);
+  line-height: 1.5;
 }
 
 .section-block {
@@ -675,11 +694,24 @@ ul {
 }
 
 .install-card-unified {
-  gap: 18px;
+  gap: 16px;
+}
+
+.install-card-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.install-intro {
+  max-width: 48ch;
 }
 
 .install-options-stack {
   display: grid;
+  gap: 10px;
+}
+
+.install-picker-stack {
   gap: 12px;
 }
 
@@ -767,12 +799,20 @@ ul {
   align-items: center;
 }
 
+.install-download-row {
+  padding-top: 2px;
+}
+
 .command-shell {
   padding: 18px;
   border-radius: 26px;
   background: rgba(7, 13, 24, 0.96);
   color: #eef4ff;
   overflow: hidden;
+}
+
+.install-shell {
+  border: 1px solid var(--nv-stroke);
 }
 
 .light-shell {

@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "generated_at": "2026-03-16T20:44:22Z",
+  "release_channel": "release",
+  "artifacts": [
+    {
+      "platform": "android",
+      "channel": "release",
+      "version": "1.4.0",
+      "sha256": "165be975fc1d46276ff8527345d22555b5d5750cac2c9a88b308e0b919bb2f89",
+      "download_url": "https://raw.githubusercontent.com/Perdonus/fatalerror/android-builds/android/neuralv-android-1.4.0.apk",
+      "install_command": "",
+      "file_name": "neuralv-android-1.4.0.apk",
+      "notes": [
+        "Android APK"
+      ],
+      "metadata": {}
+    }
+  ]
+}

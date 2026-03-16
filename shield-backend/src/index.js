@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const aiRoutes = require('./routes/ai');
 const deepScansRoutes = require('./routes/deepScans');
 const desktopScansRoutes = require('./routes/desktopScans');
+const packagesRoutes = require('./routes/packages');
 const releasesRoutes = require('./routes/releases');
 const scansRoutes = require('./routes/scans');
 const purchasesRoutes = require('./routes/purchases');
@@ -81,9 +82,11 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/ai', aiLimiter, aiRoutes);
 app.use('/api/scans/deep', deepScansRoutes);
 app.use('/api/scans/desktop', desktopScansRoutes);
+app.use('/api/packages', packagesRoutes);
 app.use('/api/scans', scansRoutes);
 app.use('/api/purchases', purchasesRoutes);
 app.use('/api/logs', logsRoutes);
+app.use('/api/packages', packagesRoutes);
 app.use('/api/releases', releasesRoutes);
 
 function buildHealthPayload() {

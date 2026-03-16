@@ -9,7 +9,7 @@ const productPoints = [
 const baseUrl = import.meta.env.BASE_URL;
 const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
 
-// Скриншоты теперь встраиваются прямо в web/neuralv/public/media/neuralv-devices.svg.
+// Скрин-слоты встроены прямо в web/neuralv/public/media/neuralv-devices.svg.
 // Положи файлы в web/neuralv/public/media/screenshots/ с именами:
 // android-home.png, windows-home.png, linux-home.png.
 export function HomePage() {
@@ -21,6 +21,7 @@ export function HomePage() {
           <p>Выбирай платформу, переходи на нужную страницу и ставь свою версию без длинных инструкций.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#downloads">Скачать</a>
+            <Link className="nv-button tonal" to="/nv">NV</Link>
           </div>
         </div>
       </section>
@@ -40,7 +41,7 @@ export function HomePage() {
           <div className="showcase-visual">
             <div className="device-glow device-glow-a" aria-hidden="true" />
             <div className="device-glow device-glow-b" aria-hidden="true" />
-            <img className="device-showcase" src={deviceShowcaseUrl} alt="Телефон и ПК с местом под скриншоты NeuralV" />
+            <img className="device-showcase" src={deviceShowcaseUrl} alt="Устройства NeuralV со встроенными слотами под скриншоты" />
           </div>
         </article>
       </section>
@@ -82,7 +83,7 @@ export function HomePage() {
               </div>
             </div>
             <div className="platform-meta">x64 desktop и серверные сценарии</div>
-            <div className="card-actions">
+            <div className="card-actions" style={{ flexWrap: 'nowrap' }}>
               <Link className="nv-button tonal" to="/linux">GUI</Link>
               <Link className="nv-button tonal" to="/linux">CLI</Link>
             </div>

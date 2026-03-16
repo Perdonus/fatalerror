@@ -1,0 +1,90 @@
+{
+  "packages": [
+    {
+      "name": "neuralv",
+      "display_name": "NeuralV",
+      "summary": "Антивирус NeuralV для Windows, Linux и Android.",
+      "description": "Единая линейка NeuralV для телефона, рабочего стола и терминала.",
+      "aliases": ["antivirus"],
+      "sources": [
+        {
+          "type": "release_manifest"
+        }
+      ],
+      "targets": [
+        {
+          "id": "windows-gui",
+          "host_os": "windows",
+          "client_kind": "nv",
+          "artifact_platform": "windows",
+          "install_strategy": "archive_bundle",
+          "install_root_key": "windows_localappdata_neuralv"
+        },
+        {
+          "id": "linux-cli",
+          "host_os": "linux",
+          "client_kind": "nv",
+          "artifact_platform": "shell",
+          "install_strategy": "paired_binaries",
+          "install_root_key": "linux_local_bin",
+          "binary_name": "neuralv-shell",
+          "daemon_binary_name": "neuralvd",
+          "daemon_url_metadata_key": "daemonUrl",
+          "wrapper_name": "neuralv"
+        },
+        {
+          "id": "linux-gui",
+          "host_os": "linux",
+          "client_kind": "site-gui",
+          "artifact_platform": "linux",
+          "install_strategy": "archive_bundle",
+          "install_root_key": "linux_opt_neuralv"
+        },
+        {
+          "id": "android",
+          "host_os": "android",
+          "client_kind": "site",
+          "artifact_platform": "android",
+          "install_strategy": "download_only"
+        }
+      ]
+    },
+    {
+      "name": "nv",
+      "display_name": "NV",
+      "summary": "Пакетный менеджер для NeuralV и совместимых пакетов.",
+      "description": "Командный пакетный менеджер с установкой и обновлением пакетов по имени и версии.",
+      "aliases": ["neuralv-package-manager"],
+      "sources": [
+        {
+          "type": "manifest_url",
+          "url": "https://raw.githubusercontent.com/Perdonus/NV/linux-builds/manifest.json"
+        },
+        {
+          "type": "manifest_url",
+          "url": "https://raw.githubusercontent.com/Perdonus/NV/windows-builds/manifest.json"
+        }
+      ],
+      "targets": [
+        {
+          "id": "linux",
+          "host_os": "linux",
+          "client_kind": "nv",
+          "artifact_platform": "nv-linux",
+          "install_strategy": "standalone_binary",
+          "install_root_key": "linux_local_bin",
+          "binary_name": "nv"
+        },
+        {
+          "id": "windows",
+          "host_os": "windows",
+          "client_kind": "nv",
+          "artifact_platform": "nv-windows",
+          "install_strategy": "standalone_binary",
+          "install_root_key": "windows_localappdata_nv",
+          "binary_name": "nv.exe"
+        }
+      ]
+    }
+  ]
+}

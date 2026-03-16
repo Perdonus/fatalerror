@@ -468,6 +468,10 @@ ul {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .content-card {
   padding: 22px;
   background: var(--nv-surface);
@@ -546,6 +550,19 @@ ul {
   height: 7px;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--nv-primary), var(--nv-accent));
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.74rem;
+  border-radius: 999px;
+  border: 1px solid var(--nv-stroke-strong);
+  background: var(--nv-primary-soft);
+  color: var(--nv-text);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .showcase-visual {
@@ -794,6 +811,10 @@ ul {
   }
 
   .three-up {
+    grid-template-columns: 1fr;
+  }
+
+  .two-up {
     grid-template-columns: 1fr;
   }
 }

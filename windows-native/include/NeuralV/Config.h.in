@@ -1,0 +1,11 @@
+#pragma once
+
+#define NEURALV_VERSION_W L"@NEURALV_VERSION@"
+#define NEURALV_VERSION_A "@NEURALV_VERSION@"
+#define NEURALV_API_HOST L"sosiskibot.ru"
+#define NEURALV_API_BASE_PATH L"/basedata"
+#define NEURALV_RELEASE_MANIFEST_URL L"https://sosiskibot.ru/basedata/api/releases/manifest"
+#define NEURALV_WINDOWS_PORTABLE_URL L"https://raw.githubusercontent.com/Perdonus/fatalerror/windows-builds/windows/neuralv-windows.zip"
+#define NEURALV_WINDOWS_SETUP_URL L"https://raw.githubusercontent.com/Perdonus/fatalerror/windows-builds/windows/neuralv-setup.exe"
+#define NEURALV_WINDOWS_PS1_URL L"https://raw.githubusercontent.com/Perdonus/fatalerror/windows-builds/install/windows.ps1"
+#define NEURALV_WINDOWS_CMD_URL L"https://raw.githubusercontent.com/Perdonus/fatalerror/windows-builds/install/windows.cmd"

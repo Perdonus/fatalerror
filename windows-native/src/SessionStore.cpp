@@ -6,6 +6,7 @@
 #include <shlobj.h>
 #include <sstream>
 #include <unordered_map>
+#include <locale>
 
 namespace neuralv {
 

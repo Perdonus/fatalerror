@@ -6,14 +6,8 @@ on:
       - main
     paths:
       - '.github/workflows/windows-build.yml'
-      - 'desktop-app/**'
-      - 'desktop-core/**'
-      - 'gradle/**'
+      - 'windows-native/**'
       - 'gradle.properties'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'settings-desktop.gradle.kts'
-      - 'build.gradle.kts'
       - 'branding/**'
   workflow_dispatch:
 
@@ -26,81 +20,64 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows GUI
+    name: Build Windows Native GUI
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache Compose and Kotlin native dependencies
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Prepare MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Cache native windows build tree
         uses: actions/cache@v4
         with:
-          path: |
-            ~\.konan
-          key: windows-konan-${{ runner.os }}-${{ hashFiles('desktop-app/build.gradle.kts', 'desktop-core/build.gradle.kts', 'gradle/libs.versions.toml', 'settings-desktop.gradle.kts') }}
+          path: build/windows-native
+          key: windows-native-${{ runner.os }}-${{ hashFiles('windows-native/**', 'gradle.properties', '.github/workflows/windows-build.yml') }}
           restore-keys: |
-            windows-konan-${{ runner.os }}-
+            windows-native-${{ runner.os }}-
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Cache Compose prepare artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.konan
-            desktop-app/build/compose
-          key: windows-compose-${{ runner.os }}-${{ hashFiles('desktop-app/**', 'desktop-core/**', 'branding/**', 'gradle.properties', 'settings-desktop.gradle.kts', 'build.gradle.kts') }}
-          restore-keys: |
-            windows-compose-${{ runner.os }}-
-
-      - name: Build Windows desktop GUI distributable
+      - name: Configure CMake
         shell: pwsh
         run: |
-          & .\gradlew.bat --settings-file settings-desktop.gradle.kts :desktop-app:createDistributable --stacktrace --no-daemon --console=plain 2>&1 | Tee-Object -FilePath windows-build.log
-          "WINDOWS_GUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          cmake -S windows-native -B build/windows-native -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: Package Windows archive
+      - name: Build native Windows client
         shell: pwsh
         run: |
-          if ($env:WINDOWS_GUI_BUILD_EXIT -ne '0') {
-            throw "Gradle desktop build failed earlier; skip packaging"
+          cmake --build build/windows-native --config Release 2>&1 | Tee-Object -FilePath windows-build.log
+          "WINDOWS_NATIVE_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Package Windows native payloads
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_NATIVE_BUILD_EXIT -ne '0') {
+            throw "Native Windows build failed earlier; skip packaging"
           }
           Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
-          $appDir = Get-ChildItem -Path "desktop-app/build/compose/binaries" -Directory -Recurse |
-            Where-Object { $_.Name -eq "NeuralV" -and $_.FullName -match "[\\\\/]app[\\\\/]" } |
-            Select-Object -First 1
-          if (-not $appDir) {
-            $appDir = Get-ChildItem -Path "desktop-app/build/compose/binaries" -Directory -Recurse |
-              Where-Object { $_.Name -eq "NeuralV" } |
-              Select-Object -First 1
-          }
-          if (-not $appDir) { throw "Bundled Windows app directory not found under desktop-app/build/compose/binaries" }
-          Copy-Item $appDir.FullName dist\windows\NeuralV -Recurse -Force
+          New-Item -ItemType Directory -Force -Path dist\windows\NeuralV | Out-Null
+          Copy-Item build\windows-native\NeuralV.exe dist\windows\NeuralV\NeuralV.exe -Force
+          Copy-Item build\windows-native\NeuralVSetup.exe dist\windows\neuralv-setup.exe -Force
           Compress-Archive -Path dist\windows\NeuralV -DestinationPath dist\windows\neuralv-windows.zip -Force
 
       - name: Upload Windows build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-gradle-log
+          name: windows-native-log
           path: windows-build.log
           if-no-files-found: warn
 
-      - name: Emit Windows GUI failure annotation
-        if: env.WINDOWS_GUI_BUILD_EXIT != '0'
+      - name: Emit Windows native failure annotation
+        if: env.WINDOWS_NATIVE_BUILD_EXIT != '0'
         shell: pwsh
         run: |
           $summary = @()
           if (Test-Path windows-build.log) {
-            $summary = Select-String -Path windows-build.log -Pattern '^e: ','^FAILURE:','BUILD FAILED','Unresolved reference','Could not ','No such ','not found','Exception','Execution failed' |
+            $summary = Select-String -Path windows-build.log -Pattern 'error C','fatal error','FAILED','Exception','not found','No such' |
               Select-Object -Last 20 |
               ForEach-Object { $_.Line.Trim() }
             if (-not $summary) {
@@ -112,18 +89,20 @@ jobs:
           $text = (($summary -join ' ') -replace '\s+', ' ')
           if ($text.Length -gt 1800) { $text = $text.Substring(0, 1800) }
           @(
-            '### Windows desktop build failure',
+            '### Windows native build failure',
             '',
             $text
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          Write-Host "::error file=.github/workflows/windows-build.yml,line=44::$text"
+          Write-Host "::error file=.github/workflows/windows-build.yml,line=32::$text"
           exit 1
 
-      - name: Upload Windows bundle
+      - name: Upload Windows native bundle
         uses: actions/upload-artifact@v4
         with:
-          name: neuralv-windows-gui
-          path: dist/windows/neuralv-windows.zip
+          name: neuralv-windows-native
+          path: |
+            dist/windows/neuralv-windows.zip
+            dist/windows/neuralv-setup.exe
           if-no-files-found: error
 
   publish-windows:
@@ -138,7 +117,7 @@ jobs:
       - name: Download Windows bundle
         uses: actions/download-artifact@v4
         with:
-          name: neuralv-windows-gui
+          name: neuralv-windows-native
           path: stage/windows
 
       - name: Prepare windows-builds payload
@@ -153,19 +132,27 @@ jobs:
           semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
           test -n "$semver"
           rm -rf publish-windows
-          mkdir -p publish-windows/windows
+          mkdir -p publish-windows/windows publish-windows/install
           cp stage/windows/neuralv-windows.zip "publish-windows/windows/neuralv-windows-${semver}.zip"
           cp stage/windows/neuralv-windows.zip publish-windows/windows/neuralv-windows.zip
+          cp stage/windows/neuralv-setup.exe "publish-windows/windows/neuralv-setup-${semver}.exe"
+          cp stage/windows/neuralv-setup.exe publish-windows/windows/neuralv-setup.exe
+          cp windows-native/install/windows.ps1 publish-windows/install/windows.ps1
+          cp windows-native/install/windows.cmd publish-windows/install/windows.cmd
           sha_windows="$(sha256sum "publish-windows/windows/neuralv-windows-${semver}.zip" | awk '{print $1}')"
+          sha_setup="$(sha256sum "publish-windows/windows/neuralv-setup-${semver}.exe" | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/windows-builds"
           export SEMVER="$semver"
           export SHA_WINDOWS="$sha_windows"
+          export SHA_SETUP="$sha_setup"
           export RAW_BASE="$raw_base"
           python3 - <<'PY'
           import json
           import os
           from datetime import datetime, timezone
           generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          powershell_cmd = f"powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm {os.environ['RAW_BASE']}/install/windows.ps1 | iex\""
+          cmd_cmd = f"curl.exe -L {os.environ['RAW_BASE']}/install/windows.cmd -o %TEMP%\\neuralv-install.cmd && call %TEMP%\\neuralv-install.cmd"
           manifest = {
               "success": True,
               "generated_at": generated_at,
@@ -176,16 +163,25 @@ jobs:
                       "channel": "beta",
                       "version": os.environ["SEMVER"],
                       "sha256": os.environ["SHA_WINDOWS"],
-                      "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows-{os.environ['SEMVER']}.zip",
-                      "install_command": "winget install --id NeuralV.NeuralV -e",
+                      "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
+                      "install_command": powershell_cmd,
                       "file_name": f"neuralv-windows-{os.environ['SEMVER']}.zip",
-                      "notes": ["Windows GUI archive."],
+                      "notes": ["Native Windows portable archive."],
                       "metadata": {
+                          "setupUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-setup.exe",
+                          "setupSha256": os.environ["SHA_SETUP"],
+                          "portableUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
+                          "powershellInstallCommand": powershell_cmd,
+                          "cmdInstallCommand": cmd_cmd,
+                          "installScriptPs1": f"{os.environ['RAW_BASE']}/install/windows.ps1",
+                          "installScriptCmd": f"{os.environ['RAW_BASE']}/install/windows.cmd",
                           "wingetPackageId": "NeuralV.NeuralV",
                           "wingetInstallCommand": "winget install --id NeuralV.NeuralV -e",
                           "wingetUpgradeCommand": "winget upgrade --id NeuralV.NeuralV -e",
                           "wingetUninstallCommand": "winget uninstall --id NeuralV.NeuralV -e",
-                          "directDownloadLabel": "Скачать GUI zip"
+                          "directDownloadLabel": "Скачать portable",
+                          "setupDownloadLabel": "Скачать setup",
+                          "nativeClient": True
                       }
                   }
               ]
@@ -218,6 +214,6 @@ jobs:
           git checkout -b windows-builds
           git add .
           semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows bundle ${semver} for ${GITHUB_SHA} [skip ci]"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish native Windows bundle ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin windows-builds

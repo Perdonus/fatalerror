@@ -238,7 +238,7 @@ bool ApiClient::Logout(const SessionData& current) const {
 
 UpdateInfo ApiClient::CheckForUpdate(const std::wstring& currentVersion) const {
     UpdateInfo info;
-    const auto response = JsonRequest(L"GET", L"/api/releases/manifest", "");
+    const auto response = JsonRequest(L"GET", L"/api/releases/manifest?platform=windows", "");
     if (!response.ok()) {
         info.error = response.error;
         return info;

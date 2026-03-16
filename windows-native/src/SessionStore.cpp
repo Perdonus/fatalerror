@@ -38,7 +38,7 @@ std::wstring GenerateGuidString() {
 
 std::unordered_map<std::wstring, std::wstring> ReadKeyValueFile(const std::wstring& path) {
     std::unordered_map<std::wstring, std::wstring> map;
-    std::wifstream input(path);
+    std::wifstream input{std::filesystem::path(path)};
     input.imbue(std::locale(""));
     if (!input.is_open()) {
         return map;
@@ -55,7 +55,7 @@ std::unordered_map<std::wstring, std::wstring> ReadKeyValueFile(const std::wstri
 }
 
 bool WriteKeyValueFile(const std::wstring& path, const std::unordered_map<std::wstring, std::wstring>& values) {
-    std::wofstream output(path, std::ios::trunc);
+    std::wofstream output{std::filesystem::path(path), std::ios::trunc};
     output.imbue(std::locale(""));
     if (!output.is_open()) {
         return false;
@@ -109,7 +109,7 @@ std::wstring GetSessionFilePath() {
 
 std::wstring EnsureDeviceId() {
     const auto path = (std::filesystem::path(AppDirectory()) / L"device.id").wstring();
-    std::wifstream input(path);
+    std::wifstream input{std::filesystem::path(path)};
     if (input.is_open()) {
         std::wstring existing;
         std::getline(input, existing);
@@ -118,7 +118,7 @@ std::wstring EnsureDeviceId() {
         }
     }
     const auto generated = GenerateGuidString();
-    std::wofstream output(path, std::ios::trunc);
+    std::wofstream output{std::filesystem::path(path), std::ios::trunc};
     output << generated;
     return generated;
 }

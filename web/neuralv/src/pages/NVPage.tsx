@@ -14,13 +14,13 @@ export function NVPage() {
   const windowsVariant = useMemo(() => getPackageVariant(nvPackage, 'nv-windows'), [nvPackage]);
 
   return (
-    <div className="page-stack nv-page">
+    <div className="page-stack nv-page nv-route-page">
       <section className="hero-card nv-hero-card">
         <div className="hero-copy hero-copy-wide">
           <h1>NV</h1>
-          <p>Пакетный менеджер NeuralV. Эта страница берёт сам `nv` только из репозитория `Perdonus/NV` через живой registry.</p>
+          <p>Отдельный менеджер пакетов NeuralV.</p>
           <div className="hero-actions">
-            <a className="nv-button" href="#nv-install">Установить NV</a>
+            <a className="nv-button" href="#nv-install">Установить</a>
             <a className="nv-button tonal" href="#nv-builds">Сборки</a>
           </div>
         </div>
@@ -34,10 +34,6 @@ export function NVPage() {
                 <h3>Установка NV</h3>
               </div>
             </div>
-            <div className="card-actions card-actions-stacked" style={{ marginBottom: 16 }}>
-              <a className="nv-button" href={nvLinuxScriptUrl}>Скачать для Linux</a>
-              <a className="nv-button tonal" href={nvWindowsScriptUrl}>Скачать для Windows</a>
-            </div>
             <div className="command-shell light-shell">
               <pre>{`# Linux\n${linuxInstallCommand}\n\n# Windows\n${windowsInstallCommand}\n\n# Установить пакет\nnv install neuralv@latest\n\n# Обновить nv\nnv install nv@latest\n\n# Удалить пакет\nnv uninstall neuralv`}</pre>
             </div>
@@ -50,7 +46,7 @@ export function NVPage() {
               </div>
             </div>
             <div className="platform-meta">{nvPackage?.latest_version || 'pending'}</div>
-            <p>Сам `nv` обновляется отдельно от NeuralV и публикуется из `Perdonus/NV`.</p>
+            <p>Источник пакетов и обновлений: `Perdonus/NV`.</p>
           </article>
         </div>
       </section>
@@ -81,7 +77,6 @@ export function NVPage() {
                 </div>
               </div>
               <div className="platform-meta">{variant!.version || 'pending'}</div>
-              <p>{variant!.file_name || 'Актуальный файл берётся из веток публикации NV.'}</p>
               <div className="card-actions" style={{ marginTop: 12 }}>
                 {variant!.download_url ? (
                   <a className="nv-button tonal" href={variant!.download_url}>Скачать</a>

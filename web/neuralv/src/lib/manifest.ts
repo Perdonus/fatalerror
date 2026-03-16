@@ -20,6 +20,11 @@ export type ReleaseArtifact = {
 export type ReleaseManifest = {
   generatedAt?: string | number;
   releaseChannel?: string;
+  platform?: string;
+  version?: string;
+  downloadUrl?: string;
+  setupUrl?: string;
+  installCommand?: string;
   artifacts: ReleaseArtifact[];
 };
 
@@ -137,6 +142,14 @@ export async function fetchReleaseManifest(signal?: AbortSignal, platform?: stri
     });
 
   return {
+    platform: typeof data.platform === 'string' ? data.platform : undefined,
+    version: typeof data.version === 'string' ? data.version : undefined,
+    downloadUrl: typeof data.download_url === 'string' ? data.download_url : undefined,
+    setupUrl: typeof data.setupUrl === 'string' ? data.setupUrl : undefined,
+    installCommand:
+      typeof data.install_command === 'string'
+        ? data.install_command
+        : (typeof data.installCommand === 'string' ? data.installCommand : undefined),
     generatedAt:
       (typeof data.generatedAt === 'string' || typeof data.generatedAt === 'number')
         ? data.generatedAt

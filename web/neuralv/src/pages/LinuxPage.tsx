@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import { getArtifact } from '../lib/manifest';
 import { getPackage, getPackageVariant, PackageVariant } from '../lib/packages';
@@ -10,7 +10,6 @@ type DistroKey = 'ubuntu' | 'fedora' | 'arch' | 'generic';
 type DistroOption = {
   key: DistroKey;
   label: string;
-  title: string;
 };
 
 type PackageMetadata = {
@@ -37,27 +36,11 @@ const NV_INSTALL_URL = 'https://raw.githubusercontent.com/Perdonus/NV/linux-buil
 const REPO_ROOT = 'https://sosiskibot.ru/neuralv/repo';
 
 const distroOptions: DistroOption[] = [
-  { key: 'ubuntu', label: 'Ubuntu / Debian', title: 'Ubuntu, Debian, Pop!_OS, Mint' },
-  { key: 'fedora', label: 'Fedora / RHEL', title: 'Fedora, Nobara, RHEL-совместимые' },
-  { key: 'arch', label: 'Arch / Manjaro', title: 'Arch, EndeavourOS, Manjaro' },
-  { key: 'generic', label: 'Другой Linux', title: 'Любой совместимый x64 Linux' }
+  { key: 'ubuntu', label: 'Ubuntu / Debian' },
+  { key: 'fedora', label: 'Fedora / RHEL' },
+  { key: 'arch', label: 'Arch / Manjaro' },
+  { key: 'generic', label: 'Другой Linux' }
 ];
-
-const compactSegmentsStyle: CSSProperties = {
-  display: 'flex',
-  gap: '0.6rem',
-  flexWrap: 'wrap',
-  alignItems: 'center',
-  padding: 0,
-  background: 'transparent',
-  boxShadow: 'none'
-};
-
-const compactSegmentStyle: CSSProperties = {
-  flex: '0 0 auto',
-  width: 'auto',
-  minWidth: 'unset'
-};
 
 function getMetadata(artifact?: PackageVariant): VariantMetadataShape | undefined {
   return artifact?.metadata && typeof artifact.metadata === 'object'
@@ -114,8 +97,8 @@ function buildArchCommands(packageUrl?: string) {
     '# 1) Подключи репозиторий NeuralV',
     'sudo install -d /etc/pacman.d',
     `echo "[neuralv]\nServer = ${REPO_ROOT}/arch/$arch" | sudo tee /etc/pacman.d/neuralv-mirrorlist >/dev/null`,
-    'if ! grep -q "^\[neuralv\]" /etc/pacman.conf; then',
-    '  printf "\n[neuralv]\nInclude = /etc/pacman.d/neuralv-mirrorlist\n" | sudo tee -a /etc/pacman.conf >/dev/null',
+    'if ! grep -q "^\\[neuralv\\]" /etc/pacman.conf; then',
+    '  printf "\\n[neuralv]\\nInclude = /etc/pacman.d/neuralv-mirrorlist\\n" | sudo tee -a /etc/pacman.conf >/dev/null',
     'fi',
     'sudo pacman -Sy',
     '',
@@ -222,19 +205,20 @@ export function LinuxPage() {
     if (!guiPackageVariant) return guiPackageVariant;
     return {
       ...guiPackageVariant,
-      version: guiManifestArtifact?.version || guiPackageVariant.version,
-      download_url: guiManifestArtifact?.downloadUrl || guiPackageVariant.download_url,
+      version: guiManifestState.manifest.version || guiManifestArtifact?.version || guiPackageVariant.version,
+      download_url: guiManifestState.manifest.downloadUrl || guiManifestArtifact?.downloadUrl || guiPackageVariant.download_url,
       file_name: guiManifestArtifact?.fileName || guiPackageVariant.file_name
     };
-  }, [guiManifestArtifact?.downloadUrl, guiManifestArtifact?.fileName, guiManifestArtifact?.version, guiPackageVariant]);
+  }, [guiManifestArtifact?.downloadUrl, guiManifestArtifact?.fileName, guiManifestArtifact?.version, guiManifestState.manifest.downloadUrl, guiManifestState.manifest.version, guiPackageVariant]);
   const cliArtifact = useMemo(() => {
     if (!cliPackageVariant) return cliPackageVariant;
     return {
       ...cliPackageVariant,
-      version: cliManifestArtifact?.version || cliPackageVariant.version,
+      version: cliManifestState.manifest.version || cliManifestArtifact?.version || cliPackageVariant.version,
+      install_command: cliManifestState.manifest.installCommand || cliPackageVariant.install_command,
       file_name: cliManifestArtifact?.fileName || cliPackageVariant.file_name
     };
-  }, [cliManifestArtifact?.fileName, cliManifestArtifact?.version, cliPackageVariant]);
+  }, [cliManifestArtifact?.fileName, cliManifestArtifact?.version, cliManifestState.manifest.installCommand, cliManifestState.manifest.version, cliPackageVariant]);
   const guiReady = Boolean(guiArtifact?.download_url);
 
   const [installMode, setInstallMode] = useState<InstallMode>(() => (guiReady ? 'gui' : 'cli'));
@@ -288,68 +272,82 @@ export function LinuxPage() {
           </article>
           <article className="mini-stat">
             <strong>CLI {cliArtifact?.version || 'pending'}</strong>
-            <span className="hero-support-text">CLI ставится только через nv.</span>
+            <span className="hero-support-text">CLI только через nv.</span>
           </article>
         </div>
       </section>
 
       <section id="linux-install" className="section-block">
-        <div className="content-card install-card install-card-wide">
-          <div className="segmented-row" style={compactSegmentsStyle}>
-            <button
-              type="button"
-              className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
-              style={compactSegmentStyle}
-              onClick={() => setInstallMode('gui')}
-              disabled={!guiReady}
-            >
-              GUI
-            </button>
-            <button
-              type="button"
-              className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
-              style={compactSegmentStyle}
-              onClick={() => setInstallMode('cli')}
-            >
-              CLI
-            </button>
+        <article className="content-card install-card install-card-wide install-card-unified">
+          <div className="install-card-head">
+            <div>
+              <h3>Установка</h3>
+            </div>
+            <div className="install-card-head-actions">
+              <span className="status-chip">{installMode === 'gui' ? `GUI ${guiArtifact?.version || 'pending'}` : `CLI ${cliArtifact?.version || 'pending'}`}</span>
+            </div>
           </div>
 
-          {installMode === 'gui' ? (
-            <div className="distro-grid distro-grid-top">
-              {distroOptions.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  className={`distro-pill${distro === option.key ? ' is-active' : ''}`}
-                  onClick={() => setDistro(option.key)}
-                >
-                  {option.label}
-                </button>
-              ))}
+          <div className="install-options-stack">
+            <div className="segmented-row install-mode-row">
+              <button
+                type="button"
+                className={`segment${installMode === 'gui' ? ' is-active' : ''}`}
+                onClick={() => setInstallMode('gui')}
+                disabled={!guiReady}
+              >
+                GUI
+              </button>
+              <button
+                type="button"
+                className={`segment${installMode === 'cli' ? ' is-active' : ''}`}
+                onClick={() => setInstallMode('cli')}
+              >
+                CLI
+              </button>
             </div>
-          ) : null}
 
-          <div className="install-card-head">
+            {installMode === 'gui' ? (
+              <div className="distro-grid distro-grid-top">
+                {distroOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    className={`distro-pill${option.key === distro ? ' is-active' : ''}`}
+                    onClick={() => setDistro(option.key)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="install-card-head compact-head">
             <div>
               <h3>{activeVariant.title}</h3>
             </div>
             <div className="install-card-head-actions">
               {installMode === 'gui' && activeVariant.downloadUrl ? (
-                <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
+                <a className="nv-button" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">
+                  {activeVariant.buttonLabel}
+                </a>
               ) : installMode === 'gui' ? (
-                <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>
-              ) : null}
-              <button className="copy-button" type="button" onClick={handleCopy}>
-                {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
-              </button>
+                <button className="nv-button is-disabled" type="button" disabled>
+                  Скачать GUI
+                </button>
+              ) : (
+                <button className="copy-button" type="button" onClick={handleCopy}>
+                  {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="command-shell">
+          <div className="command-shell light-shell">
             <pre>{activeVariant.commandText}</pre>
           </div>
-        </div>
+        </article>
       </section>
     </div>
   );

@@ -79,7 +79,7 @@ export function HomePage() {
                 <h3>Windows</h3>
               </div>
             </div>
-            <div className="platform-meta">{windowsGui?.version || 'Windows 10 и 11'}</div>
+            <div className="platform-meta">{windowsGui?.version || 'pending'}</div>
             <div className="card-actions">
               <Link className="nv-button" to="/windows">Открыть</Link>
             </div>
@@ -95,8 +95,7 @@ export function HomePage() {
               GUI {linuxGui?.version || 'pending'} · CLI {linuxCli?.version || 'pending'}
             </div>
             <div className="card-actions" style={{ flexWrap: 'nowrap' }}>
-              <Link className="nv-button tonal" to="/linux">GUI</Link>
-              <Link className="nv-button tonal" to="/linux">CLI</Link>
+              <Link className="nv-button tonal" to="/linux">Открыть</Link>
             </div>
           </article>
         </div>

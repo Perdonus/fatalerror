@@ -674,6 +674,30 @@ ul {
   gap: 16px;
 }
 
+.install-card-unified {
+  gap: 18px;
+}
+
+.install-options-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.install-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.install-mode-body {
+  display: grid;
+  gap: 14px;
+}
+
+.compact-head {
+  align-items: center;
+}
+
 .nv-page .hero-card,
 .nv-page .content-card {
   background:

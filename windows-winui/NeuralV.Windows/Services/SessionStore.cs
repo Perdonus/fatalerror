@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using NeuralV.Windows.Models;
@@ -46,8 +45,7 @@ public static class SessionStore
     {
         Directory.CreateDirectory(AppDirectory);
         var payload = JsonSerializer.Serialize(session, JsonOptions);
-        var protectedBytes = ProtectedData.Protect(Encoding.UTF8.GetBytes(payload), null, DataProtectionScope.CurrentUser);
-        await File.WriteAllBytesAsync(SessionFilePath, protectedBytes, cancellationToken);
+        await File.WriteAllTextAsync(SessionFilePath, payload, Encoding.UTF8, cancellationToken);
     }
 
     public static async Task<SessionData?> LoadSessionAsync(CancellationToken cancellationToken = default)
@@ -59,9 +57,8 @@ public static class SessionStore
 
         try
         {
-            var payload = await File.ReadAllBytesAsync(SessionFilePath, cancellationToken);
-            var jsonBytes = ProtectedData.Unprotect(payload, null, DataProtectionScope.CurrentUser);
-            var session = JsonSerializer.Deserialize<SessionData>(jsonBytes, JsonOptions);
+            var payload = await File.ReadAllTextAsync(SessionFilePath, cancellationToken);
+            var session = JsonSerializer.Deserialize<SessionData>(payload, JsonOptions);
             return session is { IsValid: true } ? session : null;
         }
         catch

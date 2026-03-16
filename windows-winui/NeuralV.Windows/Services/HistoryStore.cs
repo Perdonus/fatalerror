@@ -14,7 +14,7 @@ public static class HistoryStore
     {
         if (!File.Exists(SessionStore.HistoryFilePath))
         {
-            return Array.Empty<StoredScanRecord>();
+            return new List<StoredScanRecord>();
         }
 
         try
@@ -25,7 +25,7 @@ public static class HistoryStore
         }
         catch
         {
-            return Array.Empty<StoredScanRecord>();
+            return new List<StoredScanRecord>();
         }
     }
 

@@ -39,7 +39,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = false;
         Title = "NeuralV";
         var hwnd = WindowNative.GetWindowHandle(this);
-        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.Resize(new SizeInt32(1440, 920));
         ThemeModeLabel.Text = App.Palette.IsDark ? "Тёмная" : "Светлая";

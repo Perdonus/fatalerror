@@ -20,14 +20,15 @@ configure_file(
   @ONLY
 )
 
-set(NEURALV_COMMON_SOURCES
+set(NEURALV_APP_SOURCES
+  src/ApiClient.cpp
   src/SessionStore.cpp
   src/Theme.cpp
 )
 
 add_executable(NeuralV WIN32
   src/main.cpp
-  ${NEURALV_COMMON_SOURCES}
+  ${NEURALV_APP_SOURCES}
 )
 
 target_include_directories(NeuralV PRIVATE
@@ -36,7 +37,7 @@ target_include_directories(NeuralV PRIVATE
 )
 
 target_compile_definitions(NeuralV PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(NeuralV PRIVATE winhttp dwmapi shlwapi shell32 comctl32 urlmon ole32)
+target_link_libraries(NeuralV PRIVATE winhttp dwmapi shlwapi shell32 comctl32 urlmon ole32 uxtheme)
 
 add_executable(NeuralVSetup WIN32
   setup/SetupMain.cpp

@@ -258,14 +258,14 @@ export function LinuxPage() {
           </div>
         </div>
 
-        <div className="hero-panel compact-panel">
+        <div className="hero-panel hero-version-grid">
           <article className="mini-stat">
             <strong>GUI {guiArtifact?.version || 'pending'}</strong>
             <span className="hero-support-text">{guiArtifact?.file_name || 'Desktop GUI build'}</span>
           </article>
           <article className="mini-stat">
             <strong>CLI {cliArtifact?.version || 'pending'}</strong>
-            <span className="hero-support-text">{cliArtifact?.file_name || 'CLI через NV'}</span>
+            <span className="hero-support-text">CLI ставится только через nv.</span>
           </article>
         </div>
       </section>
@@ -317,8 +317,7 @@ export function LinuxPage() {
           ) : null}
         </article>
 
-        <div className="install-layout install-layout-static">
-          <div className="content-card install-card">
+        <div className="content-card install-card install-card-wide">
             <div className="install-card-head">
               <div>
                 <h3>{activeVariant.title}</h3>
@@ -338,7 +337,6 @@ export function LinuxPage() {
             <div className="command-shell">
               <pre>{activeVariant.commandText}</pre>
             </div>
-          </div>
         </div>
       </section>
     </div>

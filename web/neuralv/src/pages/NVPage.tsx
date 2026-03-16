@@ -14,8 +14,8 @@ export function NVPage() {
   const windowsVariant = useMemo(() => getPackageVariant(nvPackage, 'nv-windows'), [nvPackage]);
 
   return (
-    <div className="page-stack">
-      <section className="hero-card">
+    <div className="page-stack nv-page">
+      <section className="hero-card nv-hero-card">
         <div className="hero-copy hero-copy-wide">
           <h1>NV</h1>
           <p>Пакетный менеджер NeuralV. Эта страница берёт сам `nv` только из репозитория `Perdonus/NV` через живой registry.</p>
@@ -55,11 +55,11 @@ export function NVPage() {
         </div>
       </section>
 
-      <section id="nv-builds" className="section-block">
+      <section id="nv-builds" className="section-block nv-builds-section">
         <div className="section-head section-head-tight">
           <h2>Сборки NV</h2>
         </div>
-        <div className="card-grid two-up">
+        <div className="card-grid two-up nv-build-grid">
           {loading && (
             <article className="content-card">
               <h3>Загружаем registry</h3>

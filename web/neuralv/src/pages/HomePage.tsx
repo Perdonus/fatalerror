@@ -18,6 +18,7 @@ const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
 export function HomePage() {
   const { catalog } = usePackageRegistry();
   const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
+  const windowsGui = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
   const linuxGui = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
   const linuxCli = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
 
@@ -78,7 +79,7 @@ export function HomePage() {
                 <h3>Windows</h3>
               </div>
             </div>
-            <div className="platform-meta">Windows 10 и 11</div>
+            <div className="platform-meta">{windowsGui?.version || 'Windows 10 и 11'}</div>
             <div className="card-actions">
               <Link className="nv-button" to="/windows">Открыть</Link>
             </div>

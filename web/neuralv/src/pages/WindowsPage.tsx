@@ -4,21 +4,23 @@ import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
 type WindowsInstallMode = 'setup' | 'portable' | 'powershell' | 'cmd';
 
-const nvWindowsScriptUrl = 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1';
+const windowsSetupUrl = '/neuralv/install/neuralv.cmd';
+const windowsPowerShellUrl = 'https://sosiskibot.ru/neuralv/install/neuralv.ps1';
+const windowsCmdUrl = 'https://sosiskibot.ru/neuralv/install/neuralv.cmd';
 
 function getWindowsInstallContent(mode: WindowsInstallMode, downloadUrl?: string) {
   const powershellCommand =
-    `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${nvWindowsScriptUrl} | iex; & \\\"$env:LOCALAPPDATA\\\\NV\\\\nv.exe\\\" install neuralv@latest"`;
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${windowsPowerShellUrl} | iex"`;
   const cmdCommand =
-    `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${nvWindowsScriptUrl} | iex" && "%LOCALAPPDATA%\\\\NV\\\\nv.exe" install neuralv@latest`;
+    `curl.exe -fsSL ${windowsCmdUrl} -o "%TEMP%\\\\neuralv-install.cmd" && cmd /c "%TEMP%\\\\neuralv-install.cmd"`;
 
   switch (mode) {
     case 'setup':
       return {
         title: 'Setup',
-        description: 'Полноценный установщик для Windows появится вместе с native-сборкой.',
-        downloadUrl: undefined,
-        buttonLabel: 'Setup скоро',
+        description: 'Скачай установщик-скрипт. Он подтянет последнюю Windows-сборку и разложит NeuralV по папкам Windows.',
+        downloadUrl: windowsSetupUrl,
+        buttonLabel: 'Скачать setup',
         command: ''
       };
     case 'portable':
@@ -32,7 +34,7 @@ function getWindowsInstallContent(mode: WindowsInstallMode, downloadUrl?: string
     case 'powershell':
       return {
         title: 'PowerShell',
-        description: 'Одна команда ставит `nv`, после чего ставит последнюю Windows-версию NeuralV.',
+        description: 'Одна команда ставит последнюю Windows-версию NeuralV через PowerShell-скрипт.',
         downloadUrl: undefined,
         buttonLabel: '',
         command: powershellCommand
@@ -53,8 +55,23 @@ export function WindowsPage() {
   const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
   const artifact = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
   const ready = Boolean(artifact?.download_url);
-  const [mode, setMode] = useState<WindowsInstallMode>('portable');
+  const [mode, setMode] = useState<WindowsInstallMode>('setup');
+  const [copyState, setCopyState] = useState<'idle' | 'done'>('idle');
   const active = getWindowsInstallContent(mode, artifact?.download_url);
+
+  const handleCopy = async () => {
+    if (!active.command || typeof navigator === 'undefined' || !navigator.clipboard) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(active.command);
+      setCopyState('done');
+      window.setTimeout(() => setCopyState('idle'), 1600);
+    } catch {
+      setCopyState('idle');
+    }
+  };
 
   return (
     <div className="page-stack">
@@ -138,6 +155,14 @@ export function WindowsPage() {
                 <pre>{active.command}</pre>
               </div>
             )}
+
+            {mode === 'powershell' || mode === 'cmd' ? (
+              <div className="card-actions">
+                <button className="copy-button" type="button" onClick={handleCopy}>
+                  {copyState === 'done' ? 'Скопировано' : 'Скопировать'}
+                </button>
+              </div>
+            ) : null}
           </article>
         </div>
       </section>

@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Graphics;
+using UiColor = global::Windows.UI.Color;
 using WinRT.Interop;
 
 namespace NeuralV.Windows;
@@ -72,15 +73,15 @@ public sealed partial class MainWindow : Window
         GlowC.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.Accent, App.Palette.Background, 0.35), 0.30);
     }
 
-    private static Brush BuildGlowBrush(Windows.UI.Color color, double opacity)
+    private static Brush BuildGlowBrush(UiColor color, double opacity)
     {
-        var solid = Windows.UI.Color.FromArgb((byte)(255 * opacity), color.R, color.G, color.B);
+        var solid = UiColor.FromArgb((byte)(255 * opacity), color.R, color.G, color.B);
         return new RadialGradientBrush
         {
             GradientStops =
             {
                 new GradientStop { Color = solid, Offset = 0.0 },
-                new GradientStop { Color = Windows.UI.Color.FromArgb(0, color.R, color.G, color.B), Offset = 1.0 }
+                new GradientStop { Color = UiColor.FromArgb(0, color.R, color.G, color.B), Offset = 1.0 }
             }
         };
     }

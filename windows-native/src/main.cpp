@@ -228,7 +228,7 @@ void BootstrapAfterSplash() {
     }
 
     neuralv::ClearSession();
-    g_app.status = error.empty() ? L"Сессия устарела. Войди снова." : error;
+    g_app.status = error.empty() ? std::wstring(L"Сессия устарела. Войди снова.") : error;
     SetScreen(Screen::Welcome);
 }
 
@@ -245,7 +245,7 @@ void SubmitAuth() {
     }
 
     if (!g_app.challenge.ok()) {
-        g_app.status = g_app.challenge.error.empty() ? L"Не удалось начать авторизацию." : g_app.challenge.error;
+        g_app.status = g_app.challenge.error.empty() ? std::wstring(L"Не удалось начать авторизацию.") : g_app.challenge.error;
         InvalidateRect(g_app.hwnd, nullptr, TRUE);
         return;
     }
@@ -258,7 +258,7 @@ void VerifyCode() {
     std::wstring error;
     const auto session = g_app.api.VerifyChallenge(g_app.challenge.mode, g_app.challenge.challengeId, g_app.challenge.email, ReadControlText(g_code), g_app.deviceId, error);
     if (!session) {
-        g_app.status = error.empty() ? L"Код не принят." : error;
+        g_app.status = error.empty() ? std::wstring(L"Код не принят.") : error;
         InvalidateRect(g_app.hwnd, nullptr, TRUE);
         return;
     }
@@ -346,7 +346,7 @@ void PaintWindow(HWND hwnd) {
     case Screen::Login: subtitleText = L"Вход"; break;
     case Screen::Register: subtitleText = L"Регистрация"; break;
     case Screen::Code: subtitleText = L"Код из почты"; break;
-    case Screen::Home: subtitleText = g_app.session.user.name.empty() ? L"Главный экран" : g_app.session.user.name; break;
+    case Screen::Home: subtitleText = g_app.session.user.name.empty() ? std::wstring(L"Главный экран") : g_app.session.user.name; break;
     case Screen::History: subtitleText = L"История"; break;
     case Screen::Settings: subtitleText = L"Настройки"; break;
     default: break;

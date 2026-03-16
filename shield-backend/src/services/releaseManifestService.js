@@ -3,9 +3,14 @@ const path = require('path');
 const { loadRegistryConfig } = require('./packageRegistryService');
 
 const RELEASE_BRANCH_TIMEOUT_MS = parseInt(process.env.RELEASE_BRANCH_TIMEOUT_MS || '10000', 10);
+const RELEASE_MANIFEST_CACHE_TTL_MS = parseInt(process.env.RELEASE_MANIFEST_CACHE_TTL_MS || '600000', 10);
 const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'Perdonus/fatalerror').trim();
 const DEFAULT_RELEASE_VERSION = loadConfiguredReleaseVersion();
 const PACKAGE_REGISTRY_URL = String(process.env.PACKAGE_REGISTRY_URL || '/api/packages').trim() || '/api/packages';
+const GITHUB_API_HEADERS = {
+    Accept: 'application/vnd.github.raw+json',
+    'User-Agent': 'NeuralVBackend/1.0'
+};
 
 const BRANCH_SOURCES = [
     { repo: PUBLIC_REPOSITORY, branch: 'site-builds', label: 'site', platforms: ['site'] },
@@ -18,6 +23,8 @@ const BRANCH_SOURCES = [
 ];
 
 const PLATFORM_ORDER = ['android', 'windows', 'linux', 'shell', 'nv-windows', 'nv-linux', 'site'];
+let manifestCache = null;
+let manifestCacheExpiresAt = 0;
 
 function rawBaseForSource(source) {
     return `https://raw.githubusercontent.com/${source.repo}/${source.branch}`;
@@ -29,6 +36,10 @@ function branchManifestUrl(source, { bust = false } = {}) {
         return base;
     }
     return `${base}?ts=${Date.now()}`;
+}
+
+function branchManifestApiUrl(source) {
+    return `https://api.github.com/repos/${source.repo}/contents/manifest.json?ref=${encodeURIComponent(source.branch)}`;
 }
 
 function loadConfiguredReleaseVersion() {
@@ -247,9 +258,9 @@ function mergeArtifact(baseArtifact, incomingArtifact) {
 }
 
 async function fetchBranchManifest(source) {
-    const response = await fetch(branchManifestUrl(source, { bust: true }), {
+    const response = await fetch(branchManifestApiUrl(source), {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers: GITHUB_API_HEADERS,
         signal: AbortSignal.timeout(RELEASE_BRANCH_TIMEOUT_MS)
     });
 
@@ -349,6 +360,10 @@ function attachRegistryMetadata(artifact, registryMatch) {
 }
 
 async function getReleaseManifest() {
+    if (manifestCache && manifestCacheExpiresAt > Date.now()) {
+        return manifestCache;
+    }
+
     const merged = new Map(fallbackArtifacts().map((artifact) => [artifact.platform, artifact]));
     let generatedAt = null;
     let releaseChannel = 'main';
@@ -395,7 +410,7 @@ async function getReleaseManifest() {
         }
     }
 
-    return {
+    const manifest = {
         success: true,
         generated_at: generatedAt || new Date().toISOString(),
         release_channel: releaseChannel,
@@ -408,6 +423,10 @@ async function getReleaseManifest() {
             .map((platform) => merged.get(platform))
             .filter(Boolean)
     };
+
+    manifestCache = manifest;
+    manifestCacheExpiresAt = Date.now() + RELEASE_MANIFEST_CACHE_TTL_MS;
+    return manifest;
 }
 
 module.exports = {

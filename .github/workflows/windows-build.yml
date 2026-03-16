@@ -60,17 +60,6 @@ jobs:
           restore-keys: |
             windows-compose-${{ runner.os }}-
 
-      - name: Generate Windows icon
-        shell: pwsh
-        run: |
-          python -m pip install --disable-pip-version-check pillow
-          New-Item -ItemType Directory -Force -Path branding\generated | Out-Null
-          @'
-          from PIL import Image
-          img = Image.open(r"app/src/main/res/mipmap-xxxhdpi/ic_launcher.png").convert("RGBA")
-          img.save(r"branding/generated/neuralv.ico", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
-          '@ | python -
-
       - name: Build Windows desktop GUI distributable
         shell: pwsh
         run: |

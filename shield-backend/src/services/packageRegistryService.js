@@ -3,8 +3,15 @@ const path = require('path');
 
 const PACKAGE_REGISTRY_PATH = path.resolve(__dirname, '../data/package-registry.json');
 const PACKAGE_REGISTRY_TIMEOUT_MS = parseInt(process.env.PACKAGE_REGISTRY_TIMEOUT_MS || '10000', 10);
+const PACKAGE_REGISTRY_CACHE_TTL_MS = parseInt(process.env.PACKAGE_REGISTRY_CACHE_TTL_MS || '60000', 10);
+const PACKAGE_REGISTRY_REMOTE_URL = String(
+    process.env.PACKAGE_REGISTRY_REMOTE_URL || 'https://raw.githubusercontent.com/Perdonus/NV/main/registry/packages.json'
+).trim();
 
-function loadRegistryConfig() {
+let registryCache = null;
+let registryCacheExpiresAt = 0;
+
+function loadLocalRegistryConfig() {
     const content = fs.readFileSync(PACKAGE_REGISTRY_PATH, 'utf8');
     const parsed = JSON.parse(content);
     return Array.isArray(parsed?.packages) ? parsed.packages : [];
@@ -53,6 +60,36 @@ async function fetchJson(url) {
     return response.json();
 }
 
+async function loadRegistryConfig() {
+    if (registryCache && registryCacheExpiresAt > Date.now()) {
+        return registryCache;
+    }
+
+    const localPackages = loadLocalRegistryConfig();
+    let packages = localPackages;
+    let source = 'local';
+    let sourceUrl = null;
+    let fetchedAt = new Date().toISOString();
+
+    if (PACKAGE_REGISTRY_REMOTE_URL) {
+        try {
+            const remote = await fetchJson(PACKAGE_REGISTRY_REMOTE_URL);
+            if (Array.isArray(remote?.packages)) {
+                packages = remote.packages;
+                source = 'remote';
+                sourceUrl = PACKAGE_REGISTRY_REMOTE_URL;
+                fetchedAt = new Date().toISOString();
+            }
+        } catch (error) {
+            console.warn(`Package registry remote fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    registryCache = { packages, source, sourceUrl, fetchedAt };
+    registryCacheExpiresAt = Date.now() + PACKAGE_REGISTRY_CACHE_TTL_MS;
+    return registryCache;
+}
+
 function normalizeArtifact(item) {
     if (!item || typeof item !== 'object') return null;
     const platform = normalizeText(item.platform || item.platform_id || item.id);
@@ -64,6 +101,9 @@ function normalizeArtifact(item) {
         sha256: String(item.sha256 || '').trim(),
         download_url: String(item.download_url || item.downloadUrl || '').trim(),
         install_command: String(item.install_command || item.installCommand || '').trim(),
+        update_command: String(item.update_command || item.updateCommand || '').trim(),
+        update_policy: String(item.update_policy || item.updatePolicy || '').trim(),
+        auto_update: typeof item.auto_update === 'boolean' ? item.auto_update : undefined,
         file_name: String(item.file_name || item.fileName || '').trim(),
         notes: Array.isArray(item.notes) ? item.notes.map((entry) => String(entry).trim()).filter(Boolean) : [],
         metadata: item.metadata && typeof item.metadata === 'object' ? { ...item.metadata } : {}
@@ -85,7 +125,29 @@ async function fetchSourceArtifact(source) {
     return matching[0] || null;
 }
 
-function buildVariantRecord(definition, artifact) {
+function defaultUpdatePolicy(definition) {
+    if (typeof definition.update_policy === 'string' && definition.update_policy.trim()) {
+        return definition.update_policy.trim();
+    }
+    const strategy = String(definition.install_strategy || '').trim();
+    if (strategy === 'linux-cli-wrapper') return 'nv-command';
+    if (strategy === 'windows-self-binary' || strategy === 'unix-self-binary') return 'nv-self';
+    if (strategy === 'windows-portable-zip' || strategy === 'linux-portable-tar') return 'startup-auto';
+    return 'manual';
+}
+
+function defaultAutoUpdate(definition, updatePolicy) {
+    if (typeof definition.auto_update === 'boolean') {
+        return definition.auto_update;
+    }
+    return updatePolicy === 'startup-auto';
+}
+
+function buildVariantRecord(packageDef, definition, artifact) {
+    const updatePolicy = defaultUpdatePolicy(definition);
+    const autoUpdate = defaultAutoUpdate(definition, updatePolicy);
+    const definitionMetadata = definition.metadata && typeof definition.metadata === 'object' ? definition.metadata : {};
+    const artifactMetadata = artifact?.metadata && typeof artifact.metadata === 'object' ? artifact.metadata : {};
     return {
         id: String(definition.id || '').trim(),
         label: String(definition.label || definition.id || '').trim(),
@@ -95,7 +157,10 @@ function buildVariantRecord(definition, artifact) {
         channel: artifact?.channel || 'main',
         file_name: artifact?.file_name || '',
         download_url: artifact?.download_url || '',
-        install_command: artifact?.install_command || '',
+        install_command: String(definition.install_command || artifact?.install_command || '').trim(),
+        update_command: String(definition.update_command || artifact?.update_command || '').trim(),
+        update_policy: updatePolicy,
+        auto_update: autoUpdate,
         sha256: artifact?.sha256 || '',
         install_strategy: String(definition.install_strategy || '').trim(),
         uninstall_strategy: String(definition.uninstall_strategy || '').trim(),
@@ -105,8 +170,14 @@ function buildVariantRecord(definition, artifact) {
         launcher_path: String(definition.launcher_path || '').trim(),
         notes: artifact?.notes?.length ? artifact.notes : [],
         metadata: {
-            ...(artifact?.metadata || {}),
-            source: definition.source || null
+            ...definitionMetadata,
+            ...artifactMetadata,
+            source: definition.source || null,
+            package_name: String(packageDef.name || '').trim(),
+            variant_id: String(definition.id || '').trim(),
+            update_policy: updatePolicy,
+            auto_update: autoUpdate,
+            manifest_url: definition.source?.repo && definition.source?.branch ? manifestUrl(definition.source) : ''
         }
     };
 }
@@ -121,7 +192,7 @@ async function materializePackage(packageDef, os = '') {
     const variants = [];
     for (const definition of chosenDefs) {
         const artifact = await fetchSourceArtifact(definition.source || {});
-        variants.push(buildVariantRecord(definition, artifact));
+        variants.push(buildVariantRecord(packageDef, definition, artifact));
     }
 
     const latestVersion = variants
@@ -140,24 +211,31 @@ async function materializePackage(packageDef, os = '') {
 }
 
 async function getPackageRegistry({ os = '' } = {}) {
-    const packages = loadRegistryConfig();
+    const registry = await loadRegistryConfig();
     const materialized = [];
-    for (const packageDef of packages) {
+    for (const packageDef of registry.packages) {
         materialized.push(await materializePackage(packageDef, os));
     }
     return {
         success: true,
+        source: registry.source,
+        source_url: registry.sourceUrl,
+        fetched_at: registry.fetchedAt,
         packages: materialized
     };
 }
 
 async function getPackageDetails(name, { os = '' } = {}) {
-    const packageDef = loadRegistryConfig().find((entry) => normalizeText(entry.name) === normalizeText(name));
+    const registry = await loadRegistryConfig();
+    const packageDef = registry.packages.find((entry) => normalizeText(entry.name) === normalizeText(name));
     if (!packageDef) {
         return null;
     }
     return {
         success: true,
+        source: registry.source,
+        source_url: registry.sourceUrl,
+        fetched_at: registry.fetchedAt,
         package: await materializePackage(packageDef, os)
     };
 }
@@ -200,6 +278,9 @@ async function resolvePackage(name, { os = '', version = 'latest', variant = '' 
         status: 200,
         payload: {
             success: true,
+            source: details.source,
+            source_url: details.source_url,
+            fetched_at: details.fetched_at,
             package: {
                 ...details.package,
                 resolved_version: selectedVariant.version,
@@ -212,5 +293,7 @@ async function resolvePackage(name, { os = '', version = 'latest', variant = '' 
 module.exports = {
     getPackageRegistry,
     getPackageDetails,
-    resolvePackage
+    resolvePackage,
+    loadRegistryConfig,
+    compareSemver
 };

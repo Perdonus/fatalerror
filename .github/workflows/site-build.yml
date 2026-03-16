@@ -86,8 +86,8 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
-          test -n "$semver"
+          site_version="${GITHUB_SHA::7}"
+          test -n "$site_version"
           rm -rf publish-site
           mkdir -p publish-site/site publish-site/install
           unzip -q stage/site/neuralv-site.zip -d publish-site
@@ -96,7 +96,7 @@ jobs:
           cp shell/install/nv.sh publish-site/install/nv.sh
           sha_site="$(sha256sum publish-site/site/neuralv-site.zip | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/site-builds"
-          export SEMVER="$semver"
+          export SITE_VERSION="$site_version"
           export SHA_SITE="$sha_site"
           export RAW_BASE="$raw_base"
           python3 - <<'PY'
@@ -112,7 +112,7 @@ jobs:
                   {
                       "platform": "site",
                       "channel": "main",
-                      "version": os.environ["SEMVER"],
+                      "version": os.environ["SITE_VERSION"],
                       "sha256": os.environ["SHA_SITE"],
                       "download_url": f"{os.environ['RAW_BASE']}/site/neuralv-site.zip",
                       "install_command": "",
@@ -127,7 +127,7 @@ jobs:
           with open("publish-site/BUILD_INFO.txt", "w", encoding="utf-8") as f:
               f.write(
                   f"Repository: {os.environ['GITHUB_REPOSITORY']}\n"
-                  f"Version: {os.environ['SEMVER']}\n"
+                  f"Version: {os.environ['SITE_VERSION']}\n"
                   f"Commit: {os.environ['GITHUB_SHA']}\n"
                   f"Workflow Run: {os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\n"
                   f"Built At: {generated_at}\n"
@@ -149,7 +149,7 @@ jobs:
           git init
           git checkout -b site-builds
           git add .
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish site bundle ${semver} for ${GITHUB_SHA} [skip ci]"
+          site_version="${GITHUB_SHA::7}"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish site bundle ${site_version} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin site-builds

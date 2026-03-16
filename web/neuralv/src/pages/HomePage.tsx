@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { useReleaseManifest } from '../hooks/useReleaseManifest';
+import { getArtifact } from '../lib/manifest';
 import { Link } from 'react-router-dom';
 import { getPackage, getPackageVariant } from '../lib/packages';
 import { usePackageRegistry } from '../hooks/usePackageRegistry';
@@ -17,8 +19,10 @@ const deviceShowcaseUrl = `${baseUrl}media/neuralv-devices.svg`;
 // android-home.png, windows-home.png, linux-home.png.
 export function HomePage() {
   const { catalog } = usePackageRegistry();
+  const windowsManifestState = useReleaseManifest('windows');
+  const windowsArtifact = useMemo(() => getArtifact(windowsManifestState.manifest, 'windows'), [windowsManifestState.manifest]);
+  const windowsVersion = windowsArtifact?.version || (windowsManifestState.manifest.platform === 'windows' ? (windowsManifestState.manifest.version || '') : '') || 'pending';
   const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
-  const windowsGui = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
   const linuxGui = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
   const linuxCli = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
 
@@ -78,7 +82,7 @@ export function HomePage() {
                 <h3>Windows</h3>
               </div>
             </div>
-            <div className="platform-meta">{windowsGui?.version || 'pending'}</div>
+            <div className="platform-meta">{windowsVersion}</div>
             <div className="card-actions">
               <Link className="nv-button" to="/windows">Открыть</Link>
             </div>

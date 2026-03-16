@@ -27,6 +27,16 @@
           },
           "metadata": {
             "updateChannel": "beta",
+            "versionSource": {
+              "repo": "Perdonus/fatalerror",
+              "branch": "windows-builds",
+              "platform": "windows"
+            },
+            "publishPayloadRoot": "windows/NeuralV/",
+            "portableArtifactPath": "windows/neuralv-windows.zip",
+            "setupArtifactPath": "windows/neuralv-setup.exe",
+            "portableVersionPattern": "windows/neuralv-windows-{version}.zip",
+            "setupVersionPattern": "windows/neuralv-setup-{version}.exe",
             "commands": {
               "powershell": {
                 "install": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA 'NV\\nv.exe') install neuralv@latest\"",
@@ -59,6 +69,11 @@
             "platform": "linux"
           },
           "metadata": {
+            "versionSource": {
+              "repo": "Perdonus/fatalerror",
+              "branch": "linux-gui-builds",
+              "platform": "linux"
+            },
             "updateChannel": "main",
             "packages": {
               "ubuntu": {
@@ -147,6 +162,11 @@
             "platform": "shell"
           },
           "metadata": {
+            "versionSource": {
+              "repo": "Perdonus/fatalerror",
+              "branch": "linux-cli-builds",
+              "platform": "shell"
+            },
             "notifyOnStart": true,
             "updateChannel": "main"
           }

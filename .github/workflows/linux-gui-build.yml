@@ -5,11 +5,11 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/linux-build.yml'
+      - '.github/workflows/linux-gui-build.yml'
       - 'desktop-app/**'
       - 'desktop-core/**'
       - 'gradle/**'
-      - 'gradle.properties'
+      - 'versions/linux-gui.txt'
       - 'gradlew'
       - 'settings-desktop.gradle.kts'
       - 'build.gradle.kts'
@@ -28,9 +28,20 @@ jobs:
     name: Build Linux GUI
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      release_version: ${{ steps.release_version.outputs.semver }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve Linux GUI release version
+        id: release_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          semver="$(tr -d '[:space:]' < versions/linux-gui.txt)"
+          echo "$semver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          echo "semver=$semver" >> "$GITHUB_OUTPUT"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -98,7 +109,7 @@ jobs:
             echo
             echo "$summary"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::error file=.github/workflows/linux-build.yml,line=39::$summary"
+          echo "::error file=.github/workflows/linux-gui-build.yml,line=47::$summary"
           exit 1
 
       - name: Upload Linux GUI payload
@@ -133,7 +144,7 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          semver="${{ needs.build-linux-gui.outputs.release_version }}"
           test -n "$semver"
           rm -rf publish-linux
           mkdir -p publish-linux/linux
@@ -194,7 +205,7 @@ jobs:
           git init
           git checkout -b linux-gui-builds
           git add .
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
+          semver="${{ needs.build-linux-gui.outputs.release_version }}"
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Linux GUI ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin linux-gui-builds

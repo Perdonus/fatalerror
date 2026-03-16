@@ -1,90 +1,97 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import { getArtifact } from '../lib/manifest';
-import { getPackage, getPackageVariant } from '../lib/packages';
-import { usePackageRegistry } from '../hooks/usePackageRegistry';
+import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
 type WindowsInstallMode = 'setup' | 'portable' | 'powershell' | 'cmd';
 
-type WindowsMetadata = {
-  setupUrl?: string;
-  portableUrl?: string;
-  setupDownloadLabel?: string;
-  wingetPackageId?: string;
-  wingetInstallCommand?: string;
-  wingetUpgradeCommand?: string;
-  wingetUninstallCommand?: string;
-  directDownloadLabel?: string;
-  powershellInstallCommand?: string;
-  cmdInstallCommand?: string;
+type WindowsInstallContent = {
+  buttonLabel: string;
+  downloadUrl?: string;
+  command: string;
+  description: string;
 };
 
-function getWindowsMetadata(value: unknown): WindowsMetadata | undefined {
-  return value && typeof value === 'object' ? (value as WindowsMetadata) : undefined;
+const WINDOWS_HIGHLIGHTS = [
+  {
+    title: 'Новый нативный клиент',
+    text: 'Отдельная Windows-версия с обычной установкой, понятным стартом и аккуратным интерфейсом.'
+  },
+  {
+    title: 'Один аккаунт',
+    text: 'Вход, история и проверки работают через тот же аккаунт NeuralV, что и на других версиях.'
+  },
+  {
+    title: 'Setup, portable и NV',
+    text: 'Можно скачать готовую сборку или поставить NeuralV через NV одной командной цепочкой.'
+  }
+] as const;
+
+function getPowershellCommand() {
+  return [
+    '# 1. Установить NV',
+    'irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex',
+    '',
+    '# 2. Установить NeuralV',
+    'nv install neuralv@latest'
+  ].join('\n');
 }
 
-function getWindowsInstallContent(mode: WindowsInstallMode, options: {
-  setupUrl?: string;
-  portableUrl?: string;
-  metadata?: WindowsMetadata;
-}) {
-  const powershellCommand =
-    options.metadata?.powershellInstallCommand ||
-    'irm https://sosiskibot.ru/neuralv/install/neuralv.ps1 | iex';
-  const cmdCommand =
-    options.metadata?.cmdInstallCommand ||
-    'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/neuralv.cmd -o "%TEMP%\\neuralv-install.cmd" && "%TEMP%\\neuralv-install.cmd"';
+function getCmdCommand() {
+  return [
+    'REM 1. Установить NV',
+    'curl.exe -fsSL https://sosiskibot.ru/neuralv/install/nv.cmd -o "%TEMP%\\nv-install.cmd" && call "%TEMP%\\nv-install.cmd"',
+    '',
+    'REM 2. Установить NeuralV',
+    'nv install neuralv@latest'
+  ].join('\n');
+}
 
+function getWindowsInstallContent(
+  mode: WindowsInstallMode,
+  options: {
+    setupUrl?: string;
+    portableUrl?: string;
+  }
+): WindowsInstallContent {
   switch (mode) {
     case 'setup':
       return {
-        buttonLabel: options.metadata?.setupDownloadLabel || 'Скачать установщик',
+        buttonLabel: 'Скачать setup',
         downloadUrl: options.setupUrl,
         command: '',
-        description: 'Скачай setup и запусти его.'
+        description: 'Обычная установка с ярлыками и готовым запуском.'
       };
     case 'portable':
       return {
-        buttonLabel: options.metadata?.directDownloadLabel || 'Скачать portable',
+        buttonLabel: 'Скачать portable',
         downloadUrl: options.portableUrl,
         command: '',
-        description: 'Скачай portable и распакуй.'
+        description: 'Версия без установки: скачай, распакуй и запусти.'
       };
     case 'powershell':
       return {
         buttonLabel: '',
         downloadUrl: undefined,
-        command: powershellCommand,
-        description: 'Скопируй команду в PowerShell.'
+        command: getPowershellCommand(),
+        description: 'PowerShell сам поставит NV, проверит его и установит NeuralV.'
       };
     default:
       return {
         buttonLabel: '',
         downloadUrl: undefined,
-        command: cmdCommand,
-        description: 'Скопируй команду в CMD.'
+        command: getCmdCommand(),
+        description: 'CMD делает тот же flow через NV: установка, PATH, проверка и запуск установки NeuralV.'
       };
   }
 }
 
 export function WindowsPage() {
   const manifestState = useReleaseManifest('windows');
-  const { catalog } = usePackageRegistry();
-  const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
-  const packageVariant = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
   const manifestArtifact = useMemo(() => getArtifact(manifestState.manifest, 'windows'), [manifestState.manifest]);
-  const metadata = useMemo(
-    () => getWindowsMetadata(manifestArtifact?.metadata ?? packageVariant?.metadata),
-    [manifestArtifact?.metadata, packageVariant?.metadata]
-  );
 
-  const version = manifestState.manifest.version || manifestArtifact?.version || packageVariant?.version || '';
-  const portableUrl =
-    manifestState.manifest.portableUrl ||
-    metadata?.portableUrl ||
-    manifestArtifact?.downloadUrl ||
-    packageVariant?.download_url;
-  const setupUrl = manifestState.manifest.setupUrl || metadata?.setupUrl || portableUrl;
+  const version = manifestArtifact?.version || (manifestState.manifest.platform === 'windows' ? (manifestState.manifest.version || '') : '') || 'pending';
+  const portableUrl = manifestArtifact?.downloadUrl || manifestState.manifest.portableUrl || manifestState.manifest.downloadUrl;
+  const setupUrl = manifestState.manifest.setupUrl || portableUrl;
   const setupReady = Boolean(setupUrl);
   const portableReady = Boolean(portableUrl);
   const [modeOverride, setModeOverride] = useState<WindowsInstallMode | null>(null);
@@ -101,21 +108,31 @@ export function WindowsPage() {
     }
   }, [modeOverride, portableReady, setupReady]);
 
-  const active = getWindowsInstallContent(mode, { setupUrl, portableUrl, metadata });
-  const versionLabel = version || 'pending';
+  const active = getWindowsInstallContent(mode, { setupUrl, portableUrl });
 
   return (
     <div className="page-stack">
       <section className="hero-card platform-hero platform-hero-simple">
         <div className="hero-copy">
           <h1>NeuralV для Windows</h1>
-          <p>Setup, portable или одна команда для PowerShell и CMD.</p>
+          <p>Новый нативный клиент для ПК: setup, portable или установка через NV в PowerShell и CMD.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#windows-install">
               Установить
             </a>
           </div>
-          <span className="hero-support-text">{versionLabel}</span>
+          <span className="hero-support-text">Версия Windows: {version}</span>
+        </div>
+      </section>
+
+      <section className="section-block">
+        <div className="card-grid three-up">
+          {WINDOWS_HIGHLIGHTS.map((item) => (
+            <article key={item.title} className="content-card compact-card">
+              <h3>{item.title}</h3>
+              <p>{item.text}</p>
+            </article>
+          ))}
         </div>
       </section>
 

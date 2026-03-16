@@ -6,8 +6,10 @@ on:
       - main
     paths:
       - '.github/workflows/windows-build.yml'
-      - 'windows-native/**'
-      - 'gradle.properties'
+      - 'windows-native/install/**'
+      - 'windows-native/setup/**'
+      - 'windows-winui/**'
+      - 'versions/windows.txt'
       - 'branding/**'
   workflow_dispatch:
 
@@ -20,59 +22,82 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows Native GUI
+    name: Build Windows WinUI GUI
     runs-on: windows-latest
+    outputs:
+      release_version: ${{ steps.release_version.outputs.semver }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v4
+      - name: Resolve Windows release version
+        id: release_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          semver="$(tr -d '[:space:]' < versions/windows.txt)"
+          echo "$semver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+          echo "semver=$semver" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: windows-winui-nuget-${{ runner.os }}-${{ hashFiles('windows-winui/**', 'versions/windows.txt', '.github/workflows/windows-build.yml') }}
+          restore-keys: |
+            windows-winui-nuget-${{ runner.os }}-
 
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
-      - name: Cache native windows build tree
-        uses: actions/cache@v4
-        with:
-          path: build/windows-native
-          key: windows-native-${{ runner.os }}-${{ hashFiles('windows-native/**', 'gradle.properties', '.github/workflows/windows-build.yml') }}
-          restore-keys: |
-            windows-native-${{ runner.os }}-
-
-      - name: Configure CMake
+      - name: Restore Windows WinUI project
         shell: pwsh
         run: |
-          cmake -S windows-native -B build/windows-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DNEURALV_BUILD_LEGACY_SETUP=OFF
+          dotnet restore windows-winui/NeuralV.Windows/NeuralV.Windows.csproj
 
-      - name: Build native Windows client
+      - name: Publish Windows WinUI client
         shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
         run: |
-          cmake --build build/windows-native --config Release 2>&1 | Tee-Object -FilePath windows-build.log
-          "WINDOWS_NATIVE_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Package Windows native payloads
-        shell: pwsh
-        run: |
-          if ($env:WINDOWS_NATIVE_BUILD_EXIT -ne '0') {
-            throw "Native Windows build failed earlier; skip packaging"
-          }
+          $semver = "${env:NEURALV_VERSION}"
+          $assemblyVersion = "$semver.0"
           Remove-Item -Recurse -Force dist\windows -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path dist\windows\NeuralV | Out-Null
-          Copy-Item build\windows-native\NeuralV.exe dist\windows\NeuralV\NeuralV.exe -Force
+          dotnet publish windows-winui/NeuralV.Windows/NeuralV.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:WindowsPackageType=None `
+            -p:PublishSingleFile=false `
+            -o dist\windows\NeuralV 2>&1 | Tee-Object -FilePath windows-build.log
+          "WINDOWS_WINUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Package Windows portable archive
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_WINUI_BUILD_EXIT -ne '0') {
+            throw "Windows WinUI publish failed earlier; skip packaging"
+          }
           Compress-Archive -Path dist\windows\NeuralV -DestinationPath dist\windows\neuralv-windows.zip -Force
 
       - name: Build Windows setup with Inno Setup
         shell: pwsh
         env:
-          NEURALV_VERSION: ${{ vars.NEURALV_VERSION }}
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
         run: |
-          $semver = (Get-Content gradle.properties | Select-String '^neuralv.version=' | ForEach-Object { $_.ToString().Split('=')[1].Trim() } | Select-Object -First 1)
-          if (-not $semver) { throw 'neuralv.version is missing' }
+          $semver = "${env:NEURALV_VERSION}"
+          if (-not $semver) { throw 'versions/windows.txt is missing a valid semver' }
           $env:NEURALV_VERSION = $semver
           $env:NEURALV_STAGE_DIR = (Resolve-Path 'dist/windows').Path
           $env:NEURALV_OUTPUT_DIR = (Resolve-Path 'dist/windows').Path
@@ -85,17 +110,17 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-native-log
+          name: windows-winui-log
           path: windows-build.log
           if-no-files-found: warn
 
-      - name: Emit Windows native failure annotation
-        if: env.WINDOWS_NATIVE_BUILD_EXIT != '0'
+      - name: Emit Windows build failure annotation
+        if: env.WINDOWS_WINUI_BUILD_EXIT != '0'
         shell: pwsh
         run: |
           $summary = @()
           if (Test-Path windows-build.log) {
-            $summary = Select-String -Path windows-build.log -Pattern 'error C','fatal error','FAILED','Exception','not found','No such' |
+            $summary = Select-String -Path windows-build.log -Pattern 'error ','FAILED','Exception','not found','No such','NETSDK','MSB' |
               Select-Object -Last 20 |
               ForEach-Object { $_.Line.Trim() }
             if (-not $summary) {
@@ -107,18 +132,19 @@ jobs:
           $text = (($summary -join ' ') -replace '\s+', ' ')
           if ($text.Length -gt 1800) { $text = $text.Substring(0, 1800) }
           @(
-            '### Windows native build failure',
+            '### Windows WinUI build failure',
             '',
             $text
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          Write-Host "::error file=.github/workflows/windows-build.yml,line=32::$text"
+          Write-Host "::error file=.github/workflows/windows-build.yml,line=36::$text"
           exit 1
 
-      - name: Upload Windows native bundle
+      - name: Upload Windows GUI bundle
         uses: actions/upload-artifact@v4
         with:
-          name: neuralv-windows-native
+          name: neuralv-windows
           path: |
+            dist/windows/NeuralV/**
             dist/windows/neuralv-windows.zip
             dist/windows/neuralv-setup.exe
           if-no-files-found: error
@@ -135,7 +161,7 @@ jobs:
       - name: Download Windows bundle
         uses: actions/download-artifact@v4
         with:
-          name: neuralv-windows-native
+          name: neuralv-windows
           path: stage/windows
 
       - name: Prepare windows-builds payload
@@ -147,10 +173,13 @@ jobs:
           GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' gradle.properties)"
+          semver="${{ needs.build-windows.outputs.release_version }}"
           test -n "$semver"
           rm -rf publish-windows
           mkdir -p publish-windows/windows publish-windows/install
+          if [ -d stage/windows/NeuralV ]; then
+            cp -R stage/windows/NeuralV publish-windows/windows/NeuralV
+          fi
           cp stage/windows/neuralv-windows.zip "publish-windows/windows/neuralv-windows-${semver}.zip"
           cp stage/windows/neuralv-windows.zip publish-windows/windows/neuralv-windows.zip
           cp stage/windows/neuralv-setup.exe "publish-windows/windows/neuralv-setup-${semver}.exe"
@@ -183,12 +212,19 @@ jobs:
                       "sha256": os.environ["SHA_WINDOWS"],
                       "download_url": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
                       "install_command": powershell_cmd,
-                      "file_name": f"neuralv-windows-{os.environ['SEMVER']}.zip",
-                      "notes": ["Native Windows portable archive."],
+                      "file_name": "neuralv-windows.zip",
+                      "notes": ["WinUI Windows portable archive."],
                       "metadata": {
                           "setupUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-setup.exe",
+                          "payloadRootPath": "windows/NeuralV/",
+                          "portableArtifactPath": "windows/neuralv-windows.zip",
+                          "setupArtifactPath": "windows/neuralv-setup.exe",
+                          "versionedPortableArtifactPath": f"windows/neuralv-windows-{os.environ['SEMVER']}.zip",
+                          "versionedSetupArtifactPath": f"windows/neuralv-setup-{os.environ['SEMVER']}.exe",
                           "setupSha256": os.environ["SHA_SETUP"],
                           "portableUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
+                          "versionedPortableUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-windows-{os.environ['SEMVER']}.zip",
+                          "versionedSetupUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-setup-{os.environ['SEMVER']}.exe",
                           "powershellInstallCommand": powershell_cmd,
                           "cmdInstallCommand": cmd_cmd,
                           "installScriptPs1": f"{os.environ['RAW_BASE']}/install/windows.ps1",
@@ -200,6 +236,7 @@ jobs:
                           "directDownloadLabel": "Скачать portable",
                           "setupDownloadLabel": "Скачать setup",
                           "nativeClient": True,
+                          "uiStack": "winui3",
                           "setupCreatesShortcuts": True,
                           "powershellCreatesShortcuts": True,
                           "cmdCreatesShortcuts": True,
@@ -235,7 +272,7 @@ jobs:
           git init
           git checkout -b windows-builds
           git add .
-          semver="$(awk -F= '/^neuralv.version=/{gsub(/[[:space:]]/, "", $2); print $2}' "${GITHUB_WORKSPACE}/gradle.properties")"
-          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish native Windows bundle ${semver} for ${GITHUB_SHA} [skip ci]"
+          semver="${{ needs.build-windows.outputs.release_version }}"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows GUI ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push --force origin windows-builds

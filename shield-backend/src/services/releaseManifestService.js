@@ -5,7 +5,12 @@ const { loadRegistryConfig } = require('./packageRegistryService');
 const RELEASE_BRANCH_TIMEOUT_MS = parseInt(process.env.RELEASE_BRANCH_TIMEOUT_MS || '10000', 10);
 const RELEASE_MANIFEST_CACHE_TTL_MS = parseInt(process.env.RELEASE_MANIFEST_CACHE_TTL_MS || '600000', 10);
 const PUBLIC_REPOSITORY = String(process.env.PUBLIC_REPOSITORY || 'Perdonus/fatalerror').trim();
-const DEFAULT_RELEASE_VERSION = loadConfiguredReleaseVersion();
+const ANDROID_FALLBACK_VERSION = loadConfiguredProductVersion();
+const DESKTOP_FALLBACK_VERSIONS = Object.freeze({
+    windows: loadVersionFile('windows.txt'),
+    linux: loadVersionFile('linux-gui.txt'),
+    shell: loadVersionFile('linux-cli.txt')
+});
 const PACKAGE_REGISTRY_URL = String(process.env.PACKAGE_REGISTRY_URL || '/api/packages').trim() || '/api/packages';
 const GITHUB_API_HEADERS = {
     Accept: 'application/vnd.github.raw+json',
@@ -42,7 +47,7 @@ function branchManifestApiUrl(source) {
     return `https://api.github.com/repos/${source.repo}/contents/manifest.json?ref=${encodeURIComponent(source.branch)}`;
 }
 
-function loadConfiguredReleaseVersion() {
+function loadConfiguredProductVersion() {
     try {
         const filePath = path.resolve(__dirname, '../../../gradle.properties');
         const content = fs.readFileSync(filePath, 'utf8');
@@ -56,19 +61,33 @@ function loadConfiguredReleaseVersion() {
     return 'pending';
 }
 
+function loadVersionFile(fileName) {
+    try {
+        const filePath = path.resolve(__dirname, '../../../versions', fileName);
+        const value = fs.readFileSync(filePath, 'utf8').trim();
+        if (/^[0-9]+\.[0-9]+\.[0-9]+$/.test(value)) {
+            return value;
+        }
+        console.warn(`Release version file ${fileName} is invalid: ${value}`);
+    } catch (error) {
+        console.warn(`Release version file ${fileName} load failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return 'pending';
+}
+
 function fallbackArtifacts() {
     return [
         {
             platform: 'android',
             channel: 'release',
-            version: DEFAULT_RELEASE_VERSION,
+            version: ANDROID_FALLBACK_VERSION,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/android-builds/android/neuralv-android-${DEFAULT_RELEASE_VERSION}.apk`,
+            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/android-builds/android/neuralv-android-${ANDROID_FALLBACK_VERSION}.apk`,
             install_command: '',
             update_command: '',
             update_policy: 'manual',
             auto_update: false,
-            file_name: `neuralv-android-${DEFAULT_RELEASE_VERSION}.apk`,
+            file_name: `neuralv-android-${ANDROID_FALLBACK_VERSION}.apk`,
             notes: ['Android APK будет опубликован в android-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
@@ -80,59 +99,67 @@ function fallbackArtifacts() {
         {
             platform: 'windows',
             channel: 'beta',
-            version: DEFAULT_RELEASE_VERSION,
+            version: DESKTOP_FALLBACK_VERSIONS.windows,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/windows-builds/windows/neuralv-windows-${DEFAULT_RELEASE_VERSION}.zip`,
+            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/windows-builds/windows/neuralv-windows.zip`,
             install_command: 'winget install --id NeuralV.NeuralV -e',
             update_command: '%LOCALAPPDATA%\\NV\\nv.exe install neuralv@latest',
             update_policy: 'startup-auto',
             auto_update: true,
-            file_name: `neuralv-windows-${DEFAULT_RELEASE_VERSION}.zip`,
+            file_name: 'neuralv-windows.zip',
             notes: ['Windows GUI будет опубликован в windows-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'windows-builds',
                 source_label: 'windows',
-                available: false
+                available: false,
+                version_source: 'versions/windows.txt',
+                payloadRootPath: 'windows/NeuralV/',
+                portableArtifactPath: 'windows/neuralv-windows.zip',
+                setupArtifactPath: 'windows/neuralv-setup.exe',
+                versionedPortableArtifactPath: `windows/neuralv-windows-${DESKTOP_FALLBACK_VERSIONS.windows}.zip`,
+                versionedSetupArtifactPath: `windows/neuralv-setup-${DESKTOP_FALLBACK_VERSIONS.windows}.exe`
             }
         },
         {
             platform: 'linux',
             channel: 'main',
-            version: DEFAULT_RELEASE_VERSION,
+            version: DESKTOP_FALLBACK_VERSIONS.linux,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-gui-builds/linux/neuralv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-gui-builds/linux/neuralv-linux-${DESKTOP_FALLBACK_VERSIONS.linux}.tar.gz`,
             install_command: 'sudo apt install neuralv',
             update_command: 'sudo apt update && sudo apt install --only-upgrade neuralv',
             update_policy: 'startup-auto',
             auto_update: true,
-            file_name: `neuralv-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+            file_name: `neuralv-linux-${DESKTOP_FALLBACK_VERSIONS.linux}.tar.gz`,
             notes: ['Linux GUI будет опубликован в linux-gui-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-gui-builds',
                 source_label: 'linux-gui',
-                available: false
+                available: false,
+                version_source: 'versions/linux-gui.txt'
             }
         },
         {
             platform: 'shell',
             channel: 'main',
-            version: DEFAULT_RELEASE_VERSION,
+            version: DESKTOP_FALLBACK_VERSIONS.shell,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralv-shell-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralv-shell-linux-${DESKTOP_FALLBACK_VERSIONS.shell}.tar.gz`,
             install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh && nv install neuralv@latest',
             update_command: 'nv install neuralv@latest',
             update_policy: 'nv-command',
             auto_update: false,
-            file_name: `neuralv-shell-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`,
+            file_name: `neuralv-shell-linux-${DESKTOP_FALLBACK_VERSIONS.shell}.tar.gz`,
             notes: ['Linux CLI будет опубликован в linux-cli-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-cli-builds',
                 source_label: 'linux-cli',
                 available: false,
-                daemonUrl: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralvd-linux-${DEFAULT_RELEASE_VERSION}.tar.gz`
+                version_source: 'versions/linux-cli.txt',
+                daemonUrl: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralvd-linux-${DESKTOP_FALLBACK_VERSIONS.shell}.tar.gz`
             }
         },
         {

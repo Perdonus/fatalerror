@@ -89,13 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f linux-gui-build.log ]; then
-            tail_text="$(python3 - <<'PY2'
-from pathlib import Path
-text='\n'.join(Path('linux-gui-build.log').read_text().splitlines()[-60:])
-text=text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-print(text)
-PY2
-)"
+            tail_text="$(python3 -c "from pathlib import Path; text='\n'.join(Path('linux-gui-build.log').read_text().splitlines()[-60:]); text=text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'); print(text)")"
             echo "::error title=Linux GUI tail::$tail_text"
           fi
 

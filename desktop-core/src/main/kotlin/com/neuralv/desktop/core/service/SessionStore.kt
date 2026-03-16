@@ -30,11 +30,21 @@ class SessionStore(
     }
 
     companion object {
-        fun defaultStatePath(): Path = Paths.get(
-            System.getProperty("user.home"),
-            ".config",
-            "neuralv",
-            "session.json"
-        )
+        fun defaultStatePath(): Path {
+            val osName = System.getProperty("os.name").orEmpty().lowercase()
+            return if (osName.contains("win")) {
+                val appData = System.getenv("APPDATA")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: Paths.get(System.getProperty("user.home"), "AppData", "Roaming").toString()
+                Paths.get(appData, "NeuralV", "session.json")
+            } else {
+                Paths.get(
+                    System.getProperty("user.home"),
+                    ".config",
+                    "neuralv",
+                    "session.json"
+                )
+            }
+        }
     }
 }

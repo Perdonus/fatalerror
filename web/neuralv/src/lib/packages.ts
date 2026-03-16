@@ -38,6 +38,7 @@ export async function fetchPackageCatalog(signal?: AbortSignal): Promise<Package
   const response = await fetch(registryUrl, {
     method: 'GET',
     headers: { Accept: 'application/json' },
+    cache: 'no-store',
     signal
   });
 
@@ -82,4 +83,17 @@ export async function fetchPackageCatalog(signal?: AbortSignal): Promise<Package
     }));
 
   return { packages };
+}
+
+export function getPackage(catalog: PackageCatalog, packageName: string): PackageRecord | undefined {
+  return catalog.packages.find((item) => item.name === packageName);
+}
+
+export function getPackageVariant(pkg: PackageRecord | undefined, variantId: string): PackageVariant | undefined {
+  return pkg?.variants.find((variant) => variant.id === variantId);
+}
+
+export function getDefaultVariant(pkg: PackageRecord | undefined, os?: string): PackageVariant | undefined {
+  const variants = os ? (pkg?.variants.filter((variant) => variant.os === os) ?? []) : (pkg?.variants ?? []);
+  return variants.find((variant) => variant.is_default) ?? variants.find((variant) => Boolean(variant.download_url)) ?? variants[0];
 }

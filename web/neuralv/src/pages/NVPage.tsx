@@ -1,32 +1,27 @@
 import { useMemo } from 'react';
+import { getPackage, getPackageVariant } from '../lib/packages';
 import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
-const linuxInstallCommand = 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';
-const windowsInstallCommand = 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex"';
+const nvLinuxScriptUrl = 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh';
+const nvWindowsScriptUrl = 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1';
+const linuxInstallCommand = `curl -fsSL ${nvLinuxScriptUrl} | sh`;
+const windowsInstallCommand = `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${nvWindowsScriptUrl} | iex"`;
 
 export function NVPage() {
   const { catalog, loading, error } = usePackageRegistry();
-  const packages = catalog.packages;
-
-  const neuralvPackage = useMemo(
-    () => packages.find((item) => item.name === 'neuralv'),
-    [packages]
-  );
-
-  const nvPackage = useMemo(
-    () => packages.find((item) => item.name === 'nv'),
-    [packages]
-  );
+  const nvPackage = useMemo(() => getPackage(catalog, 'nv'), [catalog]);
+  const linuxVariant = useMemo(() => getPackageVariant(nvPackage, 'nv-linux'), [nvPackage]);
+  const windowsVariant = useMemo(() => getPackageVariant(nvPackage, 'nv-windows'), [nvPackage]);
 
   return (
     <div className="page-stack">
       <section className="hero-card">
         <div className="hero-copy hero-copy-wide">
           <h1>NV</h1>
-          <p>Пакетный менеджер NeuralV. Установка, обновление и выдача версий теперь идут через серверный registry, без списка пакетов в коде клиента.</p>
+          <p>Пакетный менеджер NeuralV. Эта страница берёт сам `nv` только из репозитория `Perdonus/NV` через живой registry.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#nv-install">Установить NV</a>
-            <a className="nv-button tonal" href="#nv-packages">Пакеты</a>
+            <a className="nv-button tonal" href="#nv-builds">Сборки</a>
           </div>
         </div>
       </section>
@@ -39,28 +34,30 @@ export function NVPage() {
                 <h3>Установка NV</h3>
               </div>
             </div>
-            <div className="card-actions card-actions-stacked">
-              <a className="nv-button" href="/neuralv/install/nv.sh">Скачать nv.sh</a>
-              <a className="nv-button tonal" href="/neuralv/install/nv.ps1">Скачать nv.ps1</a>
+            <div className="card-actions card-actions-stacked" style={{ marginBottom: 16 }}>
+              <a className="nv-button" href={nvLinuxScriptUrl}>Скачать для Linux</a>
+              <a className="nv-button tonal" href={nvWindowsScriptUrl}>Скачать для Windows</a>
+            </div>
+            <div className="command-shell light-shell">
+              <pre>{`# Linux\n${linuxInstallCommand}\n\n# Windows\n${windowsInstallCommand}\n\n# Установить пакет\nnv install neuralv@latest\n\n# Обновить nv\nnv install nv@latest\n\n# Удалить пакет\nnv uninstall neuralv`}</pre>
             </div>
           </article>
 
           <article className="content-card install-card">
             <div className="install-card-head simple-head">
               <div>
-                <h3>Команды</h3>
+                <h3>Текущая версия</h3>
               </div>
             </div>
-            <div className="command-shell light-shell">
-              <pre>{`# Linux\n${linuxInstallCommand}\n\n# Windows\n${windowsInstallCommand}\n\n# Установить NeuralV\nnv install neuralv@latest\n\n# Обновить NV\nnv install nv@latest\n\n# Удалить пакет\nnv uninstall neuralv`}</pre>
-            </div>
+            <div className="platform-meta">{nvPackage?.latest_version || 'pending'}</div>
+            <p>Сам `nv` обновляется отдельно от NeuralV и публикуется из `Perdonus/NV`.</p>
           </article>
         </div>
       </section>
 
-      <section id="nv-packages" className="section-block">
+      <section id="nv-builds" className="section-block">
         <div className="section-head section-head-tight">
-          <h2>Пакеты</h2>
+          <h2>Сборки NV</h2>
         </div>
         <div className="card-grid two-up">
           {loading && (
@@ -76,52 +73,25 @@ export function NVPage() {
             </article>
           )}
 
-          {!loading && !error && packages.map((pkg) => (
-            <article key={pkg.name} className="content-card platform-card">
+          {!loading && !error && [linuxVariant, windowsVariant].filter(Boolean).map((variant) => (
+            <article key={variant!.id} className="content-card platform-card">
               <div className="platform-card-head">
                 <div>
-                  <h3>{pkg.title}</h3>
+                  <h3>{variant!.label}</h3>
                 </div>
               </div>
-              <div className="platform-meta">{pkg.latest_version || 'pending'}</div>
-              <p>{pkg.description}</p>
-              <div className="chooser-section">
-                {pkg.variants.map((variant) => (
-                  <div key={`${pkg.name}-${variant.id}`} className="shot-card">
-                    <strong>{variant.label}</strong>
-                    <div className="platform-meta">{variant.os} · {variant.version || 'pending'}</div>
-                    {variant.install_command ? (
-                      <div className="command-shell light-shell" style={{ marginTop: 12 }}>
-                        <pre>{variant.install_command}</pre>
-                      </div>
-                    ) : null}
-                    {variant.download_url ? (
-                      <div className="card-actions" style={{ marginTop: 12 }}>
-                        <a className="nv-button tonal" href={variant.download_url}>Скачать</a>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
+              <div className="platform-meta">{variant!.version || 'pending'}</div>
+              <p>{variant!.file_name || 'Актуальный файл берётся из веток публикации NV.'}</p>
+              <div className="card-actions" style={{ marginTop: 12 }}>
+                {variant!.download_url ? (
+                  <a className="nv-button tonal" href={variant!.download_url}>Скачать</a>
+                ) : (
+                  <button className="nv-button tonal is-disabled" type="button" disabled>Сборка скоро</button>
+                )}
               </div>
             </article>
           ))}
         </div>
-      </section>
-
-      <section className="section-block">
-        <article className="content-card">
-          <div className="section-head section-head-tight">
-            <h2>Быстрые команды</h2>
-          </div>
-          <div className="command-shell">
-            <pre>{`# Показать версию NV\nnv version\n\n# Установить или обновить пакет\nnv install neuralv@latest\n\n# Поставить конкретную версию\nnv install neuralv@1.3.1\n\n# Удалить пакет\nnv uninstall neuralv`}</pre>
-          </div>
-          {nvPackage || neuralvPackage ? (
-            <p className="install-hint">
-              Registry уже отдаёт живые пакеты и версии с сервера. Новые пакеты добавляются на сервер и сразу становятся видны клиенту и сайту.
-            </p>
-          ) : null}
-        </article>
       </section>
     </div>
   );

@@ -1,16 +1,21 @@
-import { getArtifact, isArtifactReady } from '../lib/manifest';
-import { useReleaseManifest } from '../hooks/useReleaseManifest';
+import { useMemo } from 'react';
+import { getPackage, getPackageVariant } from '../lib/packages';
+import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
-const installSteps = [
+const fallbackInstallSteps = [
   '1. Скачай сборку для Windows.',
-  '2. Открой приложение и войди в аккаунт.',
-  '3. Запусти проверку или включи фоновый режим.'
+  '2. Распакуй архив в удобную папку.',
+  '3. Запусти NeuralV.exe и войди в аккаунт.'
 ];
 
 export function WindowsPage() {
-  const manifestState = useReleaseManifest();
-  const artifact = getArtifact(manifestState.manifest, 'windows');
-  const ready = isArtifactReady(artifact);
+  const { catalog } = usePackageRegistry();
+  const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
+  const artifact = useMemo(() => getPackageVariant(neuralvPackage, 'windows-gui'), [neuralvPackage]);
+  const ready = Boolean(artifact?.download_url);
+  const installSteps = artifact?.install_command
+    ? artifact.install_command.split(/\r?\n/).filter((line) => line.trim().length > 0)
+    : fallbackInstallSteps;
 
   return (
     <div className="page-stack">
@@ -18,12 +23,12 @@ export function WindowsPage() {
         <div className="hero-copy">
           <h1>NeuralV для Windows.</h1>
           <p>
-            Обычное настольное приложение для проверки файлов и фонового контроля на ПК без
-            перегруженного интерфейса.
+            Нативный настольный клиент для проверки файлов, фонового контроля и работы с тем же
+            аккаунтом, что на Android и Linux.
           </p>
           <div className="hero-actions">
-            {ready && artifact?.downloadUrl ? (
-              <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">
+            {ready ? (
+              <a className="nv-button" href={artifact?.download_url} target="_blank" rel="noreferrer">
                 Скачать Windows
               </a>
             ) : (
@@ -39,10 +44,9 @@ export function WindowsPage() {
 
         <div className="hero-panel compact-panel">
           <article className="mini-stat">
-            <strong>Windows 10 / 11</strong>
+            <strong>{artifact?.version || 'Windows 10 / 11'}</strong>
             <span className="hero-support-text">
-              GUI-клиент для обычного рабочего стола: проверка файлов, история и тот же аккаунт,
-              что на Android и Linux.
+              {artifact?.file_name || 'Windows GUI-клиент с единым аккаунтом и локальной проверкой файлов.'}
             </span>
           </article>
         </div>
@@ -52,7 +56,7 @@ export function WindowsPage() {
         <div className="install-layout install-layout-static">
           <article className="content-card chooser-card">
             <h3>Установка</h3>
-            <p>Скачай сборку, войди в аккаунт и сразу переходи к проверке.</p>
+            <p>Скачай свежую сборку и запусти клиент. Кнопка сверху всегда ведёт на последний опубликованный архив.</p>
           </article>
 
           <article className="content-card install-card">

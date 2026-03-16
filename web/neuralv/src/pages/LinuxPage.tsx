@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getArtifact, isArtifactReady, ReleaseArtifact } from '../lib/manifest';
-import { useReleaseManifest } from '../hooks/useReleaseManifest';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { getPackage, getPackageVariant, PackageVariant } from '../lib/packages';
+import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
 type InstallMode = 'gui' | 'cli';
 type DistroKey = 'ubuntu' | 'fedora' | 'arch' | 'generic';
@@ -20,7 +20,7 @@ type PackageMetadata = {
   installCommands?: string[];
 };
 
-type ArtifactMetadataShape = {
+type VariantMetadataShape = {
   packages?: Partial<Record<DistroKey, PackageMetadata>>;
 };
 
@@ -41,7 +41,7 @@ const distroOptions: DistroOption[] = [
   { key: 'generic', label: 'Другой Linux', title: 'Любой совместимый x64 Linux' }
 ];
 
-const compactSegmentsStyle: React.CSSProperties = {
+const compactSegmentsStyle: CSSProperties = {
   display: 'flex',
   gap: '0.6rem',
   flexWrap: 'wrap',
@@ -51,24 +51,24 @@ const compactSegmentsStyle: React.CSSProperties = {
   boxShadow: 'none'
 };
 
-const compactSegmentStyle: React.CSSProperties = {
+const compactSegmentStyle: CSSProperties = {
   flex: '0 0 auto',
   width: 'auto',
   minWidth: 'unset'
 };
 
-function getMetadata(artifact?: ReleaseArtifact): ArtifactMetadataShape | undefined {
+function getMetadata(artifact?: PackageVariant): VariantMetadataShape | undefined {
   return artifact?.metadata && typeof artifact.metadata === 'object'
-    ? (artifact.metadata as ArtifactMetadataShape)
+    ? (artifact.metadata as VariantMetadataShape)
     : undefined;
 }
 
-function getGuiPackage(distro: DistroKey, artifact?: ReleaseArtifact): PackageMetadata | undefined {
+function getGuiPackage(distro: DistroKey, artifact?: PackageVariant): PackageMetadata | undefined {
   return getMetadata(artifact)?.packages?.[distro];
 }
 
-function getPackageDownloadUrl(packageMeta?: PackageMetadata, artifact?: ReleaseArtifact) {
-  return packageMeta?.downloadUrl ?? packageMeta?.url ?? artifact?.downloadUrl;
+function getPackageDownloadUrl(packageMeta?: PackageMetadata, artifact?: PackageVariant) {
+  return packageMeta?.downloadUrl ?? packageMeta?.url ?? artifact?.download_url;
 }
 
 function buildUbuntuCommands(packageUrl?: string) {
@@ -138,7 +138,7 @@ function buildGenericCommands(packageUrl?: string) {
   ].join('\n');
 }
 
-function buildGuiVariant(distro: DistroOption, artifact?: ReleaseArtifact): InstallVariant {
+function buildGuiVariant(distro: DistroOption, artifact?: PackageVariant): InstallVariant {
   const packageMeta = getGuiPackage(distro.key, artifact);
   const downloadUrl = getPackageDownloadUrl(packageMeta, artifact);
   const packageType = String(packageMeta?.packageType ?? packageMeta?.format ?? '').toLowerCase();
@@ -191,10 +191,10 @@ function buildGuiVariant(distro: DistroOption, artifact?: ReleaseArtifact): Inst
   };
 }
 
-function buildCliVariant(): InstallVariant {
+function buildCliVariant(artifact?: PackageVariant): InstallVariant {
   return {
     title: 'CLI',
-    commandText: [
+    commandText: artifact?.install_command || [
       '# 1) Установи nv',
       `curl -fsSL ${NV_INSTALL_URL} | sh`,
       '',
@@ -203,14 +203,18 @@ function buildCliVariant(): InstallVariant {
       '',
       '# 3) Запусти клиент',
       'neuralv'
-    ].join('\n')
+    ].join('\n'),
+    downloadUrl: artifact?.download_url,
+    buttonLabel: 'Скачать CLI'
   };
 }
 
 export function LinuxPage() {
-  const manifestState = useReleaseManifest();
-  const guiArtifact = getArtifact(manifestState.manifest, 'linux');
-  const guiReady = isArtifactReady(guiArtifact);
+  const { catalog } = usePackageRegistry();
+  const neuralvPackage = useMemo(() => getPackage(catalog, 'neuralv'), [catalog]);
+  const guiArtifact = useMemo(() => getPackageVariant(neuralvPackage, 'linux-gui'), [neuralvPackage]);
+  const cliArtifact = useMemo(() => getPackageVariant(neuralvPackage, 'linux-cli'), [neuralvPackage]);
+  const guiReady = Boolean(guiArtifact?.download_url);
 
   const [installMode, setInstallMode] = useState<InstallMode>(() => (guiReady ? 'gui' : 'cli'));
   const [distro, setDistro] = useState<DistroKey>('ubuntu');
@@ -224,7 +228,7 @@ export function LinuxPage() {
 
   const selectedDistro = distroOptions.find((item) => item.key === distro) ?? distroOptions[0];
   const guiVariant = useMemo(() => buildGuiVariant(selectedDistro, guiArtifact), [guiArtifact, selectedDistro]);
-  const cliVariant = useMemo(() => buildCliVariant(), []);
+  const cliVariant = useMemo(() => buildCliVariant(cliArtifact), [cliArtifact]);
   const activeVariant = installMode === 'gui' ? guiVariant : cliVariant;
 
   const handleCopy = async () => {
@@ -248,8 +252,8 @@ export function LinuxPage() {
           <h1>NeuralV для Linux</h1>
           <div className="hero-actions">
             <a className="nv-button" href="#linux-install">Установка</a>
-            {guiReady && guiArtifact?.downloadUrl ? (
-              <a className="nv-button tonal" href={guiArtifact.downloadUrl} target="_blank" rel="noreferrer">Скачать GUI</a>
+            {guiReady && guiArtifact?.download_url ? (
+              <a className="nv-button tonal" href={guiArtifact.download_url} target="_blank" rel="noreferrer">Скачать GUI</a>
             ) : (
               <button className="nv-button tonal is-disabled" type="button" disabled>GUI скоро</button>
             )}
@@ -311,12 +315,10 @@ export function LinuxPage() {
                 <h3>{activeVariant.title}</h3>
               </div>
               <div className="install-card-head-actions">
-                {installMode === 'gui' ? (
-                  activeVariant.downloadUrl ? (
-                    <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
-                  ) : (
-                    <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>
-                  )
+                {activeVariant.downloadUrl ? (
+                  <a className="nv-button tonal" href={activeVariant.downloadUrl} target="_blank" rel="noreferrer">{activeVariant.buttonLabel}</a>
+                ) : installMode === 'gui' ? (
+                  <button className="nv-button tonal is-disabled" type="button" disabled>Пакет скоро</button>
                 ) : null}
                 <button className="copy-button" type="button" onClick={handleCopy}>
                   {copyState === 'done' ? 'Скопировано' : 'Скопировать'}

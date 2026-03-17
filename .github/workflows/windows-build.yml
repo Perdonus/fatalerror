@@ -260,9 +260,7 @@ jobs:
           test -n "$semver"
           rm -rf publish-windows
           mkdir -p publish-windows/windows publish-windows/install
-          cp stage/windows/neuralv-windows.zip "publish-windows/windows/neuralv-windows-${semver}.zip"
           cp stage/windows/neuralv-windows.zip publish-windows/windows/neuralv-windows.zip
-          cp stage/windows/neuralv-setup.exe "publish-windows/windows/neuralv-setup-${semver}.exe"
           cp stage/windows/neuralv-setup.exe publish-windows/windows/neuralv-setup.exe
           cp windows-native/install/windows.ps1 publish-windows/install/windows.ps1
           cp windows-native/install/windows.cmd publish-windows/install/windows.cmd
@@ -300,12 +298,8 @@ jobs:
                           "cliBinaryName": "neuralv-cmd.exe",
                           "portableArtifactPath": "windows/neuralv-windows.zip",
                           "setupArtifactPath": "windows/neuralv-setup.exe",
-                          "versionedPortableArtifactPath": f"windows/neuralv-windows-{os.environ['SEMVER']}.zip",
-                          "versionedSetupArtifactPath": f"windows/neuralv-setup-{os.environ['SEMVER']}.exe",
                           "setupSha256": os.environ["SHA_SETUP"],
                           "portableUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-windows.zip",
-                          "versionedPortableUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-windows-{os.environ['SEMVER']}.zip",
-                          "versionedSetupUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-setup-{os.environ['SEMVER']}.exe",
                           "powershellInstallCommand": powershell_cmd,
                           "cmdInstallCommand": cmd_cmd,
                           "installScriptPs1": f"{os.environ['RAW_BASE']}/install/windows.ps1",

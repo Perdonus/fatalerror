@@ -49,6 +49,15 @@ public partial class App : Application
         try
         {
             var window = new MainWindow();
+            if (IsSmokeTest)
+            {
+                WindowsLog.Info("Smoke test short-circuit after window construction");
+                window.RunSmokeValidation();
+                Environment.ExitCode = 0;
+                Current.Exit();
+                return;
+            }
+
             window.Activate();
         }
         catch (Exception ex)

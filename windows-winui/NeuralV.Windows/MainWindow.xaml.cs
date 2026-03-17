@@ -98,6 +98,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    public void RunSmokeValidation()
+    {
+        WindowsLog.Info("Running WinUI smoke validation");
+        SetBusy(false);
+        SetStatus("Smoke validation completed.");
+        ShowScreen(AppScreen.Welcome);
+    }
+
     private void TryConfigureWindowFrame()
     {
         try

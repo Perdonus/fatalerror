@@ -83,6 +83,29 @@ jobs:
             -o dist\windows\NeuralV 2>&1 | Tee-Object -FilePath windows-build.log
           "WINDOWS_WINUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Publish Windows CLI companion
+        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
+        shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
+        run: |
+          $semver = "${env:NEURALV_VERSION}"
+          $assemblyVersion = "$semver.0"
+          Remove-Item -Recurse -Force dist\windows\cli-temp -ErrorAction SilentlyContinue
+          dotnet publish windows-winui/NeuralV.Cmd/NeuralV.Cmd.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o dist\windows\cli-temp
+          $cliExe = Resolve-Path 'dist/windows/cli-temp/neuralv-cmd.exe'
+          Copy-Item $cliExe 'dist/windows/NeuralV/neuralv-cmd.exe' -Force
+
       - name: Smoke test published Windows client
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
         shell: pwsh
@@ -243,6 +266,9 @@ jobs:
                       "metadata": {
                           "setupUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-setup.exe",
                           "payloadRootPath": "windows/NeuralV/",
+                          "bundledComponents": ["gui", "cli"],
+                          "cliBinaryName": "neuralv-cmd.exe",
+                          "cliArtifactPath": "windows/NeuralV/neuralv-cmd.exe",
                           "portableArtifactPath": "windows/neuralv-windows.zip",
                           "setupArtifactPath": "windows/neuralv-setup.exe",
                           "versionedPortableArtifactPath": f"windows/neuralv-windows-{os.environ['SEMVER']}.zip",

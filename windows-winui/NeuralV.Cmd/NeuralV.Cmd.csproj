@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <AssemblyName>neuralv-cmd</AssemblyName>
+    <RootNamespace>NeuralV.Cmd</RootNamespace>
+    <Version>1.5.5</Version>
+    <AssemblyVersion>1.5.5.0</AssemblyVersion>
+    <FileVersion>1.5.5.0</FileVersion>
+    <InformationalVersion>1.5.5</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\NeuralV.Windows\Models\AppModels.cs" Link="Shared\AppModels.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\NeuralVApiClient.cs" Link="Shared\NeuralVApiClient.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\SessionStore.cs" Link="Shared\SessionStore.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\HistoryStore.cs" Link="Shared\HistoryStore.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsEnvironmentService.cs" Link="Shared\WindowsEnvironmentService.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsLog.cs" Link="Shared\WindowsLog.cs" />
+    <Compile Include="..\NeuralV.Windows\VersionInfo.cs" Link="Shared\VersionInfo.cs" />
+  </ItemGroup>
+</Project>

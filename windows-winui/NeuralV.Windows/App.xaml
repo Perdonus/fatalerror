@@ -62,7 +62,7 @@
         <CornerRadius x:Key="PillCornerRadius">18</CornerRadius>
 
         <Style x:Key="HeroEyebrowStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{ThemeResource AppAccentSecondaryBrush}" />
@@ -70,7 +70,7 @@
         </Style>
 
         <Style x:Key="HeroTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="46" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
@@ -78,7 +78,7 @@
         </Style>
 
         <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="34" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
@@ -86,7 +86,7 @@
         </Style>
 
         <Style x:Key="CardTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="24" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
@@ -94,21 +94,21 @@
         </Style>
 
         <Style x:Key="BodyTextStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="Foreground" Value="{ThemeResource AppMutedTextBrush}" />
             <Setter Property="TextWrapping" Value="WrapWholeWords" />
         </Style>
 
         <Style x:Key="CaptionTextStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{ThemeResource AppSubtleTextBrush}" />
             <Setter Property="TextWrapping" Value="WrapWholeWords" />
         </Style>
 
         <Style x:Key="ValueTextStyle" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="20" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
@@ -151,68 +151,17 @@
         </Style>
 
         <Style x:Key="BaseButtonStyle" TargetType="Button">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="MinHeight" Value="54" />
             <Setter Property="MinWidth" Value="160" />
             <Setter Property="Padding" Value="20,14" />
-            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="UseSystemFocusVisuals" Value="False" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <Border x:Name="ButtonShell"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="{TemplateBinding CornerRadius}"
-                                    Padding="{TemplateBinding Padding}"
-                                    Opacity="1"
-                                    RenderTransformOrigin="0.5,0.5">
-                                <Border.RenderTransform>
-                                    <ScaleTransform x:Name="ButtonScaleTransform" ScaleX="1" ScaleY="1" />
-                                </Border.RenderTransform>
-
-                                <ContentPresenter Content="{TemplateBinding Content}"
-                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
-                            </Border>
-
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup x:Name="CommonStates">
-                                    <VisualState x:Name="Normal" />
-                                    <VisualState x:Name="PointerOver">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="ButtonScaleTransform" Storyboard.TargetProperty="ScaleX" To="1.015" Duration="0:0:0.18" />
-                                            <DoubleAnimation Storyboard.TargetName="ButtonScaleTransform" Storyboard.TargetProperty="ScaleY" To="1.015" Duration="0:0:0.18" />
-                                            <DoubleAnimation Storyboard.TargetName="ButtonShell" Storyboard.TargetProperty="Opacity" To="0.95" Duration="0:0:0.18" />
-                                        </Storyboard>
-                                    </VisualState>
-                                    <VisualState x:Name="Pressed">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="ButtonScaleTransform" Storyboard.TargetProperty="ScaleX" To="0.975" Duration="0:0:0.12" />
-                                            <DoubleAnimation Storyboard.TargetName="ButtonScaleTransform" Storyboard.TargetProperty="ScaleY" To="0.975" Duration="0:0:0.12" />
-                                            <DoubleAnimation Storyboard.TargetName="ButtonShell" Storyboard.TargetProperty="Opacity" To="0.88" Duration="0:0:0.12" />
-                                        </Storyboard>
-                                    </VisualState>
-                                    <VisualState x:Name="Disabled">
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="ButtonShell" Storyboard.TargetProperty="Opacity" To="0.42" Duration="0:0:0.12" />
-                                        </Storyboard>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
         </Style>
 
         <Style x:Key="NeuralVButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
@@ -237,7 +186,6 @@
             <Setter Property="MinWidth" Value="132" />
             <Setter Property="MinHeight" Value="46" />
             <Setter Property="Padding" Value="18,12" />
-            <Setter Property="CornerRadius" Value="18" />
             <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
         </Style>
 
@@ -248,11 +196,10 @@
         </Style>
 
         <Style x:Key="FieldTextBoxStyle" TargetType="TextBox">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="MinHeight" Value="58" />
-            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
             <Setter Property="Background" Value="{ThemeResource AppFieldGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
@@ -260,11 +207,10 @@
         </Style>
 
         <Style x:Key="FieldPasswordBoxStyle" TargetType="PasswordBox">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="15" />
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="MinHeight" Value="58" />
-            <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
             <Setter Property="Background" Value="{ThemeResource AppFieldGradientBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />

@@ -4,10 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NV Downloads</title>
-    <meta
-      name="description"
-      content="Скачать NV для Windows и Linux и сразу получить рабочую команду установки."
-    />
+    <meta name="description" content="Скачать NV для Windows и Linux и получить рабочую команду установки." />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
   </head>
@@ -16,29 +13,26 @@
       <header class="topbar">
         <a class="brand" href="/nv/">
           <span class="brand-mark">NV</span>
-          <span class="brand-copy">Менеджер пакетов</span>
+          <span class="brand-copy">Package hub</span>
         </a>
-        <nav class="topnav" aria-label="Навигация NV">
+        <nav class="topnav" aria-label="NV navigation">
+          <a href="/nv/">Главная</a>
           <a class="is-active" href="/nv/downloads/">Скачать</a>
           <a href="/nv/packages/">Пакеты</a>
           <a href="/nv/profile/">Профиль</a>
         </nav>
+        <div id="auth-slot" class="auth-slot"></div>
       </header>
 
       <main class="page-stack">
-        <section class="hero hero-compact">
-          <div class="hero-copy hero-copy-tight">
-            <p class="eyebrow">Установка</p>
-            <h1>Скачать NV</h1>
-            <p class="hero-text">
-              Выбираешь систему, копируешь одну команду и дальше ставишь пакеты вида
-              <code>@creator/package</code> без ручной возни с архивами.
-            </p>
-          </div>
+        <section class="section-shell section-shell-tight">
+          <p class="eyebrow">Установка</p>
+          <h1 class="section-title">Скачать NV</h1>
+          <p class="section-copy">Сначала ставишь менеджер, потом работаешь командами вида <code>@creator/package</code>.</p>
         </section>
 
         <section class="section-shell">
-          <div class="platform-tabs" role="tablist" aria-label="Платформа NV">
+          <div class="platform-tabs" role="tablist" aria-label="NV platform">
             <button class="tab-button is-active" type="button" data-platform="linux">Linux</button>
             <button class="tab-button" type="button" data-platform="windows">Windows</button>
           </div>
@@ -55,7 +49,7 @@
 
               <div class="command-box">
                 <div class="command-box-head">
-                  <span>Команда установки</span>
+                  <span>Команда</span>
                   <button id="copy-command" type="button">Копировать</button>
                 </div>
                 <pre id="install-command"></pre>
@@ -67,12 +61,11 @@
             <aside class="download-side">
               <h3>После установки</h3>
               <ul class="simple-list">
-                <li><code>nv -v</code> проверяет, что менеджер доступен.</li>
-                <li><code>nv install @lvls/neuralv</code> ставит пакет из каталога.</li>
-                <li>Версию можно не указывать: без suffix идёт <code>latest</code>.</li>
+                <li><code>nv -v</code> проверяет, что менеджер уже в системе.</li>
+                <li><code>nv install @lvls/neuralv</code> ставит продукт из каталога.</li>
+                <li>Если версию не указать, берётся <code>latest</code>.</li>
               </ul>
               <p class="side-note" id="download-note"></p>
-              <a class="ghost-button ghost-button-compact" href="/nv/packages/">Посмотреть пакеты</a>
             </aside>
           </div>
         </section>

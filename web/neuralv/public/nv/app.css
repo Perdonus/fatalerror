@@ -171,6 +171,21 @@ h3 {
   color: var(--text);
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.auth-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 52px;
+}
+
 .hero {
   display: grid;
   gap: 18px;
@@ -805,6 +820,15 @@ h3 {
   color: var(--text);
 }
 
+.publish-form.is-disabled {
+  opacity: 0.66;
+}
+
+.auth-user-card-vertical {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
 .publish-form {
   display: grid;
   gap: 14px;
@@ -865,5 +889,13 @@ h3 {
 @media (max-width: 980px) {
   .profile-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 880px) {
+  .topbar-right,
+  .auth-slot {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

@@ -1,0 +1,19 @@
+{
+  "creators": [
+    {
+      "slug": "lvls",
+      "display_name": "lvls",
+      "bio": "Основной publisher для NV и NeuralV.",
+      "avatar_url": "",
+      "telegram_username": "",
+      "links": [
+        {
+          "label": "NeuralV",
+          "href": "https://sosiskibot.ru/neuralv/"
+        }
+      ]
+    }
+  ],
+  "packages": [],
+  "sessions": []
+}

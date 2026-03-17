@@ -6,7 +6,7 @@
     <title>NV</title>
     <meta
       name="description"
-      content="NV — пакетный менеджер для Windows и Linux. Установка, каталог пакетов и creator/package формат в одном месте."
+      content="NV — пакетный менеджер для Windows и Linux. Через него можно ставить и обновлять пакеты по схеме @creator/package."
     />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
@@ -16,77 +16,97 @@
       <header class="topbar">
         <a class="brand" href="/nv/">
           <span class="brand-mark">NV</span>
-          <span class="brand-copy">Менеджер пакетов</span>
+          <span class="brand-copy">Package hub</span>
         </a>
-        <nav class="topnav" aria-label="Навигация NV">
+        <nav class="topnav" aria-label="NV navigation">
+          <a class="is-active" href="/nv/">Главная</a>
           <a href="/nv/downloads/">Скачать</a>
           <a href="/nv/packages/">Пакеты</a>
           <a href="/nv/profile/">Профиль</a>
         </nav>
+        <div id="auth-slot" class="auth-slot"></div>
       </header>
 
       <main class="page-stack">
-        <section class="hero hero-home">
-          <div class="hero-copy">
-            <p class="eyebrow">Windows и Linux</p>
+        <section class="hero-grid">
+          <article class="hero-card hero-card-main">
+            <p class="eyebrow">Windows · Linux</p>
             <h1>NV</h1>
             <p class="hero-text">
-              Пакетный менеджер, через который можно ставить и обновлять приложения по схеме
-              <code>@creator/package</code>. Сначала ставишь NV, потом работаешь одной короткой командой.
+              Менеджер пакетов, через который можно ставить приложения в формате
+              <code>@creator/package</code>. Один менеджер, один каталог, одна короткая команда.
             </p>
             <div class="hero-actions">
-              <a class="primary-button" href="/nv/downloads/">Скачать NV</a>
-              <a class="ghost-button" href="/nv/packages/">Открыть каталог</a>
+              <a class="primary-button" href="/nv/downloads/">Скачать</a>
+              <a class="ghost-button" href="/nv/packages/">Пакеты</a>
             </div>
-          </div>
+          </article>
 
-          <aside class="command-card" aria-label="Пример установки">
-            <div class="command-topline">
-              <span class="tiny-pill">creator/package</span>
-              <span class="tiny-pill tiny-pill-muted">latest по умолчанию</span>
+          <article class="hero-card hero-card-console">
+            <div class="console-head">
+              <span></span><span></span><span></span>
             </div>
-            <pre># проверить версию менеджера
-nv -v
-
-# поставить пакет
-nv install @lvls/neuralv
-
-# поставить конкретную версию
-nv install @lvls/neuralv@1.5.0</pre>
-          </aside>
+            <pre id="home-command-preview">nv install @lvls/neuralv
+nv install @lvls/nv
+nv install @creator/package@1.2.0</pre>
+          </article>
         </section>
 
-        <section class="mini-grid" aria-label="Что умеет NV">
-          <article class="mini-card">
-            <h2>Ставит</h2>
-            <p>Берёт пакет из каталога и ставит его на нужную систему.</p>
+        <section class="metrics-grid" aria-label="NV summary">
+          <article class="metric-card">
+            <span class="metric-value" id="metric-packages">—</span>
+            <span class="metric-label">пакетов</span>
           </article>
-          <article class="mini-card">
-            <h2>Обновляет</h2>
-            <p>Повторная команда установки тянет актуальную версию пакета.</p>
+          <article class="metric-card">
+            <span class="metric-value" id="metric-creators">—</span>
+            <span class="metric-label">создателей</span>
           </article>
-          <article class="mini-card">
-            <h2>Показывает каталог</h2>
-            <p>Даёт creator slug, платформы и актуальные версии без длинных инструкций.</p>
+          <article class="metric-card">
+            <span class="metric-value" id="metric-platforms">2</span>
+            <span class="metric-label">основные платформы</span>
           </article>
         </section>
 
         <section class="section-shell">
           <div class="section-head">
             <div>
-              <p class="eyebrow">Пакеты</p>
-              <h2>Часть каталога</h2>
+              <p class="eyebrow">Как это работает</p>
+              <h2>Что умеет NV</h2>
+            </div>
+            <a class="ghost-button ghost-button-compact" href="/nv/downloads/">Установка</a>
+          </div>
+          <div class="mini-grid">
+            <article class="mini-card">
+              <h3>Ставит</h3>
+              <p>Команда установки сразу забирает нужную версию пакета.</p>
+            </article>
+            <article class="mini-card">
+              <h3>Обновляет</h3>
+              <p>Повторный install подтягивает новый релиз без отдельной команды.</p>
+            </article>
+            <article class="mini-card">
+              <h3>Публикует</h3>
+              <p>Через профиль можно выкладывать свои пакеты и релизы в общий каталог.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section-shell">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Каталог</p>
+              <h2>Часть пакетов</h2>
             </div>
             <a class="ghost-button ghost-button-compact" href="/nv/packages/">Все пакеты</a>
           </div>
           <div class="package-grid" id="featured-packages" aria-live="polite"></div>
         </section>
 
-        <section class="section-shell creator-strip">
+        <section class="section-shell">
           <div class="section-head">
             <div>
               <p class="eyebrow">Создатели</p>
-              <h2>Профили и namespace</h2>
+              <h2>Кто публикует пакеты</h2>
             </div>
             <a class="ghost-button ghost-button-compact" href="/nv/profile/">Открыть профиль</a>
           </div>

@@ -4,10 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NV Packages</title>
-    <meta
-      name="description"
-      content="Каталог пакетов NV с фильтрами по платформам и creator/package форматом."
-    />
+    <meta name="description" content="Каталог пакетов NV с creator slug и фильтрами по платформам." />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
   </head>
@@ -16,42 +13,39 @@
       <header class="topbar">
         <a class="brand" href="/nv/">
           <span class="brand-mark">NV</span>
-          <span class="brand-copy">Менеджер пакетов</span>
+          <span class="brand-copy">Package hub</span>
         </a>
-        <nav class="topnav" aria-label="Навигация NV">
+        <nav class="topnav" aria-label="NV navigation">
+          <a href="/nv/">Главная</a>
           <a href="/nv/downloads/">Скачать</a>
           <a class="is-active" href="/nv/packages/">Пакеты</a>
           <a href="/nv/profile/">Профиль</a>
         </nav>
+        <div id="auth-slot" class="auth-slot"></div>
       </header>
 
       <main class="page-stack">
-        <section class="hero hero-compact">
-          <div class="hero-copy hero-copy-tight">
-            <p class="eyebrow">Каталог</p>
-            <h1>Пакеты NV</h1>
-            <p class="hero-text">
-              Все пакеты в формате <code>@creator/package</code>. Фильтруй по платформе и ищи нужный namespace.
-            </p>
-          </div>
+        <section class="section-shell section-shell-tight">
+          <p class="eyebrow">Каталог</p>
+          <h1 class="section-title">Пакеты NV</h1>
+          <p class="section-copy">Полный список пакетов. Можно искать по creator, имени или версии.</p>
         </section>
 
         <section class="section-shell">
           <div class="catalog-toolbar">
-            <div class="filter-tabs" role="tablist" aria-label="Фильтр пакетов">
+            <div class="filter-tabs" role="tablist" aria-label="Фильтр каталога">
               <button class="filter-button is-active" type="button" data-filter="all">Все</button>
               <button class="filter-button" type="button" data-filter="windows">Windows</button>
               <button class="filter-button" type="button" data-filter="linux">Linux</button>
             </div>
-            <label class="search-field" aria-label="Поиск по каталогу">
+            <label class="search-field" aria-label="Поиск по пакетам">
               <span>Поиск</span>
-              <input id="package-search" type="search" placeholder="creator, пакет или версия" />
+              <input id="package-search" type="search" placeholder="@creator/package или версия" />
             </label>
           </div>
-
           <div class="catalog-meta" id="catalog-meta"></div>
           <div class="package-grid package-grid-wide" id="package-list" aria-live="polite"></div>
-          <p class="empty-state" id="package-empty" hidden>Под текущий фильтр ничего не найдено.</p>
+          <p class="empty-state" id="package-empty" hidden>По этому фильтру ничего не найдено.</p>
         </section>
       </main>
     </div>

@@ -1,4 +1,8 @@
 const REGISTRY_URL = '/basedata/api/packages/registry';
+const AUTH_CONFIG_URL = '/basedata/api/nv/auth/config';
+const AUTH_ME_URL = '/basedata/api/nv/auth/me';
+const AUTH_LOGIN_URL = '/basedata/api/nv/auth/telegram';
+const AUTH_LOGOUT_URL = '/basedata/api/nv/auth/logout';
 
 const fallbackRegistry = {
   packages: [
@@ -14,7 +18,7 @@ const fallbackRegistry = {
           label: 'Linux',
           os: 'linux',
           version: '1.3.3',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux-1.3.3.tar.gz',
+          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux.tar.gz',
           install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh'
         },
         {
@@ -22,7 +26,7 @@ const fallbackRegistry = {
           label: 'Windows',
           os: 'windows',
           version: '1.3.3',
-          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv-1.3.3.exe',
+          download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv.exe',
           install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"'
         }
       ]
@@ -35,7 +39,7 @@ const fallbackRegistry = {
       latest_version: '1.5.0',
       variants: [
         { id: 'windows', label: 'Windows', os: 'windows', version: '1.5.0' },
-        { id: 'linux', label: 'Linux', os: 'linux', version: '1.4.0' }
+        { id: 'linux', label: 'Linux', os: 'linux', version: '1.4.1' }
       ]
     }
   ]
@@ -46,8 +50,18 @@ const state = {
   registry: fallbackRegistry,
   platformFilter: 'all',
   searchTerm: '',
-  downloadPlatform: 'linux'
+  downloadPlatform: 'linux',
+  auth: {
+    loading: true,
+    enabled: false,
+    botUsername: '',
+    user: null,
+    creator: null,
+    error: null
+  }
 };
+
+window.NVTelegramAuth = handleTelegramWidgetAuth;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -67,11 +81,10 @@ function pluralizeRu(count, one, few, many) {
 }
 
 function parseScopedName(name) {
-  const match = /^@([^/]+)\/(.+)$/.exec(name || '');
+  const match = /^@([^/]+)\/(.+)$/.exec(String(name || '').trim());
   if (!match) {
-    return { creator: 'unknown', packageName: name || 'package', canonicalName: name || 'package' };
+    return { creator: 'unknown', packageName: String(name || 'package').trim(), canonicalName: String(name || 'package').trim() };
   }
-
   return {
     creator: match[1],
     packageName: match[2],
@@ -87,16 +100,15 @@ function platformLabel(os) {
 
 function normalizeVariant(variant) {
   return {
-    id: variant.id || '',
-    label: variant.label || platformLabel(variant.os),
-    os: (variant.os || 'unknown').toLowerCase(),
-    version: variant.version || '',
-    downloadUrl: variant.download_url || '',
+    id: String(variant.id || ''),
+    label: String(variant.label || platformLabel(variant.os)),
+    os: String(variant.os || 'unknown').toLowerCase(),
+    version: String(variant.version || ''),
+    downloadUrl: String(variant.download_url || ''),
     installCommand:
-      variant.install_command ||
-      variant.metadata?.commands?.powershell?.install ||
-      variant.metadata?.commands?.cmd?.install ||
-      '',
+      String(variant.install_command || '') ||
+      String(variant.metadata?.commands?.powershell?.install || '') ||
+      String(variant.metadata?.commands?.cmd?.install || ''),
     metadata: variant.metadata || {}
   };
 }
@@ -109,13 +121,38 @@ function normalizePackage(pkg) {
     creator: identity.creator,
     packageName: identity.packageName,
     name: identity.canonicalName,
-    title: pkg.title || identity.packageName,
-    description: pkg.description || 'Пакет для NV.',
-    homepage: pkg.homepage || '',
-    latestVersion: pkg.latest_version || variants[0]?.version || '—',
+    title: String(pkg.title || identity.packageName),
+    description: String(pkg.description || 'Пакет для NV.'),
+    homepage: String(pkg.homepage || ''),
+    latestVersion: String(pkg.latest_version || variants[0]?.version || '—'),
     variants,
     platforms
   };
+}
+
+function getPackages() {
+  return (state.registry.packages || []).map(normalizePackage);
+}
+
+function getCreators(packages) {
+  const creatorMap = new Map();
+  packages.forEach((pkg) => {
+    if (!creatorMap.has(pkg.creator)) {
+      creatorMap.set(pkg.creator, { creator: pkg.creator, packages: [], platforms: new Set() });
+    }
+    const record = creatorMap.get(pkg.creator);
+    record.packages.push(pkg);
+    pkg.platforms.forEach((platform) => record.platforms.add(platform));
+  });
+
+  return [...creatorMap.values()]
+    .map((record) => ({
+      creator: record.creator,
+      packageCount: record.packages.length,
+      packages: record.packages,
+      platforms: [...record.platforms]
+    }))
+    .sort((left, right) => left.creator.localeCompare(right.creator, 'ru'));
 }
 
 function creatorLink(creator) {
@@ -127,9 +164,7 @@ function packageInstallCommand(pkg) {
 }
 
 function renderPlatformBadges(platforms) {
-  return platforms
-    .map((platform) => `<span class="badge">${escapeHtml(platformLabel(platform))}</span>`)
-    .join('');
+  return platforms.map((platform) => `<span class="badge">${escapeHtml(platformLabel(platform))}</span>`).join('');
 }
 
 function renderPackageCard(pkg) {
@@ -158,44 +193,6 @@ function renderPackageCard(pkg) {
   `;
 }
 
-function getPackages() {
-  return (state.registry.packages || []).map(normalizePackage);
-}
-
-function getCreators(packages) {
-  const creatorMap = new Map();
-  packages.forEach((pkg) => {
-    if (!creatorMap.has(pkg.creator)) {
-      creatorMap.set(pkg.creator, { creator: pkg.creator, packages: [], platforms: new Set() });
-    }
-    const record = creatorMap.get(pkg.creator);
-    record.packages.push(pkg);
-    pkg.platforms.forEach((platform) => record.platforms.add(platform));
-  });
-
-  return [...creatorMap.values()]
-    .map((record) => ({
-      creator: record.creator,
-      packageCount: record.packages.length,
-      packages: record.packages,
-      platforms: [...record.platforms]
-    }))
-    .sort((left, right) => left.creator.localeCompare(right.creator, 'ru'));
-}
-
-async function loadRegistry() {
-  try {
-    const response = await fetch(REGISTRY_URL, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const json = await response.json();
-    if (!Array.isArray(json.packages)) throw new Error('Invalid registry');
-    state.registry = json;
-  } catch (error) {
-    console.warn('NV registry fallback', error);
-    state.registry = fallbackRegistry;
-  }
-}
-
 function renderFeaturedPackages() {
   const packagesContainer = document.getElementById('featured-packages');
   const creatorsContainer = document.getElementById('featured-creators');
@@ -218,6 +215,184 @@ function renderFeaturedPackages() {
       `
     )
     .join('');
+
+  const packagesMetric = document.getElementById('metric-packages');
+  const creatorsMetric = document.getElementById('metric-creators');
+  if (packagesMetric) packagesMetric.textContent = String(packages.length);
+  if (creatorsMetric) creatorsMetric.textContent = String(creators.length);
+}
+
+async function loadRegistry() {
+  try {
+    const response = await fetch(REGISTRY_URL, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    if (!Array.isArray(json.packages)) throw new Error('Invalid registry');
+    state.registry = json;
+  } catch (error) {
+    console.warn('NV registry fallback', error);
+    state.registry = fallbackRegistry;
+  }
+}
+
+async function loadAuthState() {
+  state.auth.loading = true;
+  renderAuthSlot();
+  try {
+    const [configResponse, meResponse] = await Promise.all([
+      fetch(AUTH_CONFIG_URL, { cache: 'no-store', credentials: 'include' }),
+      fetch(AUTH_ME_URL, { cache: 'no-store', credentials: 'include' })
+    ]);
+    const config = configResponse.ok ? await configResponse.json() : { enabled: false, bot_username: '' };
+    const me = meResponse.ok ? await meResponse.json() : { authenticated: false };
+    state.auth.enabled = Boolean(config.enabled);
+    state.auth.botUsername = String(config.bot_username || '').trim();
+    state.auth.user = me.authenticated ? me.user || null : null;
+    state.auth.creator = me.authenticated ? me.creator || null : null;
+    state.auth.error = null;
+  } catch (error) {
+    console.warn('NV auth bootstrap failed', error);
+    state.auth.enabled = false;
+    state.auth.botUsername = '';
+    state.auth.user = null;
+    state.auth.creator = null;
+    state.auth.error = error instanceof Error ? error.message : 'Не удалось загрузить вход';
+  } finally {
+    state.auth.loading = false;
+    renderAuthSlot();
+    renderProfile();
+  }
+}
+
+function authDisplayName() {
+  if (!state.auth.user) return 'NV user';
+  const fullName = [state.auth.user.first_name, state.auth.user.last_name].filter(Boolean).join(' ').trim();
+  return state.auth.user.display_name || fullName || state.auth.user.username || 'NV user';
+}
+
+function authHandle() {
+  if (state.auth.creator?.slug) return `@${state.auth.creator.slug}`;
+  if (state.auth.user?.username) return `@${state.auth.user.username}`;
+  return 'Telegram';
+}
+
+function authAvatarMarkup(wrapperClass = 'auth-avatar') {
+  if (state.auth.user?.photo_url) {
+    return `<span class="${wrapperClass}"><img class="auth-avatar-image" src="${escapeHtml(state.auth.user.photo_url)}" alt="${escapeHtml(authDisplayName())}" /></span>`;
+  }
+  const letter = authDisplayName().charAt(0).toUpperCase() || 'N';
+  return `<span class="${wrapperClass}"><span class="auth-avatar-fallback">${escapeHtml(letter)}</span></span>`;
+}
+
+function mountTelegramWidget(container) {
+  if (!container || !state.auth.enabled || !state.auth.botUsername) return;
+  container.innerHTML = '';
+  const host = document.createElement('div');
+  host.className = 'telegram-widget-host';
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://telegram.org/js/telegram-widget.js?22';
+  script.setAttribute('data-telegram-login', state.auth.botUsername);
+  script.setAttribute('data-size', 'large');
+  script.setAttribute('data-userpic', 'false');
+  script.setAttribute('data-radius', '999');
+  script.setAttribute('data-request-access', 'write');
+  script.setAttribute('data-onauth', 'window.NVTelegramAuth(user)');
+  host.appendChild(script);
+  container.appendChild(host);
+}
+
+function renderAuthSlot() {
+  const slot = document.getElementById('auth-slot');
+  if (!slot) return;
+
+  if (state.auth.loading) {
+    slot.innerHTML = '<div class="auth-status-card">Проверяем вход…</div>';
+    return;
+  }
+
+  if (state.auth.user && state.auth.creator) {
+    slot.innerHTML = `
+      <div class="auth-user-card">
+        <a class="auth-user-link" href="/nv/profile/">
+          ${authAvatarMarkup('auth-avatar')}
+          <span class="auth-meta">
+            <strong>${escapeHtml(authDisplayName())}</strong>
+            <span>${escapeHtml(authHandle())}</span>
+          </span>
+        </a>
+        <button class="ghost-button ghost-button-compact" type="button" id="nv-logout-button">Выйти</button>
+      </div>
+    `;
+    document.getElementById('nv-logout-button')?.addEventListener('click', logoutSiteUser);
+    return;
+  }
+
+  if (!state.auth.enabled) {
+    slot.innerHTML = `
+      <div class="auth-status-card">
+        <div>
+          <strong>Telegram login ещё не настроен</strong>
+          <span>${escapeHtml(state.auth.error || 'Нужны bot username, bot token и web session secret.')}</span>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  slot.innerHTML = `
+    <div class="auth-widget-card">
+      <div>
+        <strong>Войти через Telegram</strong>
+        <span>Это включит creator-профиль и web-сессию сайта.</span>
+      </div>
+      <div id="header-telegram-widget"></div>
+    </div>
+  `;
+  mountTelegramWidget(document.getElementById('header-telegram-widget'));
+}
+
+async function handleTelegramWidgetAuth(user) {
+  try {
+    const response = await fetch(AUTH_LOGIN_URL, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({ telegram_auth: user })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error || `HTTP ${response.status}`);
+    }
+    state.auth.user = payload.user || null;
+    state.auth.creator = payload.creator || null;
+    state.auth.error = null;
+    renderAuthSlot();
+    renderProfile();
+  } catch (error) {
+    console.warn('NV Telegram login failed', error);
+    state.auth.error = error instanceof Error ? error.message : 'Не удалось завершить вход';
+    renderAuthSlot();
+  }
+}
+
+async function logoutSiteUser() {
+  try {
+    await fetch(AUTH_LOGOUT_URL, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json' }
+    });
+  } catch (error) {
+    console.warn('NV logout failed', error);
+  }
+  state.auth.user = null;
+  state.auth.creator = null;
+  renderAuthSlot();
+  renderProfile();
 }
 
 function resolveNvVariant(platform) {
@@ -228,18 +403,15 @@ function resolveNvVariant(platform) {
 function downloadButtonsForVariant(variant) {
   if (!variant) return '';
   const buttons = [];
-
   if (variant.downloadUrl) {
     buttons.push(`<a class="primary-button" href="${escapeHtml(variant.downloadUrl)}">Скачать бинарник</a>`);
   }
-
   if (platformLabel(variant.os) === 'Windows') {
     const powershell = variant.metadata?.commands?.powershell?.install || variant.installCommand;
     if (powershell) {
       buttons.push(`<button class="ghost-button" type="button" data-copy="${escapeHtml(powershell)}">Копировать PowerShell</button>`);
     }
   }
-
   return buttons.join('');
 }
 
@@ -299,7 +471,6 @@ function packageMatchesFilters(pkg) {
   if (state.platformFilter !== 'all' && !pkg.platforms.includes(state.platformFilter)) {
     return false;
   }
-
   if (!state.searchTerm) return true;
   const haystack = [pkg.name, pkg.title, pkg.description, pkg.latestVersion, ...pkg.platforms].join(' ').toLowerCase();
   return haystack.includes(state.searchTerm);
@@ -340,50 +511,129 @@ function attachCatalogControls() {
 }
 
 function renderProfile() {
-  const title = document.getElementById('profile-title');
-  const summary = document.getElementById('profile-summary');
-  const meta = document.getElementById('profile-meta');
-  const list = document.getElementById('profile-packages');
-  const empty = document.getElementById('profile-empty');
-  const publishCreator = document.getElementById('publish-creator');
-  const publishPackage = document.getElementById('publish-package');
-  if (!title || !summary || !meta || !list || !empty) return;
+  const root = document.getElementById('profile-content');
+  if (!root) return;
 
   const packages = getPackages();
   const creators = getCreators(packages);
   const params = new URLSearchParams(window.location.search);
-  const requestedCreator = (params.get('creator') || creators[0]?.creator || 'lvls').trim().replace(/^@/, '');
+  const fallbackCreator = state.auth.creator?.slug || creators[0]?.creator || 'lvls';
+  const requestedCreator = (params.get('creator') || fallbackCreator).trim().replace(/^@/, '');
   const creator = creators.find((item) => item.creator.toLowerCase() === requestedCreator.toLowerCase());
+  const canPublish = Boolean(state.auth.creator?.slug && state.auth.creator.slug.toLowerCase() === requestedCreator.toLowerCase());
+  const creatorPackages = creator ? creator.packages.map(renderPackageCard).join('') : '';
 
-  title.textContent = `@${requestedCreator}`;
-  if (publishCreator) publishCreator.value = `@${requestedCreator}`;
-  if (publishPackage) publishPackage.placeholder = `${requestedCreator}-package`;
+  root.innerHTML = `
+    <section class="hero hero-compact">
+      <div class="hero-copy hero-copy-tight">
+        <p class="eyebrow">Создатель</p>
+        <h1>@${escapeHtml(requestedCreator)}</h1>
+        <p class="hero-text">
+          ${escapeHtml(canPublish
+            ? 'Это твой creator-профиль. Telegram-сессия уже активна, ниже доступна модель формы публикации.'
+            : creator
+              ? `Автор публикует ${creator.packageCount} ${pluralizeRu(creator.packageCount, 'пакет', 'пакета', 'пакетов')} для ${creator.platforms.map(platformLabel).join(' и ')}.`
+              : 'Пока в каталоге нет пакетов этого автора.')}
+        </p>
+      </div>
+    </section>
 
-  if (!creator) {
-    summary.textContent = 'Пока в каталоге нет пакетов этого автора.';
-    meta.innerHTML = '';
-    list.innerHTML = '';
-    empty.hidden = false;
-    return;
-  }
+    <section class="profile-layout">
+      <article class="section-shell profile-main-shell">
+        <div class="profile-meta">
+          <div class="metric-card">
+            <span class="metric-value">${escapeHtml(String(creator?.packageCount || 0))}</span>
+            <span class="metric-label">${pluralizeRu(creator?.packageCount || 0, 'пакет', 'пакета', 'пакетов')}</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value">${escapeHtml(creator ? creator.platforms.map(platformLabel).join(', ') : '—')}</span>
+            <span class="metric-label">платформы</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-value">@${escapeHtml(requestedCreator)}</span>
+            <span class="metric-label">slug создателя</span>
+          </div>
+        </div>
+        <div class="package-grid package-grid-wide" aria-live="polite">${creatorPackages}</div>
+        <p class="empty-state" ${creator ? 'hidden' : ''}>У этого автора пока нет пакетов в каталоге.</p>
+      </article>
 
-  summary.textContent = `Автор ${creator.creator} сейчас публикует ${creator.packageCount} ${pluralizeRu(creator.packageCount, 'пакет', 'пакета', 'пакетов')} для ${creator.platforms.map(platformLabel).join(' и ')}.`;
-  meta.innerHTML = `
-    <div class="metric-card">
-      <span class="metric-value">${escapeHtml(String(creator.packageCount))}</span>
-      <span class="metric-label">${pluralizeRu(creator.packageCount, 'пакет', 'пакета', 'пакетов')}</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-value">${escapeHtml(creator.platforms.map(platformLabel).join(', '))}</span>
-      <span class="metric-label">платформы</span>
-    </div>
-    <div class="metric-card">
-      <span class="metric-value">@${escapeHtml(creator.creator)}</span>
-      <span class="metric-label">slug создателя</span>
-    </div>
+      <aside class="profile-sidebar">
+        <article class="section-shell side-stack-card">
+          <div class="section-head section-head-compact">
+            <div>
+              <p class="eyebrow">Telegram</p>
+              <h2>Вход создателя</h2>
+            </div>
+          </div>
+          <div class="widget-slot" id="telegram-widget-slot"></div>
+        </article>
+
+        <article class="section-shell side-stack-card" ${canPublish ? '' : 'hidden'}>
+          <div class="section-head section-head-compact">
+            <div>
+              <p class="eyebrow">Publish</p>
+              <h2>Форма публикации</h2>
+            </div>
+          </div>
+          <form class="publish-form" id="publish-form" action="#" method="dialog">
+            <label class="field">
+              <span>Creator</span>
+              <input id="publish-creator" type="text" value="@${escapeHtml(requestedCreator)}" readonly />
+            </label>
+            <label class="field">
+              <span>Пакет</span>
+              <input id="publish-package" type="text" placeholder="${escapeHtml(requestedCreator)}-package" />
+            </label>
+            <label class="field">
+              <span>Версия</span>
+              <input id="publish-version" type="text" placeholder="1.0.0" />
+            </label>
+            <label class="field field-wide">
+              <span>Описание</span>
+              <textarea id="publish-description" rows="4" placeholder="Коротко о пакете"></textarea>
+            </label>
+            <div class="toggle-row" aria-label="Платформы пакета">
+              <label><input type="checkbox" checked /> Windows</label>
+              <label><input type="checkbox" checked /> Linux</label>
+            </div>
+            <label class="field field-wide">
+              <span>Источник архива</span>
+              <input id="publish-url" type="url" placeholder="https://example.com/package.zip" />
+            </label>
+            <div class="form-actions">
+              <button class="primary-button" type="button" disabled>Опубликовать</button>
+              <span class="form-note">Это publish-form модель. Реальный backend publish API можно подвязать следующим слоем.</span>
+            </div>
+          </form>
+        </article>
+      </aside>
+    </section>
   `;
-  list.innerHTML = creator.packages.map(renderPackageCard).join('');
-  empty.hidden = creator.packages.length > 0;
+
+  const widgetSlot = document.getElementById('telegram-widget-slot');
+  if (widgetSlot) {
+    if (state.auth.user && state.auth.creator) {
+      widgetSlot.innerHTML = `
+        <div class="auth-user-card auth-user-card-vertical">
+          <div class="auth-user-link">
+            ${authAvatarMarkup('auth-avatar')}
+            <span class="auth-meta">
+              <strong>${escapeHtml(authDisplayName())}</strong>
+              <span>${escapeHtml(authHandle())}</span>
+            </span>
+          </div>
+          <button class="ghost-button ghost-button-compact" type="button" id="profile-logout-button">Выйти</button>
+        </div>
+      `;
+      document.getElementById('profile-logout-button')?.addEventListener('click', logoutSiteUser);
+    } else if (state.auth.enabled) {
+      widgetSlot.innerHTML = '<div id="profile-telegram-auth"></div>';
+      mountTelegramWidget(document.getElementById('profile-telegram-auth'));
+    } else {
+      widgetSlot.innerHTML = '<div class="auth-status-card">Telegram login ещё не настроен на backend.</div>';
+    }
+  }
 }
 
 async function copyFromData(button) {
@@ -412,7 +662,7 @@ function attachCopyDelegation() {
 
 async function init() {
   attachCopyDelegation();
-  await loadRegistry();
+  await Promise.all([loadRegistry(), loadAuthState()]);
 
   if (page === 'home') {
     renderFeaturedPackages();

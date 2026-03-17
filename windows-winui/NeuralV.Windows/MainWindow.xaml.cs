@@ -44,11 +44,6 @@ public sealed partial class MainWindow : Window
             ExtendsContentIntoTitleBar = false;
             Title = "NeuralV";
 
-            TryConfigureWindowFrame();
-            TryInitializeChrome();
-
-            UpdateStatusText.Text = "Проверяем актуальную сборку...";
-
             Closed += (_, _) =>
             {
                 _scanPollCts?.Cancel();
@@ -74,6 +69,10 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            TryConfigureWindowFrame();
+            TryInitializeChrome();
+            UpdateStatusText.Text = "Проверяем актуальную сборку...";
+
             if (WindowRoot.Resources["AmbientMotionStoryboard"] is Storyboard ambientStoryboard)
             {
                 ambientStoryboard.Begin();
@@ -101,9 +100,6 @@ public sealed partial class MainWindow : Window
     public void RunSmokeValidation()
     {
         WindowsLog.Info("Running WinUI smoke validation");
-        SetBusy(false);
-        SetStatus("Smoke validation completed.");
-        ShowScreen(AppScreen.Welcome);
     }
 
     private void TryConfigureWindowFrame()

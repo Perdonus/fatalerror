@@ -1,22 +1,22 @@
 {
   "success": true,
-  "generated_at": "2026-03-17T07:21:50Z",
+  "generated_at": "2026-03-17T11:46:39Z",
   "release_channel": "main",
   "artifacts": [
     {
       "platform": "shell",
       "channel": "main",
       "version": "1.4.1",
-      "sha256": "48f47d9a41f5c516e1c3c82c519aa4f594b3a13a0b959f9ddfa746bd344561aa",
+      "sha256": "d97d5a4bf01e29aaa9d4d0625926325c65a6c533e71ea3c8bc25319716464731",
       "download_url": "https://raw.githubusercontent.com/Perdonus/fatalerror/linux-cli-builds/shell/neuralv-shell-linux-1.4.1.tar.gz",
-      "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install neuralv@latest",
+      "install_command": "curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh && nv install @lvls/neuralv",
       "file_name": "neuralv-shell-linux-1.4.1.tar.gz",
       "notes": [
         "Linux CLI bundle."
       ],
       "metadata": {
         "daemonUrl": "https://raw.githubusercontent.com/Perdonus/fatalerror/linux-cli-builds/shell/neuralvd-linux-1.4.1.tar.gz",
-        "daemonSha256": "e5c611b611ebdd0a56bbc18bf8cb0c4e38eff53d2b912a46e1d5a740059c4f15",
+        "daemonSha256": "1c81bc1f58178178c197c2d6f089e1b028cd17f37f1c52b7794fb71eaf05704a",
         "installScript": "https://raw.githubusercontent.com/Perdonus/fatalerror/linux-cli-builds/install/linux.sh"
       }
     }

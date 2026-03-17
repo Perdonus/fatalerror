@@ -374,6 +374,14 @@
                                             <StackPanel Spacing="14">
                                                 <TextBlock Text="NeuralV для Windows" Style="{StaticResource PageTitleStyle}" />
                                                 <TextBlock Text="Нативный клиент в стиле современной Windows: вход, проверка, история и обновление собраны в одном спокойном потоке." Style="{StaticResource BodyTextStyle}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                                    <Border Style="{StaticResource MiniPillStyle}">
+                                                        <TextBlock Text="WinUI 3" Style="{StaticResource HeroEyebrowStyle}" />
+                                                    </Border>
+                                                    <Border Style="{StaticResource MiniPillStyle}">
+                                                        <TextBlock Text="Палитра от обоев" Style="{StaticResource HeroEyebrowStyle}" />
+                                                    </Border>
+                                                </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                                     <Button Content="Войти" Click="OnShowLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="180" />
                                                     <Button Content="Регистрация" Click="OnShowRegisterClick" Style="{StaticResource SecondaryButtonStyle}" Width="180" />

@@ -8,7 +8,8 @@ public static class WindowsSmokeVerifier
 
         _ = SessionStore.EnsureDeviceId();
         _ = SessionStore.AppDirectory;
-        _ = WindowsEnvironmentService.BuildCommonRoots();
+        _ = WindowsEnvironmentService.DetectScanRoots();
+        _ = WindowsEnvironmentService.DetectInstallRoots();
 
         var assetPath = Path.Combine(AppContext.BaseDirectory, "Assets", "NeuralV.png");
         if (!File.Exists(assetPath))

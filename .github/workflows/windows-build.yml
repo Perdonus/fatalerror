@@ -352,8 +352,12 @@ jobs:
           cd /tmp/windows-builds
           git init
           git checkout -b windows-builds
+          git config http.version HTTP/1.1
+          git config http.postBuffer 524288000
+          git config core.compression 0
+          git config pack.threads 1
           git add .
           semver="${{ needs.build-windows.outputs.release_version }}"
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "Publish Windows GUI ${semver} for ${GITHUB_SHA} [skip ci]"
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin windows-builds
+          git push --force --progress origin windows-builds

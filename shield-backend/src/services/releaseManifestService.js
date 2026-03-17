@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadRegistryConfig } = require('./packageRegistryService');
+const { loadRegistryConfig, listPackageVariantSourceMappings } = require('./packageRegistryService');
 
 const RELEASE_BRANCH_TIMEOUT_MS = parseInt(process.env.RELEASE_BRANCH_TIMEOUT_MS || '10000', 10);
 const RELEASE_MANIFEST_CACHE_TTL_MS = parseInt(process.env.RELEASE_MANIFEST_CACHE_TTL_MS || '600000', 10);
@@ -95,36 +95,34 @@ function buildBranchSources(registryPackages) {
         sources.map((source, index) => [`${source.repo}::${source.branch}`, index])
     );
 
-    for (const pkg of Array.isArray(registryPackages) ? registryPackages : []) {
-        for (const variant of Array.isArray(pkg?.variants) ? pkg.variants : []) {
-            const repo = String(variant?.source?.repo || '').trim();
-            const branch = String(variant?.source?.branch || '').trim();
-            const platform = normalizeReleasePlatform(variant?.source?.platform);
-            if (!repo || !branch || !platform) {
-                continue;
-            }
-
-            const key = `${repo}::${branch}`;
-            const existingIndex = sourceIndex.get(key);
-            if (typeof existingIndex === 'number') {
-                const existing = sources[existingIndex];
-                if (!existing.platforms.includes(platform)) {
-                    existing.platforms.push(platform);
-                }
-                if (!existing.label && variant?.id) {
-                    existing.label = String(variant.id).trim();
-                }
-                continue;
-            }
-
-            sourceIndex.set(key, sources.length);
-            sources.push({
-                repo,
-                branch,
-                label: String(variant?.id || platform).trim() || platform,
-                platforms: [platform]
-            });
+    for (const mapping of listPackageVariantSourceMappings(registryPackages)) {
+        const repo = String(mapping?.source?.repo || '').trim();
+        const branch = String(mapping?.source?.branch || '').trim();
+        const platform = normalizeReleasePlatform(mapping?.source?.platform);
+        if (!repo || !branch || !platform) {
+            continue;
         }
+
+        const key = `${repo}::${branch}`;
+        const existingIndex = sourceIndex.get(key);
+        if (typeof existingIndex === 'number') {
+            const existing = sources[existingIndex];
+            if (!existing.platforms.includes(platform)) {
+                existing.platforms.push(platform);
+            }
+            if (!existing.label && mapping?.variantDef?.id) {
+                existing.label = String(mapping.variantDef.id).trim();
+            }
+            continue;
+        }
+
+        sourceIndex.set(key, sources.length);
+        sources.push({
+            repo,
+            branch,
+            label: String(mapping?.variantDef?.id || mapping?.source?.role || platform).trim() || platform,
+            platforms: [platform]
+        });
     }
 
     return sources;
@@ -158,7 +156,7 @@ function fallbackArtifacts() {
             sha256: '',
             download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/windows-builds/windows/neuralv-windows.zip`,
             install_command: 'winget install --id NeuralV.NeuralV -e',
-            update_command: '%LOCALAPPDATA%\\NV\\nv.exe install neuralv@latest',
+            update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/neuralv',
             update_policy: 'startup-auto',
             auto_update: true,
             file_name: 'neuralv-windows.zip',
@@ -169,7 +167,7 @@ function fallbackArtifacts() {
                 source_label: 'windows',
                 available: false,
                 artifactPlatform: 'windows',
-                desktopTrack: 'windows-gui',
+                desktopTrack: 'windows',
                 version_source: 'versions/windows.txt',
                 payloadRootPath: 'windows/NeuralV/',
                 portableArtifactPath: 'windows/neuralv-windows.zip',
@@ -209,12 +207,12 @@ function fallbackArtifacts() {
             version: PLATFORM_FALLBACK_VERSIONS.shell,
             sha256: '',
             download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/linux-cli-builds/shell/neuralv-shell-linux-${PLATFORM_FALLBACK_VERSIONS.shell}.tar.gz`,
-            install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh && nv install neuralv@latest',
-            update_command: 'nv install neuralv@latest',
+            install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh && nv install @lvls/neuralv',
+            update_command: 'nv install @lvls/neuralv',
             update_policy: 'nv-command',
             auto_update: false,
             file_name: `neuralv-shell-linux-${PLATFORM_FALLBACK_VERSIONS.shell}.tar.gz`,
-            notes: ['Linux CLI будет опубликован в linux-cli-builds.'],
+            notes: ['Linux CLI-компонент будет опубликован в linux-cli-builds.'],
             metadata: {
                 source_repo: PUBLIC_REPOSITORY,
                 source_branch: 'linux-cli-builds',
@@ -235,7 +233,7 @@ function fallbackArtifacts() {
             sha256: '',
             download_url: 'https://raw.githubusercontent.com/Perdonus/NV/windows-builds/windows/nv.exe',
             install_command: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"',
-            update_command: '%LOCALAPPDATA%\\NV\\nv.exe install nv@latest',
+            update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/nv',
             update_policy: 'nv-self',
             auto_update: false,
             file_name: 'nv.exe',
@@ -256,7 +254,7 @@ function fallbackArtifacts() {
             sha256: '',
             download_url: 'https://raw.githubusercontent.com/Perdonus/NV/linux-builds/linux/nv-linux.tar.gz',
             install_command: 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh',
-            update_command: 'nv install nv@latest',
+            update_command: 'nv install @lvls/nv',
             update_policy: 'nv-self',
             auto_update: false,
             file_name: 'nv-linux.tar.gz',
@@ -406,16 +404,14 @@ function buildSourceStatus(source, result) {
 
 function indexRegistryVariants(registryPackages) {
     const index = new Map();
-    for (const pkg of registryPackages) {
-        for (const variant of Array.isArray(pkg?.variants) ? pkg.variants : []) {
-            const repo = String(variant?.source?.repo || '').trim();
-            const branch = String(variant?.source?.branch || '').trim();
-            const platform = String(variant?.source?.platform || '').trim().toLowerCase();
-            if (!repo || !branch || !platform) {
-                continue;
-            }
-            index.set(`${repo}::${branch}::${platform}`, { packageDef: pkg, variantDef: variant });
+    for (const mapping of listPackageVariantSourceMappings(registryPackages)) {
+        const repo = String(mapping?.source?.repo || '').trim();
+        const branch = String(mapping?.source?.branch || '').trim();
+        const platform = String(mapping?.source?.platform || '').trim().toLowerCase();
+        if (!repo || !branch || !platform) {
+            continue;
         }
+        index.set(`${repo}::${branch}::${platform}`, mapping);
     }
     return index;
 }
@@ -425,24 +421,31 @@ function attachRegistryMetadata(artifact, registryMatch) {
         return artifact;
     }
 
-    const { packageDef, variantDef } = registryMatch;
+    const { packageDef, variantDef, source } = registryMatch;
     const variantMetadata = variantDef.metadata && typeof variantDef.metadata === 'object' ? variantDef.metadata : {};
     const updatePolicy = String(variantDef.update_policy || artifact.update_policy || variantMetadata.updatePolicy || 'manual').trim() || 'manual';
     const autoUpdate = typeof variantDef.auto_update === 'boolean'
         ? variantDef.auto_update
         : (typeof artifact.auto_update === 'boolean' ? artifact.auto_update : updatePolicy === 'startup-auto');
-    const sourceRepo = String(variantDef?.source?.repo || artifact?.metadata?.source_repo || '').trim();
-    const sourceBranch = String(variantDef?.source?.branch || artifact?.metadata?.source_branch || '').trim();
-    const rawBase = sourceRepo && sourceBranch ? rawBaseForSource({ repo: sourceRepo, branch: sourceBranch }) : '';
-    const buildRawUrl = (relativePath) => {
+    const sourceRepo = String(source?.repo || variantDef?.source?.repo || artifact?.metadata?.source_repo || '').trim();
+    const sourceBranch = String(source?.branch || variantDef?.source?.branch || artifact?.metadata?.source_branch || '').trim();
+    const buildRawUrl = (relativePath, sourceOverride = null) => {
         const cleanPath = String(relativePath || '').trim().replace(/^\/+/, '');
+        const effectiveSource = sourceOverride && sourceOverride.repo && sourceOverride.branch
+            ? sourceOverride
+            : (sourceRepo && sourceBranch ? { repo: sourceRepo, branch: sourceBranch } : null);
+        const rawBase = effectiveSource ? rawBaseForSource(effectiveSource) : '';
         return rawBase && cleanPath ? `${rawBase}/${cleanPath}` : '';
     };
+    const relatedSources = Array.isArray(variantMetadata.relatedSources) ? variantMetadata.relatedSources : [];
+    const cliSource = relatedSources.find((entry) => String(entry?.role || '').trim().toLowerCase() === 'cli') || null;
     const metadata = {
         ...variantMetadata,
         package_name: String(packageDef.name || '').trim(),
+        package_aliases: Array.isArray(packageDef.aliases) ? [...packageDef.aliases] : [],
         package_title: String(packageDef.title || packageDef.name || '').trim(),
         variant_id: String(variantDef.id || '').trim(),
+        component_role: String(source?.role || 'primary').trim() || 'primary',
         install_strategy: String(variantDef.install_strategy || '').trim(),
         uninstall_strategy: String(variantDef.uninstall_strategy || '').trim(),
         install_root: String(variantDef.install_root || '').trim(),
@@ -453,7 +456,7 @@ function attachRegistryMetadata(artifact, registryMatch) {
         package_registry_url: PACKAGE_REGISTRY_URL,
         update_policy: updatePolicy,
         auto_update: autoUpdate,
-        artifact_platform: normalizeReleasePlatform(variantMetadata.artifactPlatform || artifact.platform),
+        artifact_platform: normalizeReleasePlatform(artifact.platform),
         desktop_track: String(variantMetadata.desktopTrack || '').trim(),
         package_track: String(variantMetadata.packageTrack || '').trim(),
         version_source_file: String(variantMetadata.versionSourceFile || '').trim()
@@ -466,10 +469,13 @@ function attachRegistryMetadata(artifact, registryMatch) {
         metadata.setupUrl = buildRawUrl(variantMetadata.stableSetupArtifactPath);
     }
     if (!metadata.daemonUrl && variantMetadata.stableDaemonArtifactPath) {
-        metadata.daemonUrl = buildRawUrl(variantMetadata.stableDaemonArtifactPath);
+        metadata.daemonUrl = buildRawUrl(variantMetadata.stableDaemonArtifactPath, cliSource);
     }
     if (!metadata.stableArtifactUrl && variantMetadata.stableArtifactPath) {
         metadata.stableArtifactUrl = buildRawUrl(variantMetadata.stableArtifactPath);
+    }
+    if (!metadata.stableCliArtifactUrl && variantMetadata.stableCliArtifactPath) {
+        metadata.stableCliArtifactUrl = buildRawUrl(variantMetadata.stableCliArtifactPath, cliSource);
     }
 
     return mergeArtifact(artifact, {

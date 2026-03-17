@@ -17,14 +17,37 @@ function loadLocalRegistryConfig() {
     return Array.isArray(parsed?.packages) ? parsed.packages : [];
 }
 
+function cloneJson(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function normalizeText(value) {
     return String(value || '').trim().toLowerCase();
 }
 
 function normalizeOs(value) {
     const normalized = normalizeText(value);
-    if (normalized === 'win32') return 'windows';
+    if (normalized === 'win32' || normalized === 'win') return 'windows';
     return normalized;
+}
+
+function normalizePlatform(value) {
+    const normalized = normalizeText(value);
+    switch (normalized) {
+        case 'win':
+        case 'win32':
+        case 'windows-gui':
+        case 'windows-native':
+            return 'windows';
+        case 'linux-gui':
+            return 'linux';
+        case 'linux-cli':
+        case 'linux-shell':
+        case 'cli':
+            return 'shell';
+        default:
+            return normalized;
+    }
 }
 
 function semverParts(raw) {
@@ -60,12 +83,324 @@ async function fetchJson(url) {
     return response.json();
 }
 
+function canonicalPackageName(rawName) {
+    const normalized = normalizeText(rawName);
+    switch (normalized) {
+        case 'neuralv':
+        case '@lvls/neuralv':
+            return '@lvls/neuralv';
+        case 'nv':
+        case '@lvls/nv':
+            return '@lvls/nv';
+        default:
+            return String(rawName || '').trim().toLowerCase();
+    }
+}
+
+function parsePackageRef(rawRef) {
+    let value = String(rawRef || '').trim();
+    if (!value) {
+        return { name: '', version: '' };
+    }
+
+    let version = '';
+    if (value.startsWith('@')) {
+        const versionSeparator = value.indexOf('@', 1);
+        if (versionSeparator > 1) {
+            version = value.slice(versionSeparator + 1).trim();
+            value = value.slice(0, versionSeparator).trim();
+        }
+    } else {
+        const versionSeparator = value.lastIndexOf('@');
+        if (versionSeparator > 0) {
+            version = value.slice(versionSeparator + 1).trim();
+            value = value.slice(0, versionSeparator).trim();
+        }
+    }
+
+    return {
+        name: canonicalPackageName(value),
+        version: normalizeText(version)
+    };
+}
+
+function ensureArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+
+function ensureAliases(packageDef, fallbacks = []) {
+    const aliases = new Set();
+    for (const entry of [...ensureArray(packageDef?.aliases), ...fallbacks]) {
+        const normalized = String(entry || '').trim().toLowerCase();
+        if (normalized) {
+            aliases.add(normalized);
+        }
+    }
+    const canonical = canonicalPackageName(packageDef?.name || '');
+    if (canonical === '@lvls/neuralv') aliases.add('neuralv');
+    if (canonical === '@lvls/nv') aliases.add('nv');
+    aliases.delete(canonical.toLowerCase());
+    return Array.from(aliases);
+}
+
+function normalizeSourceDefinition(source, role = 'primary') {
+    if (!source || typeof source !== 'object') {
+        return null;
+    }
+    const repo = String(source.repo || '').trim();
+    const branch = String(source.branch || '').trim();
+    const platform = normalizePlatform(source.platform);
+    if (!repo || !branch || !platform) {
+        return null;
+    }
+    return {
+        type: String(source.type || 'github-branch-manifest').trim() || 'github-branch-manifest',
+        repo,
+        branch,
+        platform,
+        role: String(source.role || role).trim() || role
+    };
+}
+
+function findVariant(packageDef, predicate) {
+    return ensureArray(packageDef?.variants).find(predicate) || null;
+}
+
+function canonicalizeNeuralVPackage(packageDef) {
+    const variants = ensureArray(packageDef?.variants);
+    const windowsVariant = findVariant(packageDef, (variant) => {
+        const id = normalizeText(variant?.id);
+        const os = normalizeOs(variant?.os);
+        const platform = normalizePlatform(variant?.source?.platform || variant?.metadata?.artifactPlatform);
+        return id === 'windows' || id === 'windows-gui' || os === 'windows' || platform === 'windows';
+    });
+    const linuxVariant = findVariant(packageDef, (variant) => {
+        const id = normalizeText(variant?.id);
+        const os = normalizeOs(variant?.os);
+        const platform = normalizePlatform(variant?.source?.platform || variant?.metadata?.artifactPlatform);
+        return id === 'linux' || id === 'linux-gui' || os === 'linux' || platform === 'linux';
+    });
+    const linuxCliVariant = findVariant(packageDef, (variant) => {
+        const id = normalizeText(variant?.id);
+        const platform = normalizePlatform(variant?.source?.platform || variant?.metadata?.artifactPlatform);
+        return id === 'linux-cli' || platform === 'shell';
+    });
+
+    const windowsMetadata = { ...(windowsVariant?.metadata || {}) };
+    const windowsVariantRecord = {
+        id: 'windows',
+        label: String(windowsVariant?.label || 'Windows').trim() || 'Windows',
+        os: 'windows',
+        default: true,
+        install_strategy: String(windowsVariant?.install_strategy || 'windows-desktop-bundle').trim(),
+        uninstall_strategy: String(windowsVariant?.uninstall_strategy || 'windows-remove-dir').trim(),
+        install_root: String(windowsVariant?.install_root || '%LOCALAPPDATA%/NeuralV').trim(),
+        launcher_path: String(windowsVariant?.launcher_path || 'NeuralV.exe').trim(),
+        binary_name: String(windowsVariant?.binary_name || windowsMetadata.cliBinary || 'neuralv-cmd.exe').trim(),
+        install_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/neuralv',
+        update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/neuralv',
+        update_policy: String(windowsVariant?.update_policy || 'startup-auto').trim() || 'startup-auto',
+        auto_update: typeof windowsVariant?.auto_update === 'boolean' ? windowsVariant.auto_update : true,
+        source: normalizeSourceDefinition(windowsVariant?.source, 'gui') || {
+            type: 'github-branch-manifest',
+            repo: 'Perdonus/fatalerror',
+            branch: 'windows-builds',
+            platform: 'windows',
+            role: 'gui'
+        },
+        metadata: {
+            ...windowsMetadata,
+            artifactPlatform: 'windows',
+            desktopTrack: String(windowsMetadata.desktopTrack || 'windows').trim() || 'windows',
+            versionSourceFile: String(windowsMetadata.versionSourceFile || 'versions/windows.txt').trim() || 'versions/windows.txt',
+            bundledComponents: ['gui', 'cli'],
+            cliBinary: String(windowsMetadata.cliBinary || windowsVariant?.binary_name || 'neuralv-cmd.exe').trim(),
+            commands: {
+                ...(windowsMetadata.commands || {}),
+                powershell: {
+                    ...((windowsMetadata.commands && windowsMetadata.commands.powershell) || {}),
+                    install: 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex; & (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv"',
+                    update: '& (Join-Path $env:LOCALAPPDATA \'NV\\nv.exe\') install @lvls/neuralv'
+                },
+                cmd: {
+                    ...((windowsMetadata.commands && windowsMetadata.commands.cmd) || {}),
+                    install: 'curl.exe -fsSL https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.cmd -o "%TEMP%\\nv-install.cmd" && cmd /c "%TEMP%\\nv-install.cmd" && "%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv',
+                    update: '"%LOCALAPPDATA%\\NV\\nv.exe" install @lvls/neuralv'
+                }
+            }
+        }
+    };
+
+    const linuxMetadata = { ...(linuxVariant?.metadata || {}) };
+    const relatedSources = [];
+    const primaryLinuxSource = normalizeSourceDefinition(linuxVariant?.source, 'gui') || {
+        type: 'github-branch-manifest',
+        repo: 'Perdonus/fatalerror',
+        branch: 'linux-gui-builds',
+        platform: 'linux',
+        role: 'gui'
+    };
+    const explicitRelated = ensureArray(linuxMetadata.relatedSources).map((entry) => normalizeSourceDefinition(entry, entry?.role || 'related')).filter(Boolean);
+    for (const entry of explicitRelated) {
+        relatedSources.push(entry);
+    }
+    const cliSource = normalizeSourceDefinition(linuxCliVariant?.source, 'cli');
+    if (cliSource && !relatedSources.some((entry) => `${entry.repo}::${entry.branch}::${entry.platform}` === `${cliSource.repo}::${cliSource.branch}::${cliSource.platform}`)) {
+        relatedSources.push(cliSource);
+    }
+
+    const directPackages = linuxMetadata.directPackages || linuxMetadata.packages || {};
+    const linuxVariantRecord = {
+        id: 'linux',
+        label: String(linuxVariant?.label || 'Linux').trim() || 'Linux',
+        os: 'linux',
+        default: true,
+        install_strategy: String(linuxVariant?.install_strategy || 'linux-desktop-unified').trim(),
+        uninstall_strategy: String(linuxVariant?.uninstall_strategy || 'linux-remove-dir').trim(),
+        install_root: String(linuxVariant?.install_root || '$HOME/.local/opt/NeuralV').trim(),
+        launcher_path: String(linuxVariant?.launcher_path || 'bin/NeuralV').trim(),
+        binary_name: String(linuxVariant?.binary_name || 'neuralv').trim(),
+        wrapper_name: String(linuxVariant?.wrapper_name || linuxCliVariant?.wrapper_name || 'neuralv').trim(),
+        install_command: 'nv install @lvls/neuralv',
+        update_command: 'nv install @lvls/neuralv',
+        update_policy: String(linuxVariant?.update_policy || 'nv-command').trim() || 'nv-command',
+        auto_update: typeof linuxVariant?.auto_update === 'boolean' ? linuxVariant.auto_update : false,
+        source: primaryLinuxSource,
+        metadata: {
+            ...linuxMetadata,
+            artifactPlatform: 'linux',
+            desktopTrack: String(linuxMetadata.desktopTrack || 'linux').trim() || 'linux',
+            versionSourceFile: String(linuxMetadata.versionSourceFile || 'versions/linux-gui.txt').trim() || 'versions/linux-gui.txt',
+            bundledComponents: ['gui', 'cli'],
+            relatedSources,
+            directPackages,
+            stableCliArtifactPath: String(linuxMetadata.stableCliArtifactPath || linuxCliVariant?.metadata?.stableArtifactPath || 'shell/neuralv-shell-linux.tar.gz').trim(),
+            stableDaemonArtifactPath: String(linuxMetadata.stableDaemonArtifactPath || linuxCliVariant?.metadata?.stableDaemonArtifactPath || 'shell/neuralvd-linux.tar.gz').trim()
+        }
+    };
+
+    return {
+        name: '@lvls/neuralv',
+        aliases: ensureAliases(packageDef, ['neuralv']),
+        title: String(packageDef?.title || 'NeuralV').trim() || 'NeuralV',
+        description: String(packageDef?.description || 'Клиент защиты NeuralV для Windows и Linux.').trim(),
+        homepage: String(packageDef?.homepage || 'https://sosiskibot.ru/neuralv/').trim(),
+        variants: [windowsVariantRecord, linuxVariantRecord]
+    };
+}
+
+function canonicalizeNvPackage(packageDef) {
+    const linuxVariant = findVariant(packageDef, (variant) => normalizeOs(variant?.os) === 'linux' || normalizePlatform(variant?.source?.platform) === 'nv-linux');
+    const windowsVariant = findVariant(packageDef, (variant) => normalizeOs(variant?.os) === 'windows' || normalizePlatform(variant?.source?.platform) === 'nv-windows');
+
+    return {
+        name: '@lvls/nv',
+        aliases: ensureAliases(packageDef, ['nv']),
+        title: String(packageDef?.title || 'NV').trim() || 'NV',
+        description: String(packageDef?.description || 'Пакетный менеджер NeuralV.').trim(),
+        homepage: String(packageDef?.homepage || 'https://sosiskibot.ru/nv/').trim(),
+        variants: [
+            {
+                id: String(linuxVariant?.id || 'nv-linux').trim() || 'nv-linux',
+                label: String(linuxVariant?.label || 'NV Linux').trim() || 'NV Linux',
+                os: 'linux',
+                default: true,
+                install_strategy: String(linuxVariant?.install_strategy || 'unix-self-binary').trim(),
+                install_root: String(linuxVariant?.install_root || '$HOME/.local/bin').trim(),
+                binary_name: String(linuxVariant?.binary_name || 'nv').trim(),
+                install_command: String(linuxVariant?.install_command || 'curl -fsSL https://raw.githubusercontent.com/Perdonus/NV/linux-builds/nv.sh | sh').trim(),
+                update_command: 'nv install @lvls/nv',
+                update_policy: String(linuxVariant?.update_policy || 'nv-self').trim() || 'nv-self',
+                auto_update: typeof linuxVariant?.auto_update === 'boolean' ? linuxVariant.auto_update : false,
+                source: normalizeSourceDefinition(linuxVariant?.source, 'primary') || {
+                    type: 'github-branch-manifest',
+                    repo: 'Perdonus/NV',
+                    branch: 'linux-builds',
+                    platform: 'nv-linux',
+                    role: 'primary'
+                },
+                metadata: {
+                    ...(linuxVariant?.metadata || {}),
+                    artifactPlatform: 'nv-linux',
+                    packageTrack: String(linuxVariant?.metadata?.packageTrack || 'nv-linux').trim() || 'nv-linux'
+                }
+            },
+            {
+                id: String(windowsVariant?.id || 'nv-windows').trim() || 'nv-windows',
+                label: String(windowsVariant?.label || 'NV Windows').trim() || 'NV Windows',
+                os: 'windows',
+                default: true,
+                install_strategy: String(windowsVariant?.install_strategy || 'windows-self-binary').trim(),
+                install_root: String(windowsVariant?.install_root || '%LOCALAPPDATA%/NV').trim(),
+                binary_name: String(windowsVariant?.binary_name || 'nv.exe').trim(),
+                install_command: String(windowsVariant?.install_command || 'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Perdonus/NV/windows-builds/nv.ps1 | iex"').trim(),
+                update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/nv',
+                update_policy: String(windowsVariant?.update_policy || 'nv-self').trim() || 'nv-self',
+                auto_update: typeof windowsVariant?.auto_update === 'boolean' ? windowsVariant.auto_update : false,
+                source: normalizeSourceDefinition(windowsVariant?.source, 'primary') || {
+                    type: 'github-branch-manifest',
+                    repo: 'Perdonus/NV',
+                    branch: 'windows-builds',
+                    platform: 'nv-windows',
+                    role: 'primary'
+                },
+                metadata: {
+                    ...(windowsVariant?.metadata || {}),
+                    artifactPlatform: 'nv-windows',
+                    packageTrack: String(windowsVariant?.metadata?.packageTrack || 'nv-windows').trim() || 'nv-windows'
+                }
+            }
+        ]
+    };
+}
+
+function canonicalizeGenericPackage(packageDef) {
+    return {
+        ...cloneJson(packageDef),
+        name: canonicalPackageName(packageDef?.name),
+        aliases: ensureAliases(packageDef)
+    };
+}
+
+function canonicalizeRegistryPackages(packages) {
+    const byCanonicalName = new Map();
+
+    for (const rawPackage of ensureArray(packages)) {
+        const packageDef = cloneJson(rawPackage);
+        const canonicalName = canonicalPackageName(packageDef?.name);
+        let normalized = null;
+        if (canonicalName === '@lvls/neuralv') {
+            normalized = canonicalizeNeuralVPackage(packageDef);
+        } else if (canonicalName === '@lvls/nv') {
+            normalized = canonicalizeNvPackage(packageDef);
+        } else {
+            normalized = canonicalizeGenericPackage(packageDef);
+        }
+
+        const existing = byCanonicalName.get(normalized.name);
+        if (!existing) {
+            byCanonicalName.set(normalized.name, normalized);
+            continue;
+        }
+
+        const aliasSet = new Set([...ensureAliases(existing), ...ensureAliases(normalized)]);
+        byCanonicalName.set(normalized.name, {
+            ...existing,
+            ...normalized,
+            aliases: Array.from(aliasSet),
+            variants: ensureArray(normalized.variants).length ? normalized.variants : existing.variants
+        });
+    }
+
+    return Array.from(byCanonicalName.values());
+}
+
 async function loadRegistryConfig() {
     if (registryCache && registryCacheExpiresAt > Date.now()) {
         return registryCache;
     }
 
-    const localPackages = loadLocalRegistryConfig();
+    const localPackages = canonicalizeRegistryPackages(loadLocalRegistryConfig());
     let packages = localPackages;
     let source = 'local';
     let sourceUrl = null;
@@ -75,7 +410,7 @@ async function loadRegistryConfig() {
         try {
             const remote = await fetchJson(PACKAGE_REGISTRY_REMOTE_URL);
             if (Array.isArray(remote?.packages)) {
-                packages = remote.packages;
+                packages = canonicalizeRegistryPackages(remote.packages);
                 source = 'remote';
                 sourceUrl = PACKAGE_REGISTRY_REMOTE_URL;
                 fetchedAt = new Date().toISOString();
@@ -92,7 +427,7 @@ async function loadRegistryConfig() {
 
 function normalizeArtifact(item) {
     if (!item || typeof item !== 'object') return null;
-    const platform = normalizeText(item.platform || item.platform_id || item.id);
+    const platform = normalizePlatform(item.platform || item.platform_id || item.id);
     if (!platform) return null;
     return {
         platform,
@@ -116,7 +451,7 @@ async function fetchSourceArtifact(source) {
     }
     const manifest = await fetchJson(manifestUrl(source));
     const artifacts = Array.isArray(manifest?.artifacts) ? manifest.artifacts : [];
-    const platform = normalizeText(source.platform);
+    const platform = normalizePlatform(source.platform);
     const matching = artifacts
         .map(normalizeArtifact)
         .filter(Boolean)
@@ -125,14 +460,56 @@ async function fetchSourceArtifact(source) {
     return matching[0] || null;
 }
 
+function collectVariantSources(definition) {
+    const sources = [];
+    const pushSource = (entry, role = 'primary') => {
+        const normalized = normalizeSourceDefinition(entry, role);
+        if (!normalized) {
+            return;
+        }
+        const key = `${normalized.repo}::${normalized.branch}::${normalized.platform}`;
+        if (sources.some((source) => `${source.repo}::${source.branch}::${source.platform}` === key)) {
+            return;
+        }
+        sources.push(normalized);
+    };
+
+    pushSource(definition?.source, definition?.source?.role || 'primary');
+    for (const entry of ensureArray(definition?.sources)) {
+        pushSource(entry, entry?.role || 'related');
+    }
+    for (const entry of ensureArray(definition?.metadata?.relatedSources)) {
+        pushSource(entry, entry?.role || 'related');
+    }
+
+    return sources;
+}
+
+function listPackageVariantSourceMappings(packages) {
+    const mappings = [];
+    for (const packageDef of ensureArray(packages)) {
+        for (const variantDef of ensureArray(packageDef?.variants)) {
+            for (const source of collectVariantSources(variantDef)) {
+                mappings.push({
+                    key: `${source.repo}::${source.branch}::${source.platform}`,
+                    packageDef,
+                    variantDef,
+                    source
+                });
+            }
+        }
+    }
+    return mappings;
+}
+
 function defaultUpdatePolicy(definition) {
     if (typeof definition.update_policy === 'string' && definition.update_policy.trim()) {
         return definition.update_policy.trim();
     }
     const strategy = String(definition.install_strategy || '').trim();
-    if (strategy === 'linux-cli-wrapper') return 'nv-command';
+    if (strategy === 'linux-cli-wrapper' || strategy === 'linux-desktop-unified') return 'nv-command';
     if (strategy === 'windows-self-binary' || strategy === 'unix-self-binary') return 'nv-self';
-    if (strategy === 'windows-portable-zip' || strategy === 'linux-portable-tar') return 'startup-auto';
+    if (strategy === 'windows-portable-zip' || strategy === 'linux-portable-tar' || strategy === 'windows-desktop-bundle') return 'startup-auto';
     return 'manual';
 }
 
@@ -143,71 +520,146 @@ function defaultAutoUpdate(definition, updatePolicy) {
     return updatePolicy === 'startup-auto';
 }
 
-function buildVariantRecord(packageDef, definition, artifact) {
+function buildComponentArtifacts(primarySource, primaryArtifact, relatedArtifacts) {
+    const components = [];
+    const pushComponent = (source, artifact) => {
+        if (!artifact) {
+            return;
+        }
+        components.push({
+            role: String(source?.role || 'primary').trim() || 'primary',
+            platform: artifact.platform,
+            version: artifact.version,
+            download_url: artifact.download_url,
+            file_name: artifact.file_name,
+            sha256: artifact.sha256,
+            channel: artifact.channel
+        });
+    };
+
+    pushComponent(primarySource, primaryArtifact);
+    for (const entry of relatedArtifacts) {
+        pushComponent(entry.source, entry.artifact);
+    }
+    return components;
+}
+
+function buildVariantRecord(packageDef, definition, primaryArtifact, primarySource, relatedArtifacts) {
     const updatePolicy = defaultUpdatePolicy(definition);
     const autoUpdate = defaultAutoUpdate(definition, updatePolicy);
     const definitionMetadata = definition.metadata && typeof definition.metadata === 'object' ? definition.metadata : {};
-    const artifactMetadata = artifact?.metadata && typeof artifact.metadata === 'object' ? artifact.metadata : {};
+    const primaryArtifactMetadata = primaryArtifact?.metadata && typeof primaryArtifact.metadata === 'object' ? primaryArtifact.metadata : {};
+    const components = buildComponentArtifacts(primarySource, primaryArtifact, relatedArtifacts);
+    const componentVersions = components.reduce((accumulator, component) => {
+        if (component.role && component.version) {
+            accumulator[component.role] = component.version;
+        }
+        return accumulator;
+    }, {});
+
     return {
         id: String(definition.id || '').trim(),
         label: String(definition.label || definition.id || '').trim(),
         os: normalizeOs(definition.os),
         is_default: Boolean(definition.default),
-        version: artifact?.version || '',
-        channel: artifact?.channel || 'main',
-        file_name: artifact?.file_name || '',
-        download_url: artifact?.download_url || '',
-        install_command: String(definition.install_command || artifact?.install_command || '').trim(),
-        update_command: String(definition.update_command || artifact?.update_command || '').trim(),
+        version: primaryArtifact?.version || '',
+        channel: primaryArtifact?.channel || 'main',
+        file_name: primaryArtifact?.file_name || '',
+        download_url: primaryArtifact?.download_url || '',
+        install_command: String(definition.install_command || primaryArtifact?.install_command || '').trim(),
+        update_command: String(definition.update_command || primaryArtifact?.update_command || '').trim(),
         update_policy: updatePolicy,
         auto_update: autoUpdate,
-        sha256: artifact?.sha256 || '',
+        sha256: primaryArtifact?.sha256 || '',
         install_strategy: String(definition.install_strategy || '').trim(),
         uninstall_strategy: String(definition.uninstall_strategy || '').trim(),
         install_root: String(definition.install_root || '').trim(),
         binary_name: String(definition.binary_name || '').trim(),
         wrapper_name: String(definition.wrapper_name || '').trim(),
         launcher_path: String(definition.launcher_path || '').trim(),
-        notes: artifact?.notes?.length ? artifact.notes : [],
+        notes: primaryArtifact?.notes?.length ? primaryArtifact.notes : [],
+        components,
         metadata: {
             ...definitionMetadata,
-            ...artifactMetadata,
+            ...primaryArtifactMetadata,
             source: definition.source || null,
             package_name: String(packageDef.name || '').trim(),
+            package_aliases: ensureAliases(packageDef),
             variant_id: String(definition.id || '').trim(),
             update_policy: updatePolicy,
             auto_update: autoUpdate,
-            manifest_url: definition.source?.repo && definition.source?.branch ? manifestUrl(definition.source) : ''
+            manifest_url: primarySource?.repo && primarySource?.branch ? manifestUrl(primarySource) : '',
+            component_versions: componentVersions,
+            related_artifacts: relatedArtifacts.map((entry) => ({
+                role: entry.source.role,
+                platform: entry.artifact.platform,
+                version: entry.artifact.version,
+                download_url: entry.artifact.download_url,
+                file_name: entry.artifact.file_name,
+                sha256: entry.artifact.sha256,
+                manifest_url: manifestUrl(entry.source)
+            }))
         }
     };
 }
 
+async function materializeVariant(packageDef, definition) {
+    const sources = collectVariantSources(definition);
+    const artifacts = [];
+    for (const source of sources) {
+        const artifact = await fetchSourceArtifact(source);
+        artifacts.push({ source, artifact });
+    }
+
+    const primaryEntry = artifacts.find((entry) => entry.source.role === 'primary') || artifacts[0] || { source: null, artifact: null };
+    const relatedEntries = artifacts.filter((entry) => entry !== primaryEntry && entry.artifact);
+    return buildVariantRecord(packageDef, definition, primaryEntry.artifact, primaryEntry.source, relatedEntries);
+}
+
 async function materializePackage(packageDef, os = '') {
     const requestedOs = normalizeOs(os);
-    const variantDefs = Array.isArray(packageDef?.variants) ? packageDef.variants : [];
+    const variantDefs = ensureArray(packageDef?.variants);
     const chosenDefs = requestedOs
         ? variantDefs.filter((variant) => normalizeOs(variant.os) === requestedOs)
         : variantDefs;
 
     const variants = [];
     for (const definition of chosenDefs) {
-        const artifact = await fetchSourceArtifact(definition.source || {});
-        variants.push(buildVariantRecord(packageDef, definition, artifact));
+        variants.push(await materializeVariant(packageDef, definition));
     }
 
-    const latestVersion = variants
-        .map((variant) => variant.version)
-        .filter(Boolean)
-        .sort((left, right) => compareSemver(right, left))[0] || '';
+    const latestVersions = variants.reduce((accumulator, variant) => {
+        if (variant.os && variant.version) {
+            accumulator[variant.os] = variant.version;
+        }
+        return accumulator;
+    }, {});
+
+    const latestVersion = requestedOs
+        ? (latestVersions[requestedOs] || '')
+        : (Object.keys(latestVersions).length === 1 ? Object.values(latestVersions)[0] : '');
 
     return {
         name: String(packageDef.name || '').trim(),
+        aliases: ensureAliases(packageDef),
         title: String(packageDef.title || packageDef.name || '').trim(),
         description: String(packageDef.description || '').trim(),
         homepage: String(packageDef.homepage || '').trim(),
         latest_version: latestVersion,
+        latest_versions: latestVersions,
         variants
     };
+}
+
+function matchesPackageRef(packageDef, rawRef) {
+    const parsed = parsePackageRef(rawRef);
+    const canonicalName = String(packageDef?.name || '').trim().toLowerCase();
+    if (parsed.name && parsed.name === canonicalName) {
+        return true;
+    }
+    const aliases = ensureAliases(packageDef).map((entry) => entry.toLowerCase());
+    const raw = normalizeText(rawRef);
+    return aliases.includes(raw) || aliases.includes(parsed.name);
 }
 
 async function getPackageRegistry({ os = '' } = {}) {
@@ -227,7 +679,7 @@ async function getPackageRegistry({ os = '' } = {}) {
 
 async function getPackageDetails(name, { os = '' } = {}) {
     const registry = await loadRegistryConfig();
-    const packageDef = registry.packages.find((entry) => normalizeText(entry.name) === normalizeText(name));
+    const packageDef = registry.packages.find((entry) => matchesPackageRef(entry, name));
     if (!packageDef) {
         return null;
     }
@@ -258,7 +710,9 @@ function pickVariant(pkg, variantId, requestedVersion) {
 }
 
 async function resolvePackage(name, { os = '', version = 'latest', variant = '' } = {}) {
-    const details = await getPackageDetails(name, { os });
+    const parsed = parsePackageRef(name);
+    const requestedVersion = normalizeText(version) || parsed.version || 'latest';
+    const details = await getPackageDetails(parsed.name || name, { os });
     if (!details) {
         return {
             status: 404,
@@ -266,7 +720,7 @@ async function resolvePackage(name, { os = '', version = 'latest', variant = '' 
         };
     }
 
-    const selectedVariant = pickVariant(details.package, variant, version);
+    const selectedVariant = pickVariant(details.package, variant, requestedVersion);
     if (!selectedVariant) {
         return {
             status: 404,
@@ -295,5 +749,8 @@ module.exports = {
     getPackageDetails,
     resolvePackage,
     loadRegistryConfig,
-    compareSemver
+    compareSemver,
+    canonicalPackageName,
+    parsePackageRef,
+    listPackageVariantSourceMappings
 };

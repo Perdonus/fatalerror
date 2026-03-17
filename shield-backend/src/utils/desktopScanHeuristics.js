@@ -64,6 +64,10 @@ function normalizeObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function mergeObjects(...values) {
+    return Object.assign({}, ...values.map((value) => normalizeObject(value)));
+}
+
 function normalizeBoolean(value) {
     return value === true || value === 'true' || value === 1 || value === '1';
 }
@@ -387,8 +391,27 @@ function summarizeDesktopCoverage(normalized) {
 }
 
 function normalizeDesktopScanPayload(payload) {
-    const source = normalizeObject(payload);
-    const artifactMetadata = normalizeObject(source.artifact_metadata || source.artifactMetadata);
+    const envelope = normalizeObject(payload);
+    const nestedPayload = normalizeObject(
+        envelope.payload
+        || envelope.scan_payload
+        || envelope.scanPayload
+        || envelope.request_payload
+        || envelope.requestPayload
+        || envelope.scan_request
+        || envelope.scanRequest
+    );
+    const source = mergeObjects(nestedPayload, envelope);
+    const artifactMetadata = normalizeObject(
+        source.artifact_metadata
+        || source.artifactMetadata
+        || source.artifact
+        || source.artifact_payload
+        || source.artifactPayload
+        || source.metadata
+        || source.desktop_artifact
+        || source.desktopArtifact
+    );
     const platform = normalizePlatform(source.platform);
 
     const localFindings = Array.isArray(source.local_findings || source.localFindings)
@@ -424,33 +447,93 @@ function normalizeDesktopScanPayload(payload) {
     const normalizedMetadata = {
         targetName: normalizeString(artifactMetadata.target_name || artifactMetadata.targetName || source.target_name || source.targetName),
         targetPath: normalizeString(artifactMetadata.target_path || artifactMetadata.targetPath || source.target_path || source.targetPath, 512),
-        fileName: normalizeString(artifactMetadata.file_name || artifactMetadata.fileName, 255),
-        mimeType: normalizeString(artifactMetadata.mime_type || artifactMetadata.mimeType, 120),
-        originPath: normalizeString(artifactMetadata.origin_path || artifactMetadata.originPath, 512),
-        packageManager: normalizeString(artifactMetadata.package_manager || artifactMetadata.packageManager, 64),
+        fileName: normalizeString(artifactMetadata.file_name || artifactMetadata.fileName || source.file_name || source.fileName, 255),
+        mimeType: normalizeString(artifactMetadata.mime_type || artifactMetadata.mimeType || source.mime_type || source.mimeType, 120),
+        originPath: normalizeString(artifactMetadata.origin_path || artifactMetadata.originPath || source.origin_path || source.originPath, 512),
+        packageManager: normalizeString(artifactMetadata.package_manager || artifactMetadata.packageManager || source.package_manager || source.packageManager, 64),
         packageManagers: normalizeStringList(
             artifactMetadata.package_managers || artifactMetadata.packageManagers || source.package_managers || source.packageManagers,
             32,
             64
         ),
-        publisher: normalizeString(artifactMetadata.publisher, 255),
-        signer: normalizeString(artifactMetadata.signer, 255),
-        signerTrusted: normalizeBoolean(artifactMetadata.signer_trusted || artifactMetadata.signerTrusted),
-        executable: normalizeBoolean(artifactMetadata.executable),
-        recentlyDropped: normalizeBoolean(artifactMetadata.recently_dropped || artifactMetadata.recentlyDropped),
-        fromDownloads: normalizeBoolean(artifactMetadata.from_downloads || artifactMetadata.fromDownloads),
-        fromTemp: normalizeBoolean(artifactMetadata.from_temp || artifactMetadata.fromTemp),
-        runsAsRoot: normalizeBoolean(artifactMetadata.runs_as_root || artifactMetadata.runsAsRoot),
-        hasSuid: normalizeBoolean(artifactMetadata.has_suid || artifactMetadata.hasSuid),
-        writableLauncher: normalizeBoolean(artifactMetadata.writable_launcher || artifactMetadata.writableLauncher),
-        autorunLocations: normalizeStringList(artifactMetadata.autorun_locations || artifactMetadata.autorunLocations, 48, 255),
-        persistenceSurfaces: normalizeStringList(artifactMetadata.persistence_surfaces || artifactMetadata.persistenceSurfaces, 48, 255),
-        suspiciousImports: normalizeStringList(artifactMetadata.suspicious_imports || artifactMetadata.suspiciousImports, 80, 64),
-        capabilities: normalizeStringList(artifactMetadata.capabilities, 48, 64),
-        packageSources: normalizeStringList(artifactMetadata.package_sources || artifactMetadata.packageSources, 128, 120),
-        desktopEntries: normalizeStringList(artifactMetadata.desktop_entries || artifactMetadata.desktopEntries, 128, 255),
+        publisher: normalizeString(artifactMetadata.publisher || source.publisher, 255),
+        signer: normalizeString(artifactMetadata.signer || source.signer, 255),
+        signerTrusted: normalizeBoolean(
+            artifactMetadata.signer_trusted
+            ?? artifactMetadata.signerTrusted
+            ?? source.signer_trusted
+            ?? source.signerTrusted
+        ),
+        executable: normalizeBoolean(artifactMetadata.executable ?? source.executable),
+        recentlyDropped: normalizeBoolean(
+            artifactMetadata.recently_dropped
+            ?? artifactMetadata.recentlyDropped
+            ?? source.recently_dropped
+            ?? source.recentlyDropped
+        ),
+        fromDownloads: normalizeBoolean(
+            artifactMetadata.from_downloads
+            ?? artifactMetadata.fromDownloads
+            ?? source.from_downloads
+            ?? source.fromDownloads
+        ),
+        fromTemp: normalizeBoolean(
+            artifactMetadata.from_temp
+            ?? artifactMetadata.fromTemp
+            ?? source.from_temp
+            ?? source.fromTemp
+        ),
+        runsAsRoot: normalizeBoolean(
+            artifactMetadata.runs_as_root
+            ?? artifactMetadata.runsAsRoot
+            ?? source.runs_as_root
+            ?? source.runsAsRoot
+        ),
+        hasSuid: normalizeBoolean(
+            artifactMetadata.has_suid
+            ?? artifactMetadata.hasSuid
+            ?? source.has_suid
+            ?? source.hasSuid
+        ),
+        writableLauncher: normalizeBoolean(
+            artifactMetadata.writable_launcher
+            ?? artifactMetadata.writableLauncher
+            ?? source.writable_launcher
+            ?? source.writableLauncher
+        ),
+        autorunLocations: normalizeStringList(
+            artifactMetadata.autorun_locations || artifactMetadata.autorunLocations || source.autorun_locations || source.autorunLocations,
+            48,
+            255
+        ),
+        persistenceSurfaces: normalizeStringList(
+            artifactMetadata.persistence_surfaces || artifactMetadata.persistenceSurfaces || source.persistence_surfaces || source.persistenceSurfaces,
+            48,
+            255
+        ),
+        suspiciousImports: normalizeStringList(
+            artifactMetadata.suspicious_imports || artifactMetadata.suspiciousImports || source.suspicious_imports || source.suspiciousImports,
+            80,
+            64
+        ),
+        capabilities: normalizeStringList(artifactMetadata.capabilities || source.capabilities, 48, 64),
+        packageSources: normalizeStringList(
+            artifactMetadata.package_sources || artifactMetadata.packageSources || source.package_sources || source.packageSources,
+            128,
+            120
+        ),
+        desktopEntries: normalizeStringList(
+            artifactMetadata.desktop_entries || artifactMetadata.desktopEntries || source.desktop_entries || source.desktopEntries,
+            128,
+            255
+        ),
         installRoots: normalizePathList(
-            artifactMetadata.install_roots || artifactMetadata.installRoots || artifactMetadata.program_directories || artifactMetadata.programDirectories,
+            artifactMetadata.install_roots
+            || artifactMetadata.installRoots
+            || artifactMetadata.program_directories
+            || artifactMetadata.programDirectories
+            || source.install_roots
+            || source.installRoots,
             256,
             700
         ),
@@ -465,19 +548,40 @@ function normalizeDesktopScanPayload(payload) {
             700
         ),
         packageInventory: normalizePackageInventory(
-            artifactMetadata.package_inventory || artifactMetadata.packageInventory || artifactMetadata.installed_packages || artifactMetadata.installedPackages,
+            artifactMetadata.package_inventory
+            || artifactMetadata.packageInventory
+            || artifactMetadata.installed_packages
+            || artifactMetadata.installedPackages
+            || source.package_inventory
+            || source.packageInventory,
             2048
         ),
-        uploadRequired: normalizeBoolean(artifactMetadata.upload_required || artifactMetadata.uploadRequired || source.upload_required || source.uploadRequired),
-        fileSizeBytes: normalizePositiveInt(artifactMetadata.file_size_bytes || artifactMetadata.fileSizeBytes),
+        uploadRequired: normalizeBoolean(
+            artifactMetadata.upload_required
+            ?? artifactMetadata.uploadRequired
+            ?? source.upload_required
+            ?? source.uploadRequired
+        ),
+        fileSizeBytes: normalizePositiveInt(
+            artifactMetadata.file_size_bytes
+            ?? artifactMetadata.fileSizeBytes
+            ?? source.file_size_bytes
+            ?? source.fileSizeBytes
+        ),
         packageCount: normalizePositiveInt(
-            artifactMetadata.package_count || artifactMetadata.packageCount || source.package_count || source.packageCount
+            artifactMetadata.package_count
+            ?? artifactMetadata.packageCount
+            ?? source.package_count
+            ?? source.packageCount
         ),
         candidateCount: normalizePositiveInt(
-            artifactMetadata.candidate_count || artifactMetadata.candidateCount || source.candidate_count || source.candidateCount
+            artifactMetadata.candidate_count
+            ?? artifactMetadata.candidateCount
+            ?? source.candidate_count
+            ?? source.candidateCount
         ),
-        entropy: normalizeEntropy(artifactMetadata.entropy),
-        notes: normalizeString(artifactMetadata.notes, 500)
+        entropy: normalizeEntropy(artifactMetadata.entropy ?? source.entropy),
+        notes: normalizeString(artifactMetadata.notes || source.notes, 500)
     };
 
     normalizedMetadata.recommendedScanRoots = deriveRecommendedScanRoots(platform, normalizedMetadata);
@@ -487,7 +591,12 @@ function normalizeDesktopScanPayload(payload) {
     return {
         platform,
         mode: normalizeMode(source.mode),
-        artifactKind: normalizeArtifactKind(source.artifact_kind || source.artifactKind),
+        artifactKind: normalizeArtifactKind(
+            source.artifact_kind
+            || source.artifactKind
+            || artifactMetadata.artifact_kind
+            || artifactMetadata.artifactKind
+        ),
         artifactMetadata: normalizedMetadata,
         sha256: normalizeSha256(source.sha256 || artifactMetadata.sha256),
         localFindings,

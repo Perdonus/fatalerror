@@ -38,6 +38,21 @@ function parseJson(value, fallback) {
     }
 }
 
+function parseEnumValues(columnType) {
+    const values = [];
+    const matcher = /'((?:[^'\\]|\\.)*)'/g;
+    const normalizedType = String(columnType || '').trim();
+    let match = matcher.exec(normalizedType);
+    while (match) {
+        const value = String(match[1] || '').replace(/\\'/g, "'").trim().toUpperCase();
+        if (value) {
+            values.push(value);
+        }
+        match = matcher.exec(normalizedType);
+    }
+    return values;
+}
+
 function invalidateSchemaCache() {
     schemaCache = null;
     schemaCacheExpiresAt = 0;
@@ -50,6 +65,7 @@ async function getDesktopScanSchema(forceRefresh = false) {
 
     const [jobColumnsRows] = await pool.query('SHOW COLUMNS FROM desktop_scan_jobs');
     const [artifactColumnsRows] = await pool.query('SHOW COLUMNS FROM desktop_scan_artifacts');
+    const jobColumnMap = new Map(jobColumnsRows.map((row) => [String(row.Field || '').trim(), row]));
     const jobColumns = new Set(jobColumnsRows.map((row) => String(row.Field || '').trim()).filter(Boolean));
     const artifactColumns = new Set(artifactColumnsRows.map((row) => String(row.Field || '').trim()).filter(Boolean));
 
@@ -57,6 +73,7 @@ async function getDesktopScanSchema(forceRefresh = false) {
     if (!modeColumn) {
         throw new Error('desktop_scan_jobs schema is missing mode/scan_mode');
     }
+    const modeEnumValues = parseEnumValues(jobColumnMap.get(modeColumn)?.Type);
 
     const nameColumn = artifactColumns.has('file_name') ? 'file_name' : (artifactColumns.has('original_name') ? 'original_name' : null);
     if (!nameColumn || !artifactColumns.has('storage_path')) {
@@ -67,6 +84,7 @@ async function getDesktopScanSchema(forceRefresh = false) {
         jobs: {
             modeColumn,
             isLegacyMode: modeColumn === 'scan_mode',
+            modeEnumValues,
             hasArtifactRequired: jobColumns.has('artifact_required'),
             hasSurfacedFindings: jobColumns.has('surfaced_findings'),
             hasHiddenFindings: jobColumns.has('hidden_findings'),
@@ -122,13 +140,34 @@ function effectiveMode(row) {
 
 function normalizeModeForSchema(mode, schema) {
     const normalized = String(mode || '').trim().toUpperCase() || 'FULL';
-    if (!schema?.jobs?.isLegacyMode) {
+    const supportedModes = new Set(Array.isArray(schema?.jobs?.modeEnumValues) ? schema.jobs.modeEnumValues : []);
+    if (supportedModes.size === 0) {
+        if (!schema?.jobs?.isLegacyMode) {
+            return normalized;
+        }
+        if (['SELECTIVE', 'ARTIFACT', 'RESIDENT_EVENT', 'ON_DEMAND'].includes(normalized)) {
+            return normalized;
+        }
+        return 'ON_DEMAND';
+    }
+    if (supportedModes.has(normalized)) {
         return normalized;
     }
-    if (['SELECTIVE', 'ARTIFACT', 'RESIDENT_EVENT', 'ON_DEMAND'].includes(normalized)) {
-        return normalized;
+
+    if (normalized === 'ON_DEMAND') {
+        if (supportedModes.has('FULL')) return 'FULL';
+        if (supportedModes.has('QUICK')) return 'QUICK';
     }
-    return 'ON_DEMAND';
+
+    if ((normalized === 'FULL' || normalized === 'QUICK') && supportedModes.has('ON_DEMAND')) {
+        return 'ON_DEMAND';
+    }
+
+    if (schema?.jobs?.isLegacyMode && supportedModes.has('ON_DEMAND')) {
+        return 'ON_DEMAND';
+    }
+
+    return normalized;
 }
 
 function isSchemaDriftError(error) {
@@ -490,7 +529,25 @@ async function createDesktopScanJob(userId, payload) {
     if (!artifactRequired) {
         enqueueJob(id);
     }
-    return getDesktopScanJob(id, userId);
+    const createdScan = await getDesktopScanJob(id, userId);
+    if (createdScan) {
+        return createdScan;
+    }
+    return {
+        id,
+        platform: normalized.platform,
+        mode: normalized.mode,
+        status: artifactRequired ? 'AWAITING_UPLOAD' : 'QUEUED',
+        verdict: 'UNKNOWN',
+        risk_score: 0,
+        surfaced_findings: 0,
+        hidden_findings: 0,
+        started_at: null,
+        completed_at: null,
+        message: buildStatusMessage(artifactRequired ? 'AWAITING_UPLOAD' : 'QUEUED', 'UNKNOWN', 0),
+        findings: [],
+        timeline: []
+    };
 }
 
 async function attachDesktopArtifact(jobId, userId, upload) {

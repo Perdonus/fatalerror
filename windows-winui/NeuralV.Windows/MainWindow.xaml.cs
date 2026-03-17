@@ -8,7 +8,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Foundation;
-using Windows.Graphics;
 using UiColor = global::Windows.UI.Color;
 using WinRT.Interop;
 
@@ -121,17 +120,7 @@ public sealed partial class MainWindow : Window
             }
 
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-            var appWindow = AppWindow.GetFromWindowId(windowId);
-            appWindow.Title = "NeuralV";
-            appWindow.Resize(new SizeInt32(1340, 900));
-
-            if (!App.IsSmokeTest)
-            {
-                SystemBackdrop = new MicaBackdrop
-                {
-                    Kind = MicaKind.BaseAlt
-                };
-            }
+            _ = AppWindow.GetFromWindowId(windowId);
         }
         catch (Exception ex)
         {

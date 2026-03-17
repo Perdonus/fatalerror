@@ -15,9 +15,9 @@
     <SelfContained>true</SelfContained>
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishSingleFile>false</PublishSingleFile>
-    <Version>1.5.1</Version>
-    <AssemblyVersion>1.5.1.0</AssemblyVersion>
-    <FileVersion>1.5.1.0</FileVersion>
+    <Version>1.5.2</Version>
+    <AssemblyVersion>1.5.2.0</AssemblyVersion>
+    <FileVersion>1.5.2.0</FileVersion>
     <InformationalVersion>1.5.1</InformationalVersion>
     <AssemblyName>NeuralV</AssemblyName>
     <ApplicationIcon>Assets\NeuralV.ico</ApplicationIcon>

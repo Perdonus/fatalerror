@@ -104,6 +104,16 @@
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
         </Style>
 
+        <Style x:Key="AccentSurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
+            <Setter Property="Background" Value="{ThemeResource AppAccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
+        </Style>
+
+        <Style x:Key="SecondarySurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
+            <Setter Property="Background" Value="{ThemeResource AppSecondaryContainerBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
+        </Style>
+
         <Style x:Key="GlassPanelStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
             <Setter Property="Background" Value="{ThemeResource AppChromeBrush}" />
         </Style>

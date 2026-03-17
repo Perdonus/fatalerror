@@ -348,7 +348,7 @@ function renderAuthSlot() {
   if (!state.auth.enabled) {
     slot.innerHTML = `
       <div class="auth-status-card compact-status">
-        <span>Telegram login пока не включён на сервере</span>
+        <span>Telegram login пока не настроен</span>
       </div>
     `;
     return;
@@ -460,7 +460,6 @@ function renderHome() {
   creatorsEl.innerHTML = featuredCreators.map(renderCreatorCard).join('');
   if (metricPackages) metricPackages.textContent = String(state.catalogPackages.length || 0);
   if (metricCreators) metricCreators.textContent = String(state.creators.length || 0);
-  bindCopyButtons();
 }
 
 function resolveNvVariant(platform) {
@@ -551,28 +550,6 @@ function renderCatalog() {
   list.innerHTML = filtered.map(renderPackageCard).join('');
   empty.hidden = filtered.length > 0;
   meta.textContent = `${filtered.length} пакета · ${state.creators.length} создателя`;
-  bindCopyButtons();
-}
-
-function bindCopyButtons() {
-  document.querySelectorAll('[data-copy]').forEach((node) => {
-    if (node.dataset.bound === '1') return;
-    node.dataset.bound = '1';
-    node.addEventListener('click', async () => {
-      const value = String(node.getAttribute('data-copy') || '').trim();
-      if (!value) return;
-      try {
-        await navigator.clipboard.writeText(value);
-        const previous = node.textContent;
-        node.textContent = 'Скопировано';
-        setTimeout(() => {
-          node.textContent = previous || 'Копировать';
-        }, 1200);
-      } catch (error) {
-        console.warn('Copy failed', error);
-      }
-    });
-  });
 }
 
 function attachCatalogControls() {
@@ -779,7 +756,7 @@ async function renderProfile() {
               <h2>Хочешь выкладывать свои пакеты?</h2>
             </div>
           </div>
-          <p class="section-copy">Войди через Telegram под своим creator slug, после чего здесь появятся формы публикации и релизов.</p>
+          <p class="section-copy">Войди через Telegram под своим creator slug, после чего здесь появятся формы публикации.</p>
         </section>`}
 
     <section class="section-shell">

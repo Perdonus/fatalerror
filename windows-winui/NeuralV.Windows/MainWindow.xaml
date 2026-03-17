@@ -309,8 +309,11 @@
                         <Grid Grid.Row="2">
                             <Grid x:Name="SplashView">
                                 <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}" Padding="34" Width="520">
+                                    <Border Style="{StaticResource AccentSurfaceCardStyle}" Padding="36" Width="560">
                                         <StackPanel Spacing="22" HorizontalAlignment="Center">
+                                            <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Center">
+                                                <TextBlock Text="WinUI 3 · NeuralV" Style="{StaticResource HeroEyebrowStyle}" />
+                                            </Border>
                                             <Grid Width="168" Height="168" HorizontalAlignment="Center">
                                                 <Border x:Name="SplashHalo" Width="168" Height="168" CornerRadius="84" RenderTransformOrigin="0.5,0.5">
                                                     <Border.RenderTransform>
@@ -329,8 +332,8 @@
 
                                             <StackPanel Spacing="8" HorizontalAlignment="Center">
                                                 <TextBlock Text="Запуск" Style="{StaticResource HeroEyebrowStyle}" HorizontalAlignment="Center" />
-                                                <TextBlock Text="Поднимаем защищённый контур" Style="{StaticResource PageTitleStyle}" FontSize="38" HorizontalAlignment="Center" TextAlignment="Center" />
-                                                <TextBlock Text="Клиент собирает палитру, читает сессию и восстанавливает последнюю логику без лишних экранов." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="420" />
+                                                <TextBlock Text="Поднимаем новый Windows-клиент" Style="{StaticResource PageTitleStyle}" FontSize="38" HorizontalAlignment="Center" TextAlignment="Center" />
+                                                <TextBlock Text="NeuralV поднимает палитру, проверяет сессию и открывает рабочий экран без лишних шагов." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="440" />
                                             </StackPanel>
 
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
@@ -370,19 +373,46 @@
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Spacing="14">
                                                 <TextBlock Text="NeuralV для Windows" Style="{StaticResource PageTitleStyle}" />
-                                                <TextBlock Text="Один нативный клиент для входа, проверок, истории и обновлений." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="Нативный клиент для входа, проверки, истории и обновлений. Один экранный ритм, одна палитра, один поток работы." Style="{StaticResource BodyTextStyle}" />
                                                 <StackPanel Orientation="Horizontal" Spacing="12">
                                                     <Button Content="Войти" Click="OnShowLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="180" />
                                                     <Button Content="Регистрация" Click="OnShowRegisterClick" Style="{StaticResource SecondaryButtonStyle}" Width="180" />
                                                 </StackPanel>
                                             </StackPanel>
 
-                                            <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}" Padding="18">
-                                                <StackPanel Spacing="12">
-                                                    <TextBlock Text="Что внутри" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                    <TextBlock Text="Авторизация." Style="{StaticResource BodyTextStyle}" />
-                                                    <TextBlock Text="Проверка." Style="{StaticResource BodyTextStyle}" />
-                                                    <TextBlock Text="История и обновления." Style="{StaticResource BodyTextStyle}" />
+                                            <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}" Padding="18">
+                                                <StackPanel Spacing="14">
+                                                    <TextBlock Text="Внутри" Style="{StaticResource CardTitleStyle}" FontSize="20" />
+                                                    <Grid ColumnSpacing="10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource AppSurfaceStrongBrush}">
+                                                            <TextBlock Text="01" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="Вход и код подтверждения." Style="{StaticResource BodyTextStyle}" />
+                                                    </Grid>
+                                                    <Grid ColumnSpacing="10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource AppSurfaceStrongBrush}">
+                                                            <TextBlock Text="02" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="Быстрые и глубокие проверки." Style="{StaticResource BodyTextStyle}" />
+                                                    </Grid>
+                                                    <Grid ColumnSpacing="10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource AppSurfaceStrongBrush}">
+                                                            <TextBlock Text="03" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                                                        </Border>
+                                                        <TextBlock Grid.Column="1" Text="История и обновление поверх текущей версии." Style="{StaticResource BodyTextStyle}" />
+                                                    </Grid>
                                                 </StackPanel>
                                             </Border>
                                         </Grid>
@@ -394,13 +424,13 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Style="{StaticResource SurfaceCardStyle}">
+                                        <Border Grid.Column="0" Style="{StaticResource SecondarySurfaceCardStyle}">
                                             <StackPanel Spacing="10">
                                                 <TextBlock Text="Живой фон" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Мягкий градиент с глубиной и движением." Style="{StaticResource BodyTextStyle}" />
+                                                <TextBlock Text="Тканевый градиент с мягким движением, без тяжёлой графики." Style="{StaticResource BodyTextStyle}" />
                                             </StackPanel>
                                         </Border>
-                                        <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
+                                        <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}">
                                             <StackPanel Spacing="10">
                                                 <TextBlock Text="Палитра от обоев" Style="{StaticResource CardTitleStyle}" FontSize="20" />
                                                 <TextBlock Text="Интерфейс подхватывает цвета фона и держит безопасный запасной вариант." Style="{StaticResource BodyTextStyle}" />
@@ -434,10 +464,10 @@
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
+                                    <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}">
                                         <StackPanel Spacing="14">
                                             <TextBlock Text="Следующий шаг" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="Сразу после проверки откроется ввод кода с почты." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="После проверки пары сразу откроется ввод кода из письма." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -463,10 +493,10 @@
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
+                                    <Border Grid.Column="1" Style="{StaticResource SecondarySurfaceCardStyle}">
                                         <StackPanel Spacing="14">
                                             <TextBlock Text="После регистрации" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="Дальше останется только ввести код из письма." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Дальше останется подтвердить почту кодом и открыть основной экран." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -489,10 +519,10 @@
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
+                                    <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}">
                                         <StackPanel Spacing="14">
                                             <TextBlock Text="После кода" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="Сразу откроется основной экран клиента." Style="{StaticResource BodyTextStyle}" />
+                                            <TextBlock Text="Сразу откроется домашний экран с проверкой, историей и обновлением." Style="{StaticResource BodyTextStyle}" />
                                         </StackPanel>
                                     </Border>
                                 </Grid>
@@ -513,10 +543,10 @@
                                                     <TextBlock x:Name="HomeStatusText" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
                                                 </Border>
                                             </StackPanel>
-                                            <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}" Padding="18">
+                                            <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}" Padding="18">
                                                 <StackPanel Spacing="10">
                                                     <TextBlock Text="Режимы" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                    <TextBlock Text="Быстрая и глубокая проверка доступны сразу." Style="{StaticResource BodyTextStyle}" />
+                                                    <TextBlock Text="Сразу доступны быстрая и глубокая проверка без отдельного мастера." Style="{StaticResource BodyTextStyle}" />
                                                 </StackPanel>
                                             </Border>
                                         </Grid>

@@ -312,7 +312,7 @@
                                     <Border Style="{StaticResource AccentSurfaceCardStyle}" Padding="36" Width="560">
                                         <StackPanel Spacing="22" HorizontalAlignment="Center">
                                             <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Center">
-                                                <TextBlock Text="WinUI 3 · NeuralV" Style="{StaticResource HeroEyebrowStyle}" />
+                                                <TextBlock Text="Windows · WinUI 3" Style="{StaticResource HeroEyebrowStyle}" />
                                             </Border>
                                             <Grid Width="168" Height="168" HorizontalAlignment="Center">
                                                 <Border x:Name="SplashHalo" Width="168" Height="168" CornerRadius="84" RenderTransformOrigin="0.5,0.5">
@@ -332,8 +332,8 @@
 
                                             <StackPanel Spacing="8" HorizontalAlignment="Center">
                                                 <TextBlock Text="Запуск" Style="{StaticResource HeroEyebrowStyle}" HorizontalAlignment="Center" />
-                                                <TextBlock Text="Поднимаем новый Windows-клиент" Style="{StaticResource PageTitleStyle}" FontSize="38" HorizontalAlignment="Center" TextAlignment="Center" />
-                                                <TextBlock Text="NeuralV поднимает палитру, проверяет сессию и открывает рабочий экран без лишних шагов." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="440" />
+                                                <TextBlock Text="Запускаем NeuralV" Style="{StaticResource PageTitleStyle}" FontSize="38" HorizontalAlignment="Center" TextAlignment="Center" />
+                                                <TextBlock Text="Клиент поднимает палитру, проверяет сессию и возвращает тебя прямо к рабочему экрану." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="440" />
                                             </StackPanel>
 
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
@@ -383,8 +383,8 @@
                                                     </Border>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" Spacing="12">
-                                                    <Button Content="Войти" Click="OnShowLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="180" />
-                                                    <Button Content="Регистрация" Click="OnShowRegisterClick" Style="{StaticResource SecondaryButtonStyle}" Width="180" />
+                                                    <Button Content="Войти в аккаунт" Click="OnShowLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="190" />
+                                                    <Button Content="Создать аккаунт" Click="OnShowRegisterClick" Style="{StaticResource SecondaryButtonStyle}" Width="190" />
                                                 </StackPanel>
                                             </StackPanel>
 
@@ -576,8 +576,8 @@
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Button Grid.Column="0" x:Name="QuickScanButton" Content="Быстрая" Click="OnQuickScanClick" Style="{StaticResource SecondaryButtonStyle}" />
-                                                        <Button Grid.Column="1" x:Name="DeepScanButton" Content="Глубокая" Click="OnDeepScanClick" Style="{StaticResource NeuralVButtonStyle}" />
+                                                        <Button Grid.Column="0" x:Name="QuickScanButton" Content="Быстрая проверка" Click="OnQuickScanClick" Style="{StaticResource SecondaryButtonStyle}" />
+                                                        <Button Grid.Column="1" x:Name="DeepScanButton" Content="Глубокая проверка" Click="OnDeepScanClick" Style="{StaticResource NeuralVButtonStyle}" />
                                                     </Grid>
                                                 </StackPanel>
                                             </Border>

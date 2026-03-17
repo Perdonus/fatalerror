@@ -46,18 +46,26 @@ public partial class App : Application
 
         ApplyPalette(Resources, Palette);
 
+        if (IsSmokeTest)
+        {
+            try
+            {
+                WindowsSmokeVerifier.Run();
+                WindowsLog.Info("Smoke verifier completed");
+                Environment.ExitCode = 0;
+            }
+            catch (Exception ex)
+            {
+                WindowsLog.Error("Smoke verifier failed", ex);
+                Environment.ExitCode = 1;
+            }
+            Current.Exit();
+            return;
+        }
+
         try
         {
             var window = new MainWindow();
-            if (IsSmokeTest)
-            {
-                WindowsLog.Info("Smoke test short-circuit after window construction");
-                window.RunSmokeValidation();
-                Environment.ExitCode = 0;
-                Current.Exit();
-                return;
-            }
-
             window.Activate();
         }
         catch (Exception ex)

@@ -264,8 +264,8 @@ jobs:
           cp stage/windows/neuralv-setup.exe publish-windows/windows/neuralv-setup.exe
           cp windows-native/install/windows.ps1 publish-windows/install/windows.ps1
           cp windows-native/install/windows.cmd publish-windows/install/windows.cmd
-          sha_windows="$(sha256sum "publish-windows/windows/neuralv-windows-${semver}.zip" | awk '{print $1}')"
-          sha_setup="$(sha256sum "publish-windows/windows/neuralv-setup-${semver}.exe" | awk '{print $1}')"
+          sha_windows="$(sha256sum "publish-windows/windows/neuralv-windows.zip" | awk '{print $1}')"
+          sha_setup="$(sha256sum "publish-windows/windows/neuralv-setup.exe" | awk '{print $1}')"
           raw_base="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/windows-builds"
           export SEMVER="$semver"
           export SHA_WINDOWS="$sha_windows"

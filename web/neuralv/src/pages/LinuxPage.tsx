@@ -77,21 +77,15 @@ function buildCommandText(pkg: DirectPackageMetadata | undefined, fallbackComman
 
 export function LinuxPage() {
   const linuxManifestState = useReleaseManifest('linux');
-  const shellManifestState = useReleaseManifest('shell');
   const { catalog } = usePackageRegistry();
   const neuralvPackage = useMemo(() => getPackage(catalog, '@lvls/neuralv'), [catalog]);
   const linuxVariant = useMemo(() => getPackageVariant(neuralvPackage, 'linux'), [neuralvPackage]);
   const linuxArtifact = useMemo(() => getArtifact(linuxManifestState.manifest, 'linux'), [linuxManifestState.manifest]);
-  const shellArtifact = useMemo(() => getArtifact(shellManifestState.manifest, 'shell'), [shellManifestState.manifest]);
 
-  const guiVersion =
+  const linuxVersion =
     linuxArtifact?.version ||
     (linuxManifestState.manifest.platform === 'linux' ? (linuxManifestState.manifest.version || '') : '') ||
     linuxVariant?.version ||
-    'pending';
-  const cliVersion =
-    shellArtifact?.version ||
-    (shellManifestState.manifest.platform === 'shell' ? (shellManifestState.manifest.version || '') : '') ||
     'pending';
 
   const [directKey, setDirectKey] = useState<DirectPackageKey>('ubuntu');
@@ -116,11 +110,11 @@ export function LinuxPage() {
       <section className="hero-card platform-hero platform-hero-simple linux-hero">
         <div className="hero-copy">
           <h1>NeuralV для Linux</h1>
-          <p>GUI и CLI ставятся одним пакетом. Сначала ставишь NV, потом одной командой подтягиваешь весь NeuralV.</p>
+          <p>Один пакет для Linux: GUI и CLI ставятся вместе. Основной путь установки идёт через NV.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#linux-install">Установить</a>
           </div>
-          <span className="hero-support-text">GUI {guiVersion} · CLI {cliVersion}</span>
+          <span className="hero-support-text">Версия Linux: {linuxVersion}</span>
         </div>
       </section>
 
@@ -129,7 +123,7 @@ export function LinuxPage() {
           <div className="install-card-head simple-head">
             <div className="install-card-copy">
               <h3>Через NV</h3>
-              <p className="install-intro">Главный способ установки: один менеджер, одна команда, GUI и CLI сразу вместе.</p>
+              <p className="install-intro">Главный способ установки: NV ставит весь NeuralV сразу, вместе с GUI и CLI.</p>
             </div>
           </div>
 
@@ -144,7 +138,7 @@ export function LinuxPage() {
           <div className="install-card-head simple-head">
             <div className="install-card-copy">
               <h3>Прямые пакеты</h3>
-              <p className="install-intro">Если не хочешь ставить через NV, можно взять нужный пакет напрямую. CLI в desktop-релиз тоже входит.</p>
+              <p className="install-intro">Если NV не нужен, можно скачать пакет напрямую. Это вторичный путь, и CLI в него тоже входит.</p>
             </div>
           </div>
 

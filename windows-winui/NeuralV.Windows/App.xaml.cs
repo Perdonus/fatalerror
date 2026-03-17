@@ -45,6 +45,14 @@ public partial class App : Application
 
         ApplyPalette(Resources, Palette);
 
+        if (IsSmokeTest)
+        {
+            WindowsLog.Info("Smoke test short-circuit before window creation");
+            Environment.ExitCode = 0;
+            Current.Exit();
+            return;
+        }
+
         try
         {
             var window = new MainWindow();

@@ -217,7 +217,7 @@ public partial class App : Application
                 Text = "NeuralV не смог открыть основной интерфейс",
                 Foreground = Brush(Palette.Text),
                 FontSize = 30,
-                FontWeight = global::Windows.UI.Text.FontWeights.SemiBold,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
             stack.Children.Add(new TextBlock

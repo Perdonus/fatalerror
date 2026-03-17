@@ -175,16 +175,28 @@ public partial class App : Application
     private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         WindowsLog.Error("UI unhandled exception", e.Exception);
+        if (IsSmokeTest && e.Exception is not null)
+        {
+            WriteSmokeFailureDetails(e.Exception);
+        }
     }
 
     private static void OnCurrentDomainUnhandledException(object? sender, System.UnhandledExceptionEventArgs e)
     {
         WindowsLog.Error("AppDomain unhandled exception", e.ExceptionObject as Exception);
+        if (IsSmokeTest && e.ExceptionObject is Exception exception)
+        {
+            WriteSmokeFailureDetails(exception);
+        }
     }
 
     private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
         WindowsLog.Error("TaskScheduler unobserved exception", e.Exception);
+        if (IsSmokeTest)
+        {
+            WriteSmokeFailureDetails(e.Exception);
+        }
         e.SetObserved();
     }
 

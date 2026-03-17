@@ -126,6 +126,12 @@ jobs:
                 }
               }
             }
+            if (-not $parts -and (Test-Path 'dist/windows/NeuralV')) {
+              $listing = (Get-ChildItem 'dist/windows/NeuralV' -Force | Select-Object -ExpandProperty Name) -join ', '
+              if ($listing) {
+                $parts += "[dist/windows/NeuralV files] $listing"
+              }
+            }
             return (($parts -join ' | ') -replace '\s+', ' ').Trim()
           }
           $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.exe'
@@ -135,6 +141,7 @@ jobs:
             $details = Get-NeuralVSmokeDetails
             try { $proc.Kill($true) } catch {}
             if ($details) {
+              Write-Host "::error file=windows-winui/NeuralV.Windows/App.xaml.cs,line=1::$details"
               throw "Windows smoke test timed out after 30 seconds. $details"
             }
             throw 'Windows smoke test timed out after 30 seconds'
@@ -142,6 +149,7 @@ jobs:
           if ($proc.ExitCode -ne 0) {
             $details = Get-NeuralVSmokeDetails
             if ($details) {
+              Write-Host "::error file=windows-winui/NeuralV.Windows/App.xaml.cs,line=1::$details"
               throw "Windows smoke test failed with exit code $($proc.ExitCode). $details"
             }
             throw "Windows smoke test failed with exit code $($proc.ExitCode)"

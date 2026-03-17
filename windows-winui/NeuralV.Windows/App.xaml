@@ -8,11 +8,15 @@
         <SolidColorBrush x:Key="AppSurfaceBrush" Color="#171E30" />
         <SolidColorBrush x:Key="AppSurfaceRaisedBrush" Color="#20283C" />
         <SolidColorBrush x:Key="AppSurfaceStrongBrush" Color="#27324A" />
+        <SolidColorBrush x:Key="AppSurfaceHighBrush" Color="#32405A" />
         <SolidColorBrush x:Key="AppCardBrush" Color="#2D3852" />
         <SolidColorBrush x:Key="AppChromeBrush" Color="#131A2A" />
         <SolidColorBrush x:Key="AppAccentBrush" Color="#7C6BFF" />
         <SolidColorBrush x:Key="AppAccentSecondaryBrush" Color="#57D5F9" />
         <SolidColorBrush x:Key="AppAccentTertiaryBrush" Color="#F7A879" />
+        <SolidColorBrush x:Key="AppPrimaryContainerBrush" Color="#46589B" />
+        <SolidColorBrush x:Key="AppSecondaryContainerBrush" Color="#2F6574" />
+        <SolidColorBrush x:Key="AppTertiaryContainerBrush" Color="#73543E" />
         <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#33415B" />
         <SolidColorBrush x:Key="AppAccentMutedBrush" Color="#26354C" />
         <SolidColorBrush x:Key="AppOutlineBrush" Color="#44506B" />
@@ -20,6 +24,7 @@
         <SolidColorBrush x:Key="AppTextBrush" Color="#F5F7FC" />
         <SolidColorBrush x:Key="AppMutedTextBrush" Color="#C1C9E1" />
         <SolidColorBrush x:Key="AppSubtleTextBrush" Color="#95A0BC" />
+        <SolidColorBrush x:Key="AppOnSurfaceVariantBrush" Color="#D7DDF0" />
         <SolidColorBrush x:Key="AppOnAccentBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="AppSuccessBrush" Color="#54D195" />
         <SolidColorBrush x:Key="AppWarningBrush" Color="#FFB95F" />
@@ -87,7 +92,7 @@
         </Style>
 
         <Style x:Key="SurfaceCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceRaisedBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="{StaticResource SurfaceCardCornerRadius}" />
@@ -95,7 +100,7 @@
         </Style>
 
         <Style x:Key="ElevatedSurfaceCardStyle" TargetType="Border" BasedOn="{StaticResource SurfaceCardStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppCardBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppPrimaryContainerBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineStrongBrush}" />
         </Style>
 
@@ -104,7 +109,7 @@
         </Style>
 
         <Style x:Key="MiniPillStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSecondaryContainerBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="{StaticResource PillCornerRadius}" />
@@ -184,13 +189,13 @@
         </Style>
 
         <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppAccentSoftBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSecondaryContainerBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
         </Style>
 
         <Style x:Key="TertiaryButtonStyle" TargetType="Button" BasedOn="{StaticResource BaseButtonStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
         </Style>
@@ -200,13 +205,13 @@
             <Setter Property="MinHeight" Value="46" />
             <Setter Property="Padding" Value="18,12" />
             <Setter Property="CornerRadius" Value="18" />
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
         </Style>
 
         <Style x:Key="SelectedNavTabButtonStyle" TargetType="Button" BasedOn="{StaticResource NavTabButtonStyle}">
-            <Setter Property="Background" Value="{ThemeResource AppAccentBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppPrimaryContainerBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppOnAccentBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource AppAccentBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource AppPrimaryContainerBrush}" />
         </Style>
 
         <Style x:Key="FieldTextBoxStyle" TargetType="TextBox">
@@ -215,10 +220,11 @@
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="MinHeight" Value="58" />
             <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="PlaceholderForeground" Value="{ThemeResource AppOnSurfaceVariantBrush}" />
         </Style>
 
         <Style x:Key="FieldPasswordBoxStyle" TargetType="PasswordBox">
@@ -227,10 +233,11 @@
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="MinHeight" Value="58" />
             <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
-            <Setter Property="Background" Value="{ThemeResource AppSurfaceStrongBrush}" />
+            <Setter Property="Background" Value="{ThemeResource AppSurfaceHighBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource AppTextBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource AppOutlineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="PlaceholderForeground" Value="{ThemeResource AppOnSurfaceVariantBrush}" />
         </Style>
 
         <Style x:Key="FlatListViewItemStyle" TargetType="ListViewItem">

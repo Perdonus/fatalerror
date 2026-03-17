@@ -20,11 +20,15 @@ public sealed class ThemePalette
     public UiColor Surface { get; init; }
     public UiColor SurfaceRaised { get; init; }
     public UiColor SurfaceStrong { get; init; }
+    public UiColor SurfaceHigh { get; init; }
     public UiColor Card { get; init; }
     public UiColor Chrome { get; init; }
     public UiColor Accent { get; init; }
     public UiColor AccentSecondary { get; init; }
     public UiColor AccentTertiary { get; init; }
+    public UiColor PrimaryContainer { get; init; }
+    public UiColor SecondaryContainer { get; init; }
+    public UiColor TertiaryContainer { get; init; }
     public UiColor AccentSoft { get; init; }
     public UiColor AccentMuted { get; init; }
     public UiColor Outline { get; init; }
@@ -32,6 +36,7 @@ public sealed class ThemePalette
     public UiColor Text { get; init; }
     public UiColor MutedText { get; init; }
     public UiColor SubtleText { get; init; }
+    public UiColor OnSurfaceVariant { get; init; }
     public UiColor OnAccent { get; init; }
     public UiColor Success { get; init; }
     public UiColor Warning { get; init; }
@@ -64,6 +69,7 @@ public sealed class ThemePalette
         var surface = Blend(background, accent, isDark ? 0.15 : 0.07);
         var surfaceRaised = Blend(backgroundAlt, accent, isDark ? 0.18 : 0.10);
         var surfaceStrong = Blend(surfaceRaised, accent, isDark ? 0.22 : 0.14);
+        var surfaceHigh = Blend(surfaceStrong, accent, isDark ? 0.28 : 0.18);
         var card = Blend(surfaceStrong, isDark ? UiColor.FromArgb(255, 255, 255, 255) : UiColor.FromArgb(255, 255, 255, 255), isDark ? 0.03 : 0.18);
         var chrome = Blend(background, backgroundAlt, 0.58);
         var accentSecondary = AdjustLightness(RotateHue(accent, -18), isDark ? 0.10 : -0.03);
@@ -76,11 +82,15 @@ public sealed class ThemePalette
             Surface = surface,
             SurfaceRaised = surfaceRaised,
             SurfaceStrong = surfaceStrong,
+            SurfaceHigh = surfaceHigh,
             Card = card,
             Chrome = chrome,
             Accent = accent,
             AccentSecondary = accentSecondary,
             AccentTertiary = accentTertiary,
+            PrimaryContainer = Blend(surfaceHigh, accent, isDark ? 0.38 : 0.24),
+            SecondaryContainer = Blend(surfaceHigh, accentSecondary, isDark ? 0.34 : 0.22),
+            TertiaryContainer = Blend(surfaceHigh, accentTertiary, isDark ? 0.32 : 0.20),
             AccentSoft = Blend(surfaceStrong, accent, isDark ? 0.42 : 0.28),
             AccentMuted = Blend(surface, accentSecondary, isDark ? 0.26 : 0.18),
             Outline = Blend(surfaceStrong, isDark ? UiColor.FromArgb(255, 187, 196, 223) : UiColor.FromArgb(255, 91, 102, 128), isDark ? 0.22 : 0.28),
@@ -88,6 +98,7 @@ public sealed class ThemePalette
             Text = isDark ? UiColor.FromArgb(255, 245, 247, 252) : UiColor.FromArgb(255, 22, 26, 36),
             MutedText = isDark ? UiColor.FromArgb(255, 194, 202, 226) : UiColor.FromArgb(255, 88, 98, 122),
             SubtleText = isDark ? UiColor.FromArgb(255, 150, 160, 187) : UiColor.FromArgb(255, 116, 126, 148),
+            OnSurfaceVariant = isDark ? UiColor.FromArgb(255, 219, 225, 243) : UiColor.FromArgb(255, 59, 68, 90),
             OnAccent = GetReadableForeground(accent),
             Success = Blend(UiColor.FromArgb(255, 83, 205, 146), accentSecondary, 0.08),
             Warning = Blend(UiColor.FromArgb(255, 255, 184, 88), accentTertiary, 0.06),

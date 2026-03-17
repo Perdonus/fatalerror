@@ -8,7 +8,6 @@ using Microsoft.UI.Xaml.Media.Animation;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Foundation;
-using Windows.Graphics;
 using UiColor = global::Windows.UI.Color;
 using WinRT.Interop;
 

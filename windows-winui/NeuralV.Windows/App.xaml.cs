@@ -83,11 +83,15 @@ public partial class App : Application
         resources["AppSurfaceBrush"] = Brush(palette.Surface);
         resources["AppSurfaceRaisedBrush"] = Brush(palette.SurfaceRaised);
         resources["AppSurfaceStrongBrush"] = Brush(palette.SurfaceStrong);
+        resources["AppSurfaceHighBrush"] = Brush(palette.SurfaceHigh);
         resources["AppCardBrush"] = Brush(palette.Card);
         resources["AppChromeBrush"] = Brush(palette.Chrome);
         resources["AppAccentBrush"] = Brush(palette.Accent);
         resources["AppAccentSecondaryBrush"] = Brush(palette.AccentSecondary);
         resources["AppAccentTertiaryBrush"] = Brush(palette.AccentTertiary);
+        resources["AppPrimaryContainerBrush"] = Brush(palette.PrimaryContainer);
+        resources["AppSecondaryContainerBrush"] = Brush(palette.SecondaryContainer);
+        resources["AppTertiaryContainerBrush"] = Brush(palette.TertiaryContainer);
         resources["AppAccentSoftBrush"] = Brush(palette.AccentSoft);
         resources["AppAccentMutedBrush"] = Brush(palette.AccentMuted);
         resources["AppOutlineBrush"] = Brush(palette.Outline);
@@ -95,6 +99,7 @@ public partial class App : Application
         resources["AppTextBrush"] = Brush(palette.Text);
         resources["AppMutedTextBrush"] = Brush(palette.MutedText);
         resources["AppSubtleTextBrush"] = Brush(palette.SubtleText);
+        resources["AppOnSurfaceVariantBrush"] = Brush(palette.OnSurfaceVariant);
         resources["AppOnAccentBrush"] = Brush(palette.OnAccent);
         resources["AppSuccessBrush"] = Brush(palette.Success);
         resources["AppWarningBrush"] = Brush(palette.Warning);

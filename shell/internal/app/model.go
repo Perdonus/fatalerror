@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/perdonus/neuralv-shell/internal/api"
+	"github.com/perdonus/neuralv-shell/internal/logging"
 	"github.com/perdonus/neuralv-shell/internal/session"
 )
 
@@ -77,6 +78,7 @@ type Model struct {
 	lastScan    *api.DesktopScan
 	scanBusy    bool
 	scanLogOffset int
+	historyOffset int
 
 	settingsCursor int
 }
@@ -123,7 +125,7 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		client:         client,
 		store:          store,
 		session:        saved,
-		lowMotion:      true,
+		lowMotion:      opts.LowMotion,
 		screen:         screenAuth,
 		status:         "Готово к проверке",
 		statusTone:     statusInfo,
@@ -135,7 +137,6 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		scanCursor:     0,
 		settingsCursor: 0,
 	}
-	_ = opts
 	if saved != nil {
 		model.screen = screenScan
 		model.status = "Сессия восстановлена"
@@ -143,34 +144,43 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		model.emailInput.SetValue(saved.Email)
 	}
 	model.syncAuthFocus()
+	model.syncInputWidths()
 	return model
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(m.lowMotion), textinput.Blink, tea.EnableMouseCellMotion)
+	return tea.Batch(tickCmd(m.lowMotion), textinput.Blink, tea.EnableMouseCellMotion, m.loadManifestCmd())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if msg.Width != m.width || msg.Height != m.height {
+			logging.Event("resize", "main viewport=%dx%d screen=%d", msg.Width, msg.Height, m.screen)
+		}
 		m.width, m.height = msg.Width, msg.Height
+		m.syncInputWidths()
+		m.clampScrollOffsets()
 		return m, nil
 	case tickMsg:
 		m.frame++
 		return m, tickCmd(m.lowMotion)
 	case manifestLoadedMsg:
 		if msg.err != nil {
+			logging.Error("manifest load failed: %v", msg.err)
 			m.setStatus("Не удалось обновить список загрузок", statusWarning)
 			return m, nil
 		}
 		m.manifest = msg.manifest
 		if msg.manifest != nil {
+			logging.Event("startup", "manifest loaded artifacts=%d", len(msg.manifest.Artifacts))
 			m.setStatus("Список загрузок обновлён", statusSuccess)
 		}
 		return m, nil
 	case authStartedMsg:
 		m.authBusy = false
 		if msg.err != nil {
+			logging.Error("auth start failed in main app: %v", msg.err)
 			m.setStatus(cleanError(msg.err), statusError)
 			return m, nil
 		}
@@ -179,11 +189,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.authFocus = 0
 		m.codeInput.SetValue("")
 		m.syncAuthFocus()
+		if msg.challenge != nil {
+			logging.Event("auth", "challenge created in main app challenge=%s", msg.challenge.ChallengeID)
+		}
 		m.setStatus("Код отправлен. Введи его и нажми Enter.", statusSuccess)
 		return m, nil
 	case authVerifiedMsg:
 		m.authBusy = false
 		if msg.err != nil {
+			logging.Error("auth verify failed in main app: %v", msg.err)
 			m.setStatus(cleanError(msg.err), statusError)
 			return m, nil
 		}
@@ -193,11 +207,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.authFocus = 0
 		m.screen = screenScan
 		m.syncAuthFocus()
+		if msg.session != nil {
+			logging.Event("auth", "session saved in main app email=%s", msg.session.Email)
+		}
 		m.setStatus("Вход выполнен", statusSuccess)
 		return m, nil
 	case scanStartedMsg:
 		m.scanBusy = false
 		if msg.err != nil {
+			logging.Error("scan start failed: %v", msg.err)
 			m.setStatus(cleanError(msg.err), statusError)
 			return m, nil
 		}
@@ -205,6 +223,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.scan != nil {
 			m.lastScan = msg.scan
 			m.pinScanLogToLatest(msg.scan)
+			logging.Event("scan", "started id=%s status=%s mode=%s", msg.scan.ID, msg.scan.Status, msg.scan.Mode)
 			m.setStatus(defaultScanMessage(msg.scan), statusInfo)
 			if !isTerminalScanStatus(msg.scan.Status) {
 				return m, pollScanCmd(m.client, m.sessionToken(), msg.scan.ID)
@@ -215,6 +234,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case scanPolledMsg:
 		if msg.err != nil {
+			logging.Error("scan poll failed: %v", msg.err)
 			m.setStatus(cleanError(msg.err), statusError)
 			return m, nil
 		}
@@ -222,6 +242,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.scan != nil {
 			m.lastScan = msg.scan
 			m.pinScanLogToLatest(msg.scan)
+			logging.Event("scan", "poll id=%s status=%s verdict=%s surfaced=%d", msg.scan.ID, msg.scan.Status, msg.scan.Verdict, msg.scan.SurfacedFindings)
 			if isTerminalScanStatus(msg.scan.Status) {
 				m.currentScan = nil
 				m.setStatus(defaultScanMessage(msg.scan), toneForVerdict(msg.scan.Verdict))
@@ -234,6 +255,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanCancelledMsg:
 		m.scanBusy = false
 		if msg.err != nil {
+			logging.Error("scan cancel failed: %v", msg.err)
 			m.setStatus(cleanError(msg.err), statusError)
 			return m, nil
 		}
@@ -244,6 +266,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pinScanLogToLatest(m.lastScan)
 			m.currentScan = nil
 		}
+		logging.Event("cancel", "active scan cancelled")
 		m.setStatus("Проверка остановлена", statusWarning)
 		return m, nil
 	case tea.MouseMsg:
@@ -258,6 +281,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
+		logging.Event("startup", "main tui interrupted by ctrl+c")
 		return m, tea.Quit
 	case "left", "h":
 		m.prevScreen()
@@ -281,6 +305,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAuthKeys(msg)
 	case screenScan:
 		return m.handleScanKeys(msg)
+	case screenHistory:
+		return m.handleHistoryKeys(msg)
 	case screenSettings:
 		return m.handleSettingsKeys(msg)
 	}
@@ -289,15 +315,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.screen != screenScan {
-		return m, nil
-	}
-
 	switch msg.Type {
 	case tea.MouseWheelUp:
-		m.scrollScanLog(-1)
+		if m.screen == screenScan {
+			m.scrollScanLog(-1)
+		}
+		if m.screen == screenHistory {
+			m.scrollHistory(-1)
+		}
 	case tea.MouseWheelDown:
-		m.scrollScanLog(1)
+		if m.screen == screenScan {
+			m.scrollScanLog(1)
+		}
+		if m.screen == screenHistory {
+			m.scrollHistory(1)
+		}
 	}
 
 	return m, nil
@@ -383,6 +415,7 @@ func (m Model) handleScanKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "enter" {
 		if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
 			m.scanBusy = true
+			logging.Event("cancel", "cancel requested id=%s", m.currentScan.ID)
 			m.setStatus("Останавливаем проверку", statusWarning)
 			return m, cancelScanCmd(m.client, m.sessionToken())
 		}
@@ -394,8 +427,32 @@ func (m Model) handleScanKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.scanBusy = true
 		m.scanLogOffset = 0
+		logging.Event("scan", "start requested token_present=%t", strings.TrimSpace(m.sessionToken()) != "")
 		m.setStatus("Отправляем профиль хоста на сервер", statusInfo)
 		return m, startHostScanCmd(m.client, m.sessionToken())
+	}
+	return m, nil
+}
+
+func (m Model) handleHistoryKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		m.scrollHistory(-1)
+	case "down", "j":
+		m.scrollHistory(1)
+	case "pgup":
+		m.scrollHistory(-m.historyViewportHeight())
+	case "pgdown", "tab":
+		m.scrollHistory(m.historyViewportHeight())
+	case "home":
+		m.historyOffset = 0
+	case "end":
+		entries := m.historyEntries()
+		maxOffset := len(entries) - m.historyViewportHeight()
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		m.historyOffset = maxOffset
 	}
 	return m, nil
 }
@@ -403,13 +460,15 @@ func (m Model) handleScanKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		m.session = nil
-		m.challenge = nil
-		m.authStage = authCredentials
-		m.authFocus = 0
-		m.syncAuthFocus()
-		_ = m.store.Clear()
-		m.screen = screenAuth
+		var clearedEmail string
+		if m.session != nil {
+			clearedEmail = m.session.Email
+		}
+		if err := m.store.Clear(); err != nil {
+			logging.Error("logout store clear failed: %v", err)
+		}
+		m.resetToAuthScreen()
+		logging.Event("logout", "session cleared email=%s", clearedEmail)
 		m.setStatus("Сессия удалена", statusWarning)
 		return m, nil
 	}
@@ -425,6 +484,7 @@ func (m *Model) submitAuth() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.authBusy = true
+		logging.Event("auth", "requesting login challenge in main app for %s", strings.ToLower(strings.TrimSpace(email)))
 		m.setStatus("Отправляем запрос на вход", statusInfo)
 		return m, m.startLoginCmd()
 	}
@@ -435,6 +495,7 @@ func (m *Model) submitAuth() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.authBusy = true
+	logging.Event("auth", "verifying login code in main app for %s", strings.ToLower(strings.TrimSpace(m.emailInput.Value())))
 	m.setStatus("Проверяем код", statusInfo)
 	return m, m.verifyLoginCmd()
 }
@@ -471,7 +532,8 @@ func (m Model) View() string {
 		m.width = 100
 	}
 
-	contentWidth := clamp(m.width-6, 56, 112)
+	horizontalPadding := shellHorizontalPadding(m.width)
+	contentWidth := shellContentWidth(m.width)
 	sections := []string{
 		m.renderHeader(contentWidth),
 		m.renderTabs(contentWidth),
@@ -479,12 +541,16 @@ func (m Model) View() string {
 		m.renderFooter(contentWidth),
 	}
 
-	return lipgloss.NewStyle().Padding(1, 2).Render(strings.Join(sections, "\n\n"))
+	return lipgloss.NewStyle().Padding(1, horizontalPadding).Render(strings.Join(sections, "\n\n"))
 }
 
 func (m Model) renderHeader(width int) string {
+	ambient := renderAmbient(width, m.frame, m.lowMotion)
 	brand := lipgloss.NewStyle().Bold(true).Foreground(colorAccent()).Render("NeuralV")
-	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(brand)
+	return strings.Join([]string{
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(ambient),
+		lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(brand),
+	}, "\n")
 }
 
 func (m Model) renderTabs(width int) string {
@@ -504,7 +570,11 @@ func (m Model) renderTabs(width int) string {
 		}
 		items = append(items, style.Render(item.label))
 	}
-	return lipgloss.NewStyle().Width(width).Render(strings.Join(items, "  "))
+	separator := "  "
+	if width < 42 {
+		separator = "\n"
+	}
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(items, separator))
 }
 
 func (m Model) renderBody(width int) string {
@@ -534,10 +604,10 @@ func (m Model) renderWelcome(width int) string {
 
 	right := cardStyle(columnWidth(width)).Render(strings.Join([]string{
 		sectionTitle("Управление"),
-		"1-6 или Left / Right — экраны",
+		"1-3 или Left / Right — экраны",
 		"Tab / j / k — фокус и списки",
 		"Enter — действие",
-		"q — выход",
+		"Ctrl+C — выход",
 		"",
 		sectionTitle("Режим анимации"),
 		"На SSH и слабых машинах мягкий режим включается сам.",
@@ -624,6 +694,7 @@ func (m Model) renderHome(width int) string {
 
 func (m Model) renderScan(width int) string {
 	scan := m.scanForDisplay()
+	stacked := shouldStackColumns(width)
 	panelHeight := m.scanPanelHeight()
 	leftWidth, rightWidth := m.scanPanelWidths(width)
 
@@ -681,54 +752,33 @@ func (m Model) renderScan(width int) string {
 		lipgloss.NewStyle().Foreground(colorMuted()).Render(logSummary),
 	)
 
-	left := cardStyle(leftWidth).Height(panelHeight).Render(strings.Join(progressLines, "\n"))
-	right := cardStyle(rightWidth).Height(panelHeight).Render(strings.Join(logLines, "\n"))
-	if width < 96 {
+	leftCard := cardStyle(leftWidth)
+	rightCard := cardStyle(rightWidth)
+	if !stacked {
+		leftCard = leftCard.Height(panelHeight)
+		rightCard = rightCard.Height(panelHeight)
+	}
+	left := leftCard.Render(strings.Join(progressLines, "\n"))
+	right := rightCard.Render(strings.Join(logLines, "\n"))
+	if stacked {
 		return strings.Join([]string{left, right}, "\n\n")
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
 func (m Model) renderHistory(width int) string {
-	if m.lastScan == nil {
-		lines := []string{
+	entries := m.historyEntries()
+	start, end := m.historyBounds(entries)
+	lines := entries[start:end]
+	if len(lines) == 0 {
+		lines = []string{
 			sectionTitle("История"),
 			"Пока пусто. После первой проверки здесь останется её итог.",
 		}
-		if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
-			lines = append(lines, "", status)
-		}
-		return cardStyle(width).Render(strings.Join(lines, "\n"))
 	}
-
-	lines := []string{
-		sectionTitle("История"),
-		fmt.Sprintf("Проверка: %s", normalizeScanStatus(m.lastScan.Status)),
-		fmt.Sprintf("Вердикт: %s", normalizeVerdict(m.lastScan.Verdict)),
-		fmt.Sprintf("Риск: %d/100", m.lastScan.RiskScore),
-		fmt.Sprintf("Найдено: %d", m.lastScan.SurfacedFindings),
-	}
-	if m.lastScan.Message != "" {
-		lines = append(lines, "", shortText(m.lastScan.Message, 108))
-	}
-	if len(m.lastScan.Findings) > 0 {
-		lines = append(lines, "", sectionTitle("Что нашли"))
-		for _, finding := range m.lastScan.Findings {
-			line := fmt.Sprintf("• %s — %s", finding.Title, normalizeVerdict(finding.Verdict))
-			if summary := strings.TrimSpace(finding.Summary); summary != "" {
-				line += ": " + shortText(summary, 72)
-			}
-			lines = append(lines, line)
-		}
-	}
-	if len(m.lastScan.Timeline) > 0 {
-		lines = append(lines, "", sectionTitle("Таймлайн"))
-		for _, stage := range m.lastScan.Timeline {
-			lines = append(lines, "• "+shortText(stage, 88))
-		}
-	}
-	if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
-		lines = append(lines, "", status)
+	if len(entries) > m.historyViewportHeight() {
+		summary := fmt.Sprintf("Строки %d-%d из %d  •  Up/Down и PgUp/PgDown прокручивают историю", start+1, end, len(entries))
+		lines = append(lines, "", lipgloss.NewStyle().Foreground(colorMuted()).Render(summary))
 	}
 	return cardStyle(width).Render(strings.Join(lines, "\n"))
 }
@@ -736,7 +786,7 @@ func (m Model) renderHistory(width int) string {
 func (m Model) renderSettings(width int) string {
 	lines := []string{
 		sectionTitle("Настройки"),
-		"В этом экране осталось только завершение текущей сессии.",
+		"Здесь пока только выход из аккаунта.",
 		"",
 		renderActionButton("Выйти", true, true),
 		lipgloss.NewStyle().Foreground(colorMuted()).Render("Enter очищает сессию и возвращает к входу."),
@@ -748,14 +798,16 @@ func (m Model) renderSettings(width int) string {
 }
 
 func (m Model) renderFooter(width int) string {
-	hints := []string{"1-3 экран", "Enter действие", "q выход"}
+	hints := []string{"1-3 экран", "Enter действие", "Ctrl+C выход"}
 	switch m.screen {
 	case screenAuth:
-		hints = []string{"Tab / Shift+Tab фокус", "Enter подтвердить", "Esc назад", "1-3 экран", "q выход"}
+		hints = []string{"Tab / Shift+Tab фокус", "Enter подтвердить", "Esc назад", "1-3 экран", "Ctrl+C выход"}
 	case screenScan:
-		hints = []string{"Enter старт/стоп", "Up / Down лог", "Колесо мыши лог", "1-3 экран", "q выход"}
+		hints = []string{"Enter старт/стоп", "Up / Down лог", "Колесо мыши лог", "1-3 экран", "Ctrl+C выход"}
+	case screenHistory:
+		hints = []string{"Up / Down история", "PgUp / PgDown", "1-3 экран", "Ctrl+C выход"}
 	case screenSettings:
-		hints = []string{"Enter выйти", "1-3 экран", "q выход"}
+		hints = []string{"Enter выйти", "1-3 экран", "Ctrl+C выход"}
 	}
 	return lipgloss.NewStyle().Width(width).Foreground(colorMuted()).Render(strings.Join(hints, "  •  "))
 }
@@ -766,6 +818,23 @@ func (m *Model) setStatus(text string, tone statusTone) {
 		m.status = "Готово"
 	}
 	m.statusTone = tone
+}
+
+func (m *Model) resetToAuthScreen() {
+	m.session = nil
+	m.challenge = nil
+	m.authBusy = false
+	m.scanBusy = false
+	m.currentScan = nil
+	m.lastScan = nil
+	m.scanLogOffset = 0
+	m.authStage = authCredentials
+	m.authFocus = 0
+	m.screen = screenAuth
+	m.emailInput.SetValue("")
+	m.passwordInput.SetValue("")
+	m.codeInput.SetValue("")
+	m.syncAuthFocus()
 }
 
 func (m *Model) prevScreen() {
@@ -824,15 +893,40 @@ func (m *Model) pinScanLogToLatest(scan *api.DesktopScan) {
 	m.scanLogOffset = maxOffset
 }
 
+func (m *Model) scrollHistory(delta int) {
+	entries := m.historyEntries()
+	maxOffset := len(entries) - m.historyViewportHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.historyOffset = clamp(m.historyOffset+delta, 0, maxOffset)
+}
+
+func (m *Model) clampScrollOffsets() {
+	logEntries := m.scanLogEntries(m.scanForDisplay())
+	maxScanOffset := len(logEntries) - m.scanLogViewportHeight()
+	if maxScanOffset < 0 {
+		maxScanOffset = 0
+	}
+	m.scanLogOffset = clamp(m.scanLogOffset, 0, maxScanOffset)
+
+	historyEntries := m.historyEntries()
+	maxHistoryOffset := len(historyEntries) - m.historyViewportHeight()
+	if maxHistoryOffset < 0 {
+		maxHistoryOffset = 0
+	}
+	m.historyOffset = clamp(m.historyOffset, 0, maxHistoryOffset)
+}
+
 func (m Model) scanPanelHeight() int {
 	if m.height == 0 {
-		return 22
+		return 18
 	}
-	return clamp(m.height-12, 16, 30)
+	return clamp(m.height-12, 8, 24)
 }
 
 func (m Model) scanPanelWidths(width int) (int, int) {
-	if width < 96 {
+	if shouldStackColumns(width) {
 		return width, width
 	}
 	left := clamp(width/3, 32, 40)
@@ -841,8 +935,8 @@ func (m Model) scanPanelWidths(width int) (int, int) {
 
 func (m Model) scanLogViewportHeight() int {
 	height := m.scanPanelHeight() - 7
-	if height < 5 {
-		return 5
+	if height < 3 {
+		return 3
 	}
 	return height
 }
@@ -1037,6 +1131,70 @@ func (m Model) scanLogEntries(scan *api.DesktopScan) []string {
 	return lines
 }
 
+func (m Model) historyEntries() []string {
+	lines := []string{sectionTitle("История")}
+	if m.lastScan == nil {
+		lines = append(lines, "Пока пусто. После первой проверки здесь останется её итог.")
+		if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
+			lines = append(lines, "", status)
+		}
+		return lines
+	}
+
+	lines = append(lines,
+		fmt.Sprintf("Проверка: %s", normalizeScanStatus(m.lastScan.Status)),
+		fmt.Sprintf("Вердикт: %s", normalizeVerdict(m.lastScan.Verdict)),
+		fmt.Sprintf("Риск: %d/100", m.lastScan.RiskScore),
+		fmt.Sprintf("Найдено: %d", m.lastScan.SurfacedFindings),
+	)
+	if m.lastScan.Message != "" {
+		lines = append(lines, "", shortText(m.lastScan.Message, maxHistoryTextWidth(m.width)))
+	}
+	if len(m.lastScan.Findings) > 0 {
+		lines = append(lines, "", sectionTitle("Что нашли"))
+		for _, finding := range m.lastScan.Findings {
+			line := fmt.Sprintf("• %s — %s", finding.Title, normalizeVerdict(finding.Verdict))
+			if summary := strings.TrimSpace(finding.Summary); summary != "" {
+				line += ": " + shortText(summary, maxHistoryTextWidth(m.width)-20)
+			}
+			lines = append(lines, line)
+		}
+	}
+	if len(m.lastScan.Timeline) > 0 {
+		lines = append(lines, "", sectionTitle("Таймлайн"))
+		for _, stage := range m.lastScan.Timeline {
+			lines = append(lines, "• "+shortText(stage, maxHistoryTextWidth(m.width)))
+		}
+	}
+	if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
+		lines = append(lines, "", status)
+	}
+	return lines
+}
+
+func (m Model) historyViewportHeight() int {
+	if m.height == 0 {
+		return 14
+	}
+	return clamp(m.height-10, 6, 22)
+}
+
+func (m Model) historyBounds(entries []string) (int, int) {
+	if len(entries) == 0 {
+		return 0, 0
+	}
+	maxOffset := len(entries) - m.historyViewportHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := clamp(m.historyOffset, 0, maxOffset)
+	end := offset + m.historyViewportHeight()
+	if end > len(entries) {
+		end = len(entries)
+	}
+	return offset, end
+}
+
 func (m Model) sessionToken() string {
 	if m.session == nil {
 		return ""
@@ -1100,6 +1258,15 @@ func tickCmd(lowMotion bool) tea.Cmd {
 func startHostScanCmd(client *api.Client, token string) tea.Cmd {
 	artifact := buildLinuxHostArtifact()
 	return func() tea.Msg {
+		logging.Event(
+			"scan",
+			"start payload package_manager=%s roots=%d installs=%d candidates=%d packages=%d",
+			stringValue(artifact["package_manager"]),
+			len(asStringSlice(artifact["scan_roots"])),
+			len(asStringSlice(artifact["install_roots"])),
+			len(asStringSlice(artifact["candidate_paths"])),
+			len(asStringSlice(artifact["package_inventory"])),
+		)
 		response, err := client.StartDesktopScan(token, "LINUX", "FULL", artifact)
 		if err != nil {
 			return scanStartedMsg{err: err}
@@ -1113,6 +1280,7 @@ func startHostScanCmd(client *api.Client, token string) tea.Cmd {
 
 func pollScanCmd(client *api.Client, token string, id string) tea.Cmd {
 	return tea.Tick(2500*time.Millisecond, func(time.Time) tea.Msg {
+		logging.Event("scan", "poll requested id=%s", id)
 		response, err := client.GetDesktopScan(token, id)
 		if err != nil {
 			return scanPolledMsg{err: err}
@@ -1126,6 +1294,7 @@ func pollScanCmd(client *api.Client, token string, id string) tea.Cmd {
 
 func cancelScanCmd(client *api.Client, token string) tea.Cmd {
 	return func() tea.Msg {
+		logging.Event("cancel", "cancel active requested")
 		_, err := client.CancelDesktopScan(token)
 		return scanCancelledMsg{err: err}
 	}
@@ -1141,8 +1310,8 @@ func buildLinuxHostArtifact() map[string]any {
 	desktop := DetectDesktopSession()
 	installRoots := detectLinuxInstallRoots()
 	scanRoots := detectLinuxScanRoots(installRoots)
-	packageInventory := detectLinuxPackageInventory(packageManager, 192)
-	candidatePaths := detectLinuxCandidatePaths(scanRoots, 160)
+	packageInventory := detectLinuxPackageInventory(packageManager, 72)
+	candidatePaths := detectLinuxCandidatePaths(scanRoots, 72)
 	packageSources := []string{}
 	if packageManager != "не найден" {
 		packageSources = append(packageSources, packageManager)
@@ -1502,10 +1671,14 @@ func renderAmbient(width, frame int, lowMotion bool) string {
 		}
 	}
 	line := frames[frame%len(frames)]
-	if width < 20 {
-		return line
+	if width <= 0 {
+		return ""
 	}
-	return lipgloss.NewStyle().Foreground(colorAccentSoft()).Width(width - 4).Render(repeatToWidth(line, width-4))
+	innerWidth := width
+	if width > 4 {
+		innerWidth = width - 4
+	}
+	return lipgloss.NewStyle().Foreground(colorAccentSoft()).Width(innerWidth).Render(repeatToWidth(line, innerWidth))
 }
 
 func renderActivityLine(frame int, lowMotion, active bool) string {
@@ -1568,7 +1741,7 @@ func renderScanPulse(frame int, lowMotion, active bool) string {
 }
 
 func renderProgressBar(width, percent int) string {
-	segments := clamp(width, 12, 40)
+	segments := clamp(width, 6, 40)
 	filled := percent * segments / 100
 	if filled < 0 {
 		filled = 0
@@ -1584,7 +1757,7 @@ func renderProgressBar(width, percent int) string {
 }
 
 func renderLogEntry(text string, width int) string {
-	content := shortText(strings.TrimSpace(text), clamp(width, 24, 120))
+	content := shortText(strings.TrimSpace(text), clamp(width, 8, 120))
 	return lipgloss.NewStyle().Foreground(colorMuted()).Render("• " + content)
 }
 
@@ -1609,7 +1782,7 @@ func sectionTitle(text string) string {
 }
 
 func joinColumns(width int, left, right string) string {
-	if width < 92 {
+	if shouldStackColumns(width) {
 		return strings.Join([]string{left, right}, "\n\n")
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
@@ -1620,7 +1793,7 @@ func cardStyle(width int) lipgloss.Style {
 }
 
 func columnWidth(total int) int {
-	if total < 92 {
+	if shouldStackColumns(total) {
 		return total
 	}
 	return (total - 2) / 2
@@ -1646,7 +1819,7 @@ func newInput(prompt, placeholder string, secret bool) textinput.Model {
 	input.Prompt = ""
 	input.Placeholder = placeholder
 	input.CharLimit = 256
-	input.Width = 42
+	input.Width = 32
 	input.EchoMode = textinput.EchoNormal
 	if secret {
 		input.EchoMode = textinput.EchoPassword
@@ -1657,6 +1830,67 @@ func newInput(prompt, placeholder string, secret bool) textinput.Model {
 	input.PlaceholderStyle = lipgloss.NewStyle().Foreground(colorMuted())
 	_ = prompt
 	return input
+}
+
+func (m *Model) syncInputWidths() {
+	width := 32
+	if m.width > 0 {
+		contentWidth := shellContentWidth(m.width)
+		width = contentWidth - 8
+		if !shouldStackColumns(contentWidth) {
+			width = columnWidth(contentWidth) - 8
+		}
+		if width < 8 {
+			width = contentWidth - 4
+		}
+	}
+	width = clamp(width, 6, 56)
+	m.emailInput.Width = width
+	m.passwordInput.Width = width
+	m.codeInput.Width = width
+}
+
+func shellHorizontalPadding(total int) int {
+	switch {
+	case total < 52:
+		return 0
+	case total < 80:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func shellContentWidth(total int) int {
+	if total <= 0 {
+		return 72
+	}
+	width := total - shellHorizontalPadding(total)*2
+	if width > 112 {
+		width = 112
+	}
+	if width < 12 {
+		width = total
+		if width < 10 {
+			width = 10
+		}
+	}
+	return width
+}
+
+func shouldStackColumns(width int) bool {
+	return width < 104
+}
+
+func maxHistoryTextWidth(totalWidth int) int {
+	if totalWidth <= 0 {
+		return 88
+	}
+	content := shellContentWidth(totalWidth)
+	if content < 32 {
+		return 28
+	}
+	return content - 8
 }
 
 func colorAccent() lipgloss.Color      { return lipgloss.Color("75") }
@@ -1684,6 +1918,31 @@ func repeatToWidth(pattern string, width int) string {
 	return result
 }
 
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func asStringSlice(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text := stringValue(item)
+			if text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
 func shortText(text string, max int) string {
 	value := strings.TrimSpace(text)
 	runes := []rune(value)
@@ -1704,6 +1963,13 @@ func clamp(value, low, high int) int {
 		return high
 	}
 	return value
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (m Model) scanOptionCount() int {

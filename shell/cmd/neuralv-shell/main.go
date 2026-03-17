@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/perdonus/neuralv-shell/internal/api"
 	"github.com/perdonus/neuralv-shell/internal/app"
+	"github.com/perdonus/neuralv-shell/internal/logging"
 	"github.com/perdonus/neuralv-shell/internal/session"
 )
 
@@ -93,6 +94,7 @@ type authCompletedMsg struct {
 }
 
 type authAdvanceMsg struct{}
+type authTickMsg time.Time
 
 type authModel struct {
 	client    *api.Client
@@ -109,6 +111,7 @@ type authModel struct {
 	session    *session.Session
 	status     string
 	statusTone authTone
+	frame      int
 
 	emailInput    textinput.Model
 	passwordInput textinput.Model
@@ -117,37 +120,61 @@ type authModel struct {
 }
 
 func main() {
+	if logPath, err := logging.Init("neuralv-shell"); err != nil {
+		fmt.Fprintf(os.Stderr, "neuralv: не удалось открыть log.txt: %v\n", err)
+	} else {
+		defer func() {
+			if err := logging.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "neuralv: не удалось закрыть log.txt: %v\n", err)
+			}
+		}()
+		logging.Event("startup", "launch version=%s args=%q log=%s", cliVersion, os.Args[1:], logPath)
+	}
+
 	_, opts, handled := handleCLI(os.Args[1:])
 	if handled {
+		logging.Event("startup", "launch handled by cli shortcut")
 		return
 	}
 
 	store, err := session.NewStore()
 	if err != nil {
+		logging.Error("store init failed: %v", err)
 		log.Fatal(err)
 	}
 	client := api.NewClient(resolveBaseURL())
+	logging.Event("startup", "base_url=%s low_motion=%t", client.BaseURL(), opts.LowMotion)
 
 	saved, err := store.Load()
 	if err != nil {
+		logging.Error("session load failed: %v", err)
 		log.Fatal(err)
 	}
 	if saved == nil {
+		logging.Event("auth", "no active session; opening auth flow")
 		authProgram := tea.NewProgram(newAuthModel(client, store, opts), tea.WithAltScreen())
 		finalModel, err := authProgram.Run()
 		if err != nil {
+			logging.Error("auth program crashed: %v", err)
 			log.Fatal(err)
 		}
 		authResult, ok := finalModel.(*authModel)
 		if !ok || authResult.session == nil {
+			logging.Event("auth", "auth flow closed without session")
 			return
 		}
+		logging.Event("auth", "session established for %s", authResult.session.Email)
+	} else {
+		logging.Event("startup", "restored session for %s", saved.Email)
 	}
 
+	logging.Event("startup", "launching main tui")
 	program := tea.NewProgram(app.NewModel(client, store, opts), tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
+		logging.Error("main tui crashed: %v", err)
 		log.Fatal(err)
 	}
+	logging.Event("startup", "tui stopped normally")
 }
 
 func resolveBaseURL() string {
@@ -265,25 +292,35 @@ func newAuthModel(client *api.Client, store *session.Store, opts app.Options) *a
 		codeInput:      codeInput,
 	}
 	m.syncFocus()
+	m.syncInputWidths()
 	return m
 }
 
 func (m *authModel) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, authTickCmd(m.lowMotion))
 }
 
 func (m *authModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if msg.Width != m.width || msg.Height != m.height {
+			logging.Event("resize", "auth viewport=%dx%d", msg.Width, msg.Height)
+		}
 		m.width, m.height = msg.Width, msg.Height
+		m.syncInputWidths()
 		return m, nil
+	case authTickMsg:
+		m.frame++
+		return m, authTickCmd(m.lowMotion)
 	case authStartedMsg:
 		m.busy = false
 		if msg.err != nil {
+			logging.Error("auth start failed: %v", msg.err)
 			m.setStatus(msg.err.Error(), authToneError)
 			return m, nil
 		}
 		if msg.challenge == nil || strings.TrimSpace(msg.challenge.ChallengeID) == "" {
+			logging.Error("auth start returned empty challenge")
 			m.setStatus("сервер не вернул код подтверждения", authToneError)
 			return m, nil
 		}
@@ -295,11 +332,13 @@ func (m *authModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.step = authStepLoginCode
 		}
 		m.syncFocus()
+		logging.Event("auth", "challenge created mode=%d challenge=%s", m.mode, msg.challenge.ChallengeID)
 		m.setStatus("Код отправлен", authToneSuccess)
 		return m, nil
 	case authCompletedMsg:
 		m.busy = false
 		if msg.err != nil {
+			logging.Error("auth verify failed: %v", msg.err)
 			m.setStatus(msg.err.Error(), authToneError)
 			return m, nil
 		}
@@ -310,6 +349,9 @@ func (m *authModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("Регистрация завершена", authToneSuccess)
 		} else {
 			m.setStatus("Вход выполнен", authToneSuccess)
+		}
+		if msg.session != nil {
+			logging.Event("auth", "session saved mode=%d email=%s", msg.mode, msg.session.Email)
 		}
 		return m, authAdvanceCmd(m.lowMotion)
 	case authAdvanceMsg:
@@ -400,6 +442,7 @@ func (m *authModel) submitCurrentStep() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.busy = true
+		logging.Event("auth", "requesting login challenge for %s", normalizeAuthEmail(m.emailInput.Value()))
 		m.setStatus("Отправляем код", authToneInfo)
 		return m, startLoginCmd(m.client, m.emailInput.Value(), m.passwordInput.Value())
 	case authStepLoginCode:
@@ -409,6 +452,7 @@ func (m *authModel) submitCurrentStep() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.busy = true
+		logging.Event("auth", "verifying login code for %s", normalizeAuthEmail(m.emailInput.Value()))
 		m.setStatus("Проверяем код", authToneInfo)
 		return m, verifyLoginCmd(m.client, m.store, m.challenge, m.emailInput.Value(), code)
 	case authStepRegisterEmail:
@@ -444,6 +488,7 @@ func (m *authModel) submitCurrentStep() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.busy = true
+		logging.Event("auth", "requesting register challenge for %s", normalizeAuthEmail(m.emailInput.Value()))
 		m.setStatus("Отправляем код", authToneInfo)
 		return m, startRegisterCmd(m.client, m.emailInput.Value(), password)
 	case authStepRegisterCode:
@@ -453,6 +498,7 @@ func (m *authModel) submitCurrentStep() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.busy = true
+		logging.Event("auth", "verifying register code for %s", normalizeAuthEmail(m.emailInput.Value()))
 		m.setStatus("Проверяем код", authToneInfo)
 		return m, verifyRegisterCmd(m.client, m.store, m.challenge, code)
 	default:
@@ -511,10 +557,7 @@ func (m *authModel) View() string {
 	if width == 0 {
 		width = 80
 	}
-	bodyWidth := width - 8
-	if bodyWidth < 42 {
-		bodyWidth = 42
-	}
+	bodyWidth := authContentWidth(width)
 	if bodyWidth > 72 {
 		bodyWidth = 72
 	}
@@ -562,7 +605,11 @@ func (m *authModel) View() string {
 	}
 
 	content := card.Render(strings.Join(lines, "\n"))
-	return lipgloss.Place(width, max(10, m.height), lipgloss.Center, lipgloss.Center, content)
+	stack := strings.Join([]string{
+		lipgloss.NewStyle().Width(bodyWidth).Align(lipgloss.Center).Render(renderAuthAmbient(bodyWidth, m.frame, m.lowMotion)),
+		content,
+	}, "\n\n")
+	return lipgloss.Place(width, max(10, m.height), lipgloss.Center, lipgloss.Center, stack)
 }
 
 func (m *authModel) renderFieldScreen(titleStyle, dimStyle lipgloss.Style, title, label, value string) []string {
@@ -584,7 +631,7 @@ func newAuthInput(placeholder string, secret bool) textinput.Model {
 	input.Prompt = ""
 	input.Placeholder = placeholder
 	input.CharLimit = 256
-	input.Width = 42
+	input.Width = 32
 	input.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	input.PlaceholderStyle = lipgloss.NewStyle().Foreground(authMutedColor())
 	if secret {
@@ -592,6 +639,62 @@ func newAuthInput(placeholder string, secret bool) textinput.Model {
 		input.EchoCharacter = '*'
 	}
 	return input
+}
+
+func (m *authModel) syncInputWidths() {
+	width := authContentWidth(m.width) - 8
+	if width <= 0 {
+		width = 32
+	}
+	if width < 8 {
+		width = authContentWidth(m.width) - 4
+	}
+	width = max(width, 6)
+	m.emailInput.Width = width
+	m.passwordInput.Width = width
+	m.repeatInput.Width = width
+	m.codeInput.Width = width
+}
+
+func authContentWidth(total int) int {
+	if total <= 0 {
+		return 48
+	}
+	width := total - 8
+	switch {
+	case total < 44:
+		width = total - 2
+	case total < 60:
+		width = total - 4
+	}
+	if width < 20 {
+		width = total - 2
+		if width < 10 {
+			width = 10
+		}
+	}
+	return width
+}
+
+func renderAuthAmbient(width, frame int, lowMotion bool) string {
+	if width <= 0 {
+		return ""
+	}
+	frames := []string{
+		"···  •••  ···  •••  ···",
+		"··  •••  ···  •••  ··· ",
+		"·  •••  ···  •••  ···  •",
+		"  •••  ···  •••  ···  ••",
+	}
+	if !lowMotion {
+		frames = []string{
+			"·  ○  ·  •  ·  ○  ·  •",
+			"○  ·  •  ·  ○  ·  •  ·",
+			"·  •  ·  ○  ·  •  ·  ○",
+			"•  ·  ○  ·  •  ·  ○  ·",
+		}
+	}
+	return lipgloss.NewStyle().Foreground(authMutedColor()).Render(repeatToWidth(frames[frame%len(frames)], width))
 }
 
 func startLoginCmd(client *api.Client, email, password string) tea.Cmd {
@@ -805,6 +908,16 @@ func authAdvanceCmd(lowMotion bool) tea.Cmd {
 	})
 }
 
+func authTickCmd(lowMotion bool) tea.Cmd {
+	delay := 180 * time.Millisecond
+	if lowMotion {
+		delay = 850 * time.Millisecond
+	}
+	return tea.Tick(delay, func(t time.Time) tea.Msg {
+		return authTickMsg(t)
+	})
+}
+
 func authAccentColor() lipgloss.Color {
 	return lipgloss.Color("75")
 }
@@ -835,6 +948,21 @@ func authStatusStyle(tone authTone) lipgloss.Style {
 	default:
 		return style
 	}
+}
+
+func repeatToWidth(pattern string, width int) string {
+	if width <= 0 || pattern == "" {
+		return ""
+	}
+	var builder strings.Builder
+	for builder.Len() < width {
+		builder.WriteString(pattern)
+	}
+	result := builder.String()
+	if len(result) > width {
+		return result[:width]
+	}
+	return result
 }
 
 func max(a, b int) int {

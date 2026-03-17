@@ -207,7 +207,6 @@ function fallbackArtifacts() {
                 artifactPlatform: 'windows',
                 desktopTrack: 'windows',
                 version_source: 'versions/windows.txt',
-                payloadRootPath: 'windows/NeuralV/',
                 portableArtifactPath: 'windows/neuralv-windows.zip',
                 setupArtifactPath: 'windows/neuralv-setup.exe',
                 stablePortableArtifactPath: 'windows/neuralv-windows.zip',

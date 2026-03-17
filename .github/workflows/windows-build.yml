@@ -260,9 +260,6 @@ jobs:
           test -n "$semver"
           rm -rf publish-windows
           mkdir -p publish-windows/windows publish-windows/install
-          if [ -d stage/windows/NeuralV ]; then
-            cp -R stage/windows/NeuralV publish-windows/windows/NeuralV
-          fi
           cp stage/windows/neuralv-windows.zip "publish-windows/windows/neuralv-windows-${semver}.zip"
           cp stage/windows/neuralv-windows.zip publish-windows/windows/neuralv-windows.zip
           cp stage/windows/neuralv-setup.exe "publish-windows/windows/neuralv-setup-${semver}.exe"
@@ -299,10 +296,8 @@ jobs:
                       "notes": ["WinUI Windows portable archive."],
                       "metadata": {
                           "setupUrl": f"{os.environ['RAW_BASE']}/windows/neuralv-setup.exe",
-                          "payloadRootPath": "windows/NeuralV/",
                           "bundledComponents": ["gui", "cli"],
                           "cliBinaryName": "neuralv-cmd.exe",
-                          "cliArtifactPath": "windows/NeuralV/neuralv-cmd.exe",
                           "portableArtifactPath": "windows/neuralv-windows.zip",
                           "setupArtifactPath": "windows/neuralv-setup.exe",
                           "versionedPortableArtifactPath": f"windows/neuralv-windows-{os.environ['SEMVER']}.zip",

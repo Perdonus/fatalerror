@@ -19,7 +19,7 @@ namespace NeuralV.Windows;
 public sealed partial class MainWindow : Window
 {
     private readonly NeuralVApiClient _apiClient = new();
-    private readonly string _deviceId = SessionStore.EnsureDeviceId();
+    private readonly string _deviceId;
     private readonly ObservableCollection<string> _homeTimeline = new();
     private readonly ObservableCollection<string> _scanTimeline = new();
     private readonly ObservableCollection<string> _historyItems = new();
@@ -108,6 +108,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            _deviceId = EnsureDeviceIdSafe();
             Content = WindowRoot;
             WindowRoot.Loaded += OnRootLoaded;
             WindowRoot.Background = ThemeBrush("AppBackgroundBrush");
@@ -130,6 +131,19 @@ public sealed partial class MainWindow : Window
         {
             WindowsLog.Error("MainWindow ctor failed", ex);
             throw;
+        }
+    }
+
+    private static string EnsureDeviceIdSafe()
+    {
+        try
+        {
+            return SessionStore.EnsureDeviceId();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Device id bootstrap failed, using ephemeral id", ex);
+            return Guid.NewGuid().ToString("D");
         }
     }
 

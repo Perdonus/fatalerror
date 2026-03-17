@@ -9,192 +9,140 @@
 
     <Grid x:Name="WindowRoot" Background="{ThemeResource AppBackgroundBrush}" Loaded="OnRootLoaded">
         <Grid.Resources>
-            <Storyboard x:Key="AmbientMotionStoryboard" RepeatBehavior="Forever" AutoReverse="True">
-                <DoubleAnimation Storyboard.TargetName="FabricLayerATransform" Storyboard.TargetProperty="TranslateX" Duration="0:0:24" To="70" />
-                <DoubleAnimation Storyboard.TargetName="FabricLayerATransform" Storyboard.TargetProperty="TranslateY" Duration="0:0:28" To="-24" />
-                <DoubleAnimation Storyboard.TargetName="FabricLayerBTransform" Storyboard.TargetProperty="TranslateX" Duration="0:0:30" To="-92" />
-                <DoubleAnimation Storyboard.TargetName="FabricLayerBTransform" Storyboard.TargetProperty="TranslateY" Duration="0:0:26" To="38" />
-                <DoubleAnimation Storyboard.TargetName="FabricLayerCTransform" Storyboard.TargetProperty="TranslateX" Duration="0:0:27" To="58" />
-                <DoubleAnimation Storyboard.TargetName="FabricLayerCTransform" Storyboard.TargetProperty="TranslateY" Duration="0:0:22" To="66" />
-                <DoubleAnimation Storyboard.TargetName="GlowATransform" Storyboard.TargetProperty="TranslateX" Duration="0:0:18" To="105" />
-                <DoubleAnimation Storyboard.TargetName="GlowATransform" Storyboard.TargetProperty="TranslateY" Duration="0:0:16" To="-36" />
-                <DoubleAnimation Storyboard.TargetName="GlowBTransform" Storyboard.TargetProperty="TranslateX" Duration="0:0:21" To="-122" />
-                <DoubleAnimation Storyboard.TargetName="GlowBTransform" Storyboard.TargetProperty="TranslateY" Duration="0:0:17" To="80" />
-                <DoubleAnimation Storyboard.TargetName="GlowCTransform" Storyboard.TargetProperty="TranslateY" Duration="0:0:19" To="-84" />
-                <DoubleAnimation Storyboard.TargetName="GlowCTransform" Storyboard.TargetProperty="TranslateX" Duration="0:0:23" To="62" />
-            </Storyboard>
-
-            <Storyboard x:Key="DotLoadingStoryboard" RepeatBehavior="Forever">
-                <DoubleAnimation Storyboard.TargetName="SplashDot1Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.0" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot1Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.0" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot2Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.14" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot2Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.14" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot3Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.28" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot3Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.28" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot4Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.42" />
-                <DoubleAnimation Storyboard.TargetName="SplashDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.8" From="0.72" To="1.16" AutoReverse="True" BeginTime="0:0:0.42" />
-            </Storyboard>
-
-            <Storyboard x:Key="ScanDotLoadingStoryboard" RepeatBehavior="Forever">
-                <DoubleAnimation Storyboard.TargetName="ScanDot1Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot1Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot2Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot2Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot3Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot3Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot4Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
-                <DoubleAnimation Storyboard.TargetName="ScanDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
-                <DoubleAnimation Storyboard.TargetName="ScanHaloScale" Storyboard.TargetProperty="ScaleX" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
-                <DoubleAnimation Storyboard.TargetName="ScanHaloScale" Storyboard.TargetProperty="ScaleY" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
-            </Storyboard>
-
-            <Storyboard x:Key="BusyDotLoadingStoryboard" RepeatBehavior="Forever">
-                <DoubleAnimation Storyboard.TargetName="BusyDot1Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot1Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.0" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot2Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot2Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.16" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot3Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot3Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.32" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot4Scale" Storyboard.TargetProperty="ScaleX" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
-                <DoubleAnimation Storyboard.TargetName="BusyDot4Scale" Storyboard.TargetProperty="ScaleY" Duration="0:0:0.84" From="0.72" To="1.18" AutoReverse="True" BeginTime="0:0:0.48" />
-                <DoubleAnimation Storyboard.TargetName="BusyHaloScale" Storyboard.TargetProperty="ScaleX" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
-                <DoubleAnimation Storyboard.TargetName="BusyHaloScale" Storyboard.TargetProperty="ScaleY" Duration="0:0:1.8" From="0.96" To="1.05" AutoReverse="True" />
-            </Storyboard>
-
-            <Storyboard x:Key="SplashOrbitStoryboard" RepeatBehavior="Forever">
-                <DoubleAnimation Storyboard.TargetName="SplashOrbitRotate" Storyboard.TargetProperty="Angle" Duration="0:0:5.6" From="0" To="360" />
-                <DoubleAnimation Storyboard.TargetName="SplashHaloScale" Storyboard.TargetProperty="ScaleX" Duration="0:0:1.8" From="0.96" To="1.04" AutoReverse="True" />
-                <DoubleAnimation Storyboard.TargetName="SplashHaloScale" Storyboard.TargetProperty="ScaleY" Duration="0:0:1.8" From="0.96" To="1.04" AutoReverse="True" />
-            </Storyboard>
-
             <DataTemplate x:Key="TimelineItemTemplate">
-                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
-                    <Grid ColumnSpacing="14">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Border Width="10" Height="10" CornerRadius="5" Background="{ThemeResource AppAccentBrush}" VerticalAlignment="Top" Margin="0,7,0,0" />
-                        <TextBlock Grid.Column="1" Text="{Binding}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                    </Grid>
+                <Border
+                    Background="{ThemeResource AppSurfaceBrush}"
+                    BorderBrush="{ThemeResource AppOutlineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="18"
+                    Padding="14"
+                    Margin="0,0,0,10">
+                    <TextBlock Text="{Binding}" Foreground="{ThemeResource AppTextBrush}" TextWrapping="Wrap" />
                 </Border>
             </DataTemplate>
 
             <DataTemplate x:Key="HistoryItemTemplate">
-                <Border Style="{StaticResource SurfaceCardStyle}" Padding="18" Margin="0,0,0,12">
-                    <Grid ColumnSpacing="14">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Border Width="40" Height="40" CornerRadius="20" Background="{ThemeResource AppAccentSoftBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1">
-                            <TextBlock Text="NV" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" FontWeight="SemiBold" />
-                        </Border>
-                        <TextBlock Grid.Column="1" Text="{Binding}" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                    </Grid>
+                <Border
+                    Background="{ThemeResource AppSurfaceBrush}"
+                    BorderBrush="{ThemeResource AppOutlineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="18"
+                    Padding="14"
+                    Margin="0,0,0,10">
+                    <TextBlock Text="{Binding}" Foreground="{ThemeResource AppTextBrush}" TextWrapping="Wrap" />
                 </Border>
             </DataTemplate>
         </Grid.Resources>
 
         <Grid>
             <Rectangle x:Name="BackdropGradient" />
-
-            <Rectangle x:Name="FabricLayerA" Width="2400" Height="1500" Opacity="0.34" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="-260,-120,0,0" RenderTransformOrigin="0.5,0.5">
-                <Rectangle.RenderTransform>
-                    <CompositeTransform x:Name="FabricLayerATransform" Rotation="14" />
-                </Rectangle.RenderTransform>
-            </Rectangle>
-
-            <Rectangle x:Name="FabricLayerB" Width="2500" Height="1500" Opacity="0.28" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="140,0,0,-60" RenderTransformOrigin="0.5,0.5">
-                <Rectangle.RenderTransform>
-                    <CompositeTransform x:Name="FabricLayerBTransform" Rotation="-18" />
-                </Rectangle.RenderTransform>
-            </Rectangle>
-
-            <Rectangle x:Name="FabricLayerC" Width="2200" Height="1280" Opacity="0.18" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,60,-120,0" RenderTransformOrigin="0.5,0.5">
-                <Rectangle.RenderTransform>
-                    <CompositeTransform x:Name="FabricLayerCTransform" Rotation="34" />
-                </Rectangle.RenderTransform>
-            </Rectangle>
-
-            <Ellipse x:Name="GlowA" Width="760" Height="760" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-140,0,0" Opacity="0.56">
-                <Ellipse.RenderTransform>
-                    <CompositeTransform x:Name="GlowATransform" />
-                </Ellipse.RenderTransform>
-            </Ellipse>
-
-            <Ellipse x:Name="GlowB" Width="880" Height="880" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-220,-220" Opacity="0.44">
-                <Ellipse.RenderTransform>
-                    <CompositeTransform x:Name="GlowBTransform" />
-                </Ellipse.RenderTransform>
-            </Ellipse>
-
-            <Ellipse x:Name="GlowC" Width="620" Height="620" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-250" Opacity="0.30">
-                <Ellipse.RenderTransform>
-                    <CompositeTransform x:Name="GlowCTransform" />
-                </Ellipse.RenderTransform>
-            </Ellipse>
-
-            <Rectangle>
-                <Rectangle.Fill>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                        <GradientStop Color="#24000000" Offset="0.0" />
-                        <GradientStop Color="#00000000" Offset="0.45" />
-                        <GradientStop Color="#36000000" Offset="1.0" />
-                    </LinearGradientBrush>
-                </Rectangle.Fill>
-            </Rectangle>
+            <Rectangle x:Name="FabricLayerA" Width="1800" Height="920" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-280,-180,0,0" Opacity="0.18" />
+            <Rectangle x:Name="FabricLayerB" Width="1700" Height="960" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-120,-220,0" Opacity="0.14" />
+            <Rectangle x:Name="FabricLayerC" Width="1650" Height="940" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-260" Opacity="0.10" />
+            <Ellipse x:Name="GlowA" Width="560" Height="560" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-120,-80,0,0" Opacity="0.28" />
+            <Ellipse x:Name="GlowB" Width="700" Height="700" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-180,-180" Opacity="0.22" />
+            <Ellipse x:Name="GlowC" Width="460" Height="460" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,-150" Opacity="0.16" />
         </Grid>
 
         <Grid x:Name="ShellFrame" Padding="24">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="RailColumn" Width="336" />
+                <ColumnDefinition x:Name="RailColumn" Width="320" />
                 <ColumnDefinition x:Name="GutterColumn" Width="20" />
                 <ColumnDefinition x:Name="ContentColumn" Width="*" />
             </Grid.ColumnDefinitions>
 
-            <Border x:Name="RailPanel" Grid.Column="0" Style="{StaticResource GlassPanelStyle}" CornerRadius="36" Padding="22">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="22">
-                        <StackPanel Spacing="18">
-                            <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Top">
-                                <Border Width="66" Height="66" CornerRadius="22" Background="{ThemeResource AppSurfaceStrongBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1">
-                                    <Image Source="ms-appx:///Assets/NeuralV.png" Stretch="Uniform" Margin="12" />
-                                </Border>
-                                <StackPanel Spacing="4" VerticalAlignment="Center">
-                                    <TextBlock Text="NeuralV" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="Нативный Windows-клиент" Style="{StaticResource CaptionTextStyle}" />
-                                </StackPanel>
-                            </StackPanel>
-
-                            <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Left">
-                                <TextBlock x:Name="RailBadgeText" Style="{StaticResource HeroEyebrowStyle}" />
+            <Border
+                x:Name="RailPanel"
+                Grid.Column="0"
+                Background="{ThemeResource AppSurfaceStrongBrush}"
+                BorderBrush="{ThemeResource AppOutlineBrush}"
+                BorderThickness="1"
+                CornerRadius="28"
+                Padding="20">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="64"
+                                Height="64"
+                                CornerRadius="18"
+                                Background="{ThemeResource AppSurfaceHighBrush}"
+                                BorderBrush="{ThemeResource AppOutlineBrush}"
+                                BorderThickness="1"
+                                Margin="0,0,12,0">
+                                <Image Source="ms-appx:///Assets/NeuralV.png" Stretch="Uniform" Margin="12" />
                             </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="NeuralV" Foreground="{ThemeResource AppTextBrush}" FontSize="28" FontWeight="SemiBold" />
+                                <TextBlock Text="Windows-клиент" Foreground="{ThemeResource AppMutedTextBrush}" />
+                            </StackPanel>
+                        </Grid>
 
-                            <TextBlock x:Name="RailHeadlineText" Style="{StaticResource HeroTitleStyle}" FontSize="38" />
-                            <TextBlock x:Name="RailDescriptionText" Style="{StaticResource BodyTextStyle}" />
-                        </StackPanel>
+                        <Border
+                            Background="{ThemeResource AppSecondaryContainerBrush}"
+                            BorderBrush="{ThemeResource AppOutlineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="16"
+                            Padding="10,6"
+                            HorizontalAlignment="Left"
+                            Margin="0,0,0,12">
+                            <TextBlock x:Name="RailBadgeText" Foreground="{ThemeResource AppTextBrush}" />
+                        </Border>
 
-                        <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                            <StackPanel Spacing="16">
-                                <TextBlock Text="Палитра" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                <TextBlock x:Name="PaletteSourceLabel" Style="{StaticResource BodyTextStyle}" />
-                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <Border x:Name="PaletteSwatchPrimary" Width="56" Height="56" CornerRadius="18" />
-                                    <Border x:Name="PaletteSwatchSecondary" Width="56" Height="56" CornerRadius="18" />
-                                    <Border x:Name="PaletteSwatchTertiary" Width="56" Height="56" CornerRadius="18" />
+                        <TextBlock
+                            x:Name="RailHeadlineText"
+                            Foreground="{ThemeResource AppTextBrush}"
+                            FontSize="30"
+                            FontWeight="SemiBold"
+                            TextWrapping="Wrap"
+                            Margin="0,0,0,8" />
+                        <TextBlock
+                            x:Name="RailDescriptionText"
+                            Foreground="{ThemeResource AppMutedTextBrush}"
+                            TextWrapping="Wrap"
+                            Margin="0,0,0,18" />
+
+                        <Border
+                            Background="{ThemeResource AppSurfaceBrush}"
+                            BorderBrush="{ThemeResource AppOutlineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="22"
+                            Padding="18"
+                            Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Палитра" Foreground="{ThemeResource AppTextBrush}" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="PaletteSourceLabel" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Border x:Name="PaletteSwatchPrimary" Width="48" Height="48" CornerRadius="14" Margin="0,0,10,0" />
+                                    <Border x:Name="PaletteSwatchSecondary" Width="48" Height="48" CornerRadius="14" Margin="0,0,10,0" />
+                                    <Border x:Name="PaletteSwatchTertiary" Width="48" Height="48" CornerRadius="14" />
                                 </StackPanel>
-                                <TextBlock x:Name="PaletteSeedLabel" Style="{StaticResource CaptionTextStyle}" />
+                                <TextBlock x:Name="PaletteSeedLabel" Foreground="{ThemeResource AppSubtleTextBrush}" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource SurfaceCardStyle}">
-                            <StackPanel Spacing="14">
-                                <TextBlock Text="Аккаунт" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                <TextBlock x:Name="RailUserNameText" Style="{StaticResource ValueTextStyle}" />
-                                <TextBlock x:Name="RailUserMetaText" Style="{StaticResource BodyTextStyle}" />
-                                <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Left">
-                                    <TextBlock x:Name="RailUserStateText" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                        <Border
+                            Background="{ThemeResource AppSurfaceBrush}"
+                            BorderBrush="{ThemeResource AppOutlineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="22"
+                            Padding="18">
+                            <StackPanel>
+                                <TextBlock Text="Аккаунт" Foreground="{ThemeResource AppTextBrush}" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="RailUserNameText" Foreground="{ThemeResource AppTextBrush}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <TextBlock x:Name="RailUserMetaText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
+                                <Border
+                                    Background="{ThemeResource AppSecondaryContainerBrush}"
+                                    BorderBrush="{ThemeResource AppOutlineBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="16"
+                                    Padding="10,6"
+                                    HorizontalAlignment="Left">
+                                    <TextBlock x:Name="RailUserStateText" Foreground="{ThemeResource AppTextBrush}" />
                                 </Border>
                             </StackPanel>
                         </Border>
@@ -216,20 +164,24 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Style="{StaticResource MiniPillStyle}" Margin="0,0,12,0">
-                        <TextBlock x:Name="ThemeModeLabel" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                    <Border Background="{ThemeResource AppSecondaryContainerBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="14" Padding="12,8" Margin="0,0,12,0">
+                        <TextBlock x:Name="ThemeModeLabel" Foreground="{ThemeResource AppTextBrush}" />
                     </Border>
-
-                    <Border Grid.Column="1" Style="{StaticResource MiniPillStyle}" Margin="0,0,12,0">
-                        <TextBlock x:Name="PaletteModeHeaderLabel" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                    <Border Grid.Column="1" Background="{ThemeResource AppSecondaryContainerBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="14" Padding="12,8" Margin="0,0,12,0">
+                        <TextBlock x:Name="PaletteModeHeaderLabel" Foreground="{ThemeResource AppTextBrush}" />
                     </Border>
-
-                    <Border Grid.Column="3" Style="{StaticResource MiniPillStyle}">
-                        <TextBlock x:Name="VersionLabel" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                    <Border Grid.Column="3" Background="{ThemeResource AppSecondaryContainerBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="14" Padding="12,8">
+                        <TextBlock x:Name="VersionLabel" Foreground="{ThemeResource AppTextBrush}" />
                     </Border>
                 </Grid>
 
-                <Border Grid.Row="1" Style="{StaticResource GlassPanelStyle}" CornerRadius="40" Padding="28">
+                <Border
+                    Grid.Row="1"
+                    Background="{ThemeResource AppSurfaceStrongBrush}"
+                    BorderBrush="{ThemeResource AppOutlineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="28"
+                    Padding="22">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -237,520 +189,191 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" x:Name="AppNavigationBar" Visibility="Collapsed" Margin="0,0,0,20">
+                        <Grid x:Name="AppNavigationBar" Grid.Row="0" Visibility="Collapsed" Margin="0,0,0,18">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <Button x:Name="HomeNavButton" Content="Обзор" Click="OnHomeClick" Style="{StaticResource NavTabButtonStyle}" MinWidth="144" />
-                                <Button x:Name="HistoryNavButton" Content="История" Click="OnHistoryClick" Style="{StaticResource NavTabButtonStyle}" MinWidth="144" />
-                                <Button x:Name="SettingsNavButton" Content="Настройки" Click="OnSettingsClick" Style="{StaticResource NavTabButtonStyle}" MinWidth="144" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="HomeNavButton" Content="Обзор" Click="OnHomeClick" Margin="0,0,10,0" />
+                                <Button x:Name="HistoryNavButton" Content="История" Click="OnHistoryClick" Margin="0,0,10,0" />
+                                <Button x:Name="SettingsNavButton" Content="Настройки" Click="OnSettingsClick" />
                             </StackPanel>
-
-                            <Border Grid.Column="1" Style="{StaticResource MiniPillStyle}" Padding="14,10">
-                                <TextBlock x:Name="UserLabel" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                            <Border Grid.Column="1" Background="{ThemeResource AppSecondaryContainerBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="14" Padding="12,8">
+                                <TextBlock x:Name="UserLabel" Foreground="{ThemeResource AppTextBrush}" />
                             </Border>
                         </Grid>
 
-                        <Border Grid.Row="1"
-                                x:Name="StatusBanner"
-                                Visibility="Collapsed"
-                                Margin="0,0,0,18"
-                                Style="{StaticResource ElevatedSurfaceCardStyle}"
-                                Padding="16,14">
-                            <TextBlock x:Name="StatusBannerText" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
+                        <Border x:Name="StatusBanner" Grid.Row="1" Visibility="Collapsed" Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="14" Margin="0,0,0,16">
+                            <TextBlock x:Name="StatusBannerText" Foreground="{ThemeResource AppTextBrush}" TextWrapping="Wrap" />
                         </Border>
 
                         <Grid Grid.Row="2">
                             <Grid x:Name="SplashView">
-                                <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Border Style="{StaticResource AccentSurfaceCardStyle}" Padding="36" Width="560">
-                                        <StackPanel Spacing="22" HorizontalAlignment="Center">
-                                            <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Center">
-                                                <TextBlock Text="Windows · WinUI 3" Style="{StaticResource HeroEyebrowStyle}" />
-                                            </Border>
-                                            <Grid Width="168" Height="168" HorizontalAlignment="Center">
-                                                <Border x:Name="SplashHalo" Width="168" Height="168" CornerRadius="84" RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="SplashHaloScale" ScaleX="0.96" ScaleY="0.96" />
-                                                    </Border.RenderTransform>
-                                                </Border>
-                                                <Ellipse x:Name="SplashOrbitRing" Width="154" Height="154" StrokeThickness="2" StrokeDashArray="2,7" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                                                    <Ellipse.RenderTransform>
-                                                        <RotateTransform x:Name="SplashOrbitRotate" />
-                                                    </Ellipse.RenderTransform>
-                                                </Ellipse>
-                                                <Border Width="108" Height="108" CornerRadius="34" Background="{ThemeResource AppSurfaceStrongBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Image Source="ms-appx:///Assets/NeuralV.png" Stretch="Uniform" Margin="18" />
-                                                </Border>
-                                            </Grid>
-
-                                            <StackPanel Spacing="8" HorizontalAlignment="Center">
-                                                <TextBlock Text="Запуск" Style="{StaticResource HeroEyebrowStyle}" HorizontalAlignment="Center" />
-                                                <TextBlock Text="Запускаем NeuralV" Style="{StaticResource PageTitleStyle}" FontSize="38" HorizontalAlignment="Center" TextAlignment="Center" />
-                                                <TextBlock Text="Клиент поднимает палитру, проверяет сессию и возвращает тебя прямо к рабочему экрану." Style="{StaticResource BodyTextStyle}" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="440" />
-                                            </StackPanel>
-
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
-                                                <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentBrush}" RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="SplashDot1Scale" ScaleX="0.72" ScaleY="0.72" />
-                                                    </Border.RenderTransform>
-                                                </Border>
-                                                <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentSecondaryBrush}" RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="SplashDot2Scale" ScaleX="0.72" ScaleY="0.72" />
-                                                    </Border.RenderTransform>
-                                                </Border>
-                                                <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentBrush}" RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="SplashDot3Scale" ScaleX="0.72" ScaleY="0.72" />
-                                                    </Border.RenderTransform>
-                                                </Border>
-                                                <Border Width="14" Height="14" CornerRadius="7" Background="{ThemeResource AppAccentTertiaryBrush}" RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="SplashDot4Scale" ScaleX="0.72" ScaleY="0.72" />
-                                                    </Border.RenderTransform>
-                                                </Border>
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="540">
+                                    <Grid Width="132" Height="132" HorizontalAlignment="Center" Margin="0,0,0,18">
+                                        <Border x:Name="SplashHalo" Width="132" Height="132" CornerRadius="66" Background="{ThemeResource AppAccentSoftBrush}" />
+                                        <Ellipse x:Name="SplashOrbitRing" Width="112" Height="112" Stroke="{ThemeResource AppAccentBrush}" StrokeThickness="2" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        <Border Width="84" Height="84" CornerRadius="24" Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Image Source="ms-appx:///Assets/NeuralV.png" Stretch="Uniform" Margin="14" />
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Запускаем NeuralV" Foreground="{ThemeResource AppTextBrush}" FontSize="34" FontWeight="SemiBold" TextAlignment="Center" Margin="0,0,0,10" />
+                                    <TextBlock Text="Поднимаем палитру, сессию и основной экран." Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" TextAlignment="Center" />
+                                </StackPanel>
                             </Grid>
 
-                            <ScrollViewer x:Name="WelcomeView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel Spacing="18" Padding="0,2,0,2">
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <Grid ColumnSpacing="18">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="220" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="14">
-                                                <TextBlock Text="NeuralV для Windows" Style="{StaticResource PageTitleStyle}" />
-                                                <TextBlock Text="Нативный клиент в стиле современной Windows: вход, проверка, история и обновление собраны в одном спокойном потоке." Style="{StaticResource BodyTextStyle}" />
-                                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                                    <Border Style="{StaticResource MiniPillStyle}">
-                                                        <TextBlock Text="WinUI 3" Style="{StaticResource HeroEyebrowStyle}" />
-                                                    </Border>
-                                                    <Border Style="{StaticResource MiniPillStyle}">
-                                                        <TextBlock Text="Палитра от обоев" Style="{StaticResource HeroEyebrowStyle}" />
-                                                    </Border>
-                                                </StackPanel>
-                                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                                    <Button Content="Войти в аккаунт" Click="OnShowLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="190" />
-                                                    <Button Content="Создать аккаунт" Click="OnShowRegisterClick" Style="{StaticResource SecondaryButtonStyle}" Width="190" />
-                                                </StackPanel>
-                                            </StackPanel>
-
-                                            <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}" Padding="18">
-                                                <StackPanel Spacing="14">
-                                                    <TextBlock Text="Сразу после входа" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                    <Grid ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource AppSurfaceStrongBrush}">
-                                                            <TextBlock Text="01" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                                                        </Border>
-                                                        <TextBlock Grid.Column="1" Text="Быстрый вход по почте и коду подтверждения." Style="{StaticResource BodyTextStyle}" />
-                                                    </Grid>
-                                                    <Grid ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource AppSurfaceStrongBrush}">
-                                                            <TextBlock Text="02" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                                                        </Border>
-                                                        <TextBlock Grid.Column="1" Text="Локальная и серверная проверка в одном окне." Style="{StaticResource BodyTextStyle}" />
-                                                    </Grid>
-                                                    <Grid ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Border Width="28" Height="28" CornerRadius="14" Background="{ThemeResource AppSurfaceStrongBrush}">
-                                                            <TextBlock Text="03" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                                                        </Border>
-                                                        <TextBlock Grid.Column="1" Text="История запусков и обновление поверх текущей версии." Style="{StaticResource BodyTextStyle}" />
-                                                    </Grid>
-                                                </StackPanel>
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-
-                                    <Grid ColumnSpacing="18">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Style="{StaticResource SecondarySurfaceCardStyle}">
-                                            <StackPanel Spacing="10">
-                                                <TextBlock Text="Фон" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Тканевый градиент с мягким движением и без перегруза." Style="{StaticResource BodyTextStyle}" />
-                                            </StackPanel>
-                                        </Border>
-                                        <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}">
-                                            <StackPanel Spacing="10">
-                                                <TextBlock Text="Палитра от обоев" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Интерфейс подхватывает цвета фона и держит безопасный запасной вариант." Style="{StaticResource BodyTextStyle}" />
-                                            </StackPanel>
-                                        </Border>
-                                        <Border Grid.Column="2" Style="{StaticResource SurfaceCardStyle}">
-                                            <StackPanel Spacing="10">
-                                                <TextBlock Text="Один ритм" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                <TextBlock Text="Формы, карточки и загрузка говорят на одном визуальном языке." Style="{StaticResource BodyTextStyle}" />
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
+                            <ScrollViewer x:Name="WelcomeView" Visibility="Collapsed">
+                                <StackPanel MaxWidth="880">
+                                    <TextBlock Text="NeuralV для Windows" Foreground="{ThemeResource AppTextBrush}" FontSize="36" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Нативный клиент для входа, проверки, истории и обновления." Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Войти в аккаунт" Click="OnShowLoginClick" Margin="0,0,12,0" />
+                                        <Button Content="Создать аккаунт" Click="OnShowRegisterClick" />
+                                    </StackPanel>
                                 </StackPanel>
                             </ScrollViewer>
 
-                            <ScrollViewer x:Name="LoginView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <Grid ColumnSpacing="18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.05*" />
-                                        <ColumnDefinition Width="0.95*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <StackPanel Spacing="16">
-                                            <TextBlock Text="Вход" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Введи почту и пароль. После этого придёт код подтверждения." Style="{StaticResource BodyTextStyle}" />
-                                            <TextBox x:Name="LoginEmailBox" Header="E-mail" PlaceholderText="name@example.com" Style="{StaticResource FieldTextBoxStyle}" />
-                                            <PasswordBox x:Name="LoginPasswordBox" Header="Пароль" Style="{StaticResource FieldPasswordBoxStyle}" />
-                                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                                <Button Content="Назад" Click="OnBackToWelcomeClick" Style="{StaticResource SecondaryButtonStyle}" Width="150" />
-                                                <Button Content="Продолжить" Click="OnStartLoginClick" Style="{StaticResource NeuralVButtonStyle}" Width="220" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}">
-                                        <StackPanel Spacing="14">
-                                            <TextBlock Text="Следующий шаг" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="После проверки пары сразу откроется ввод кода из письма." Style="{StaticResource BodyTextStyle}" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-                            </ScrollViewer>
-
-                            <ScrollViewer x:Name="RegisterView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <Grid ColumnSpacing="18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.05*" />
-                                        <ColumnDefinition Width="0.95*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <StackPanel Spacing="16">
-                                            <TextBlock Text="Регистрация" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Создай аккаунт, подтверди почту кодом и переходи к проверкам." Style="{StaticResource BodyTextStyle}" />
-                                            <TextBox x:Name="RegisterNameBox" Header="Имя" Style="{StaticResource FieldTextBoxStyle}" />
-                                            <TextBox x:Name="RegisterEmailBox" Header="E-mail" PlaceholderText="name@example.com" Style="{StaticResource FieldTextBoxStyle}" />
-                                            <PasswordBox x:Name="RegisterPasswordBox" Header="Пароль" Style="{StaticResource FieldPasswordBoxStyle}" />
-                                            <PasswordBox x:Name="RegisterPasswordRepeatBox" Header="Повтори пароль" Style="{StaticResource FieldPasswordBoxStyle}" />
-                                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                                <Button Content="Назад" Click="OnBackToWelcomeClick" Style="{StaticResource SecondaryButtonStyle}" Width="150" />
-                                                <Button Content="Создать аккаунт" Click="OnStartRegisterClick" Style="{StaticResource NeuralVButtonStyle}" Width="220" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource SecondarySurfaceCardStyle}">
-                                        <StackPanel Spacing="14">
-                                            <TextBlock Text="После регистрации" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="Дальше останется подтвердить почту кодом и открыть основной экран." Style="{StaticResource BodyTextStyle}" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-                            </ScrollViewer>
-
-                            <ScrollViewer x:Name="CodeView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <Grid ColumnSpacing="18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="1.05*" />
-                                        <ColumnDefinition Width="0.95*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <StackPanel Spacing="16">
-                                            <TextBlock Text="Подтверждение" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock x:Name="CodeHintText" Style="{StaticResource BodyTextStyle}" />
-                                            <TextBox x:Name="VerificationCodeBox" Header="Код" PlaceholderText="123456" Style="{StaticResource FieldTextBoxStyle}" />
-                                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                                <Button Content="Назад" Click="OnBackFromCodeClick" Style="{StaticResource SecondaryButtonStyle}" Width="150" />
-                                                <Button Content="Войти" Click="OnVerifyCodeClick" Style="{StaticResource NeuralVButtonStyle}" Width="180" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}">
-                                        <StackPanel Spacing="14">
-                                            <TextBlock Text="После кода" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                            <TextBlock Text="Сразу откроется домашний экран с проверкой, историей и обновлением." Style="{StaticResource BodyTextStyle}" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
-                            </ScrollViewer>
-
-                            <ScrollViewer x:Name="HomeView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel Spacing="18" Padding="0,2,0,2">
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <Grid ColumnSpacing="18">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="240" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel Spacing="12">
-                                                <TextBlock Text="Панель проверки" Style="{StaticResource PageTitleStyle}" />
-                                                <TextBlock Text="Запуск, статус, обновления и последние события собраны в одном месте без лишних окон." Style="{StaticResource BodyTextStyle}" />
-                                                <Border Style="{StaticResource MiniPillStyle}" HorizontalAlignment="Left">
-                                                    <TextBlock x:Name="HomeStatusText" Style="{StaticResource CaptionTextStyle}" Foreground="{ThemeResource AppTextBrush}" />
-                                                </Border>
-                                            </StackPanel>
-                                            <Border Grid.Column="1" Style="{StaticResource AccentSurfaceCardStyle}" Padding="18">
-                                                <StackPanel Spacing="10">
-                                                    <TextBlock Text="Режимы" Style="{StaticResource CardTitleStyle}" FontSize="20" />
-                                                    <TextBlock Text="Быстрый проход для старта и глубокий серверный сценарий для полной проверки." Style="{StaticResource BodyTextStyle}" />
-                                                </StackPanel>
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-
-                                    <Grid ColumnSpacing="18">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="1.08*" />
-                                            <ColumnDefinition Width="0.92*" />
-                                        </Grid.ColumnDefinitions>
-
-                                        <StackPanel Grid.Column="0" Spacing="18">
-                                            <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                                <StackPanel Spacing="16">
-                                                    <TextBlock Text="Запустить проверку" Style="{StaticResource CardTitleStyle}" />
-                                                    <TextBlock Text="Быстрый режим отвечает сразу. Глубокий режим уводит тяжёлый проход на сервер и возвращает уже собранный отчёт." Style="{StaticResource BodyTextStyle}" />
-                                                    <Grid ColumnSpacing="12">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Button Grid.Column="0" x:Name="QuickScanButton" Content="Быстрая проверка" Click="OnQuickScanClick" Style="{StaticResource SecondaryButtonStyle}" />
-                                                        <Button Grid.Column="1" x:Name="DeepScanButton" Content="Глубокая проверка" Click="OnDeepScanClick" Style="{StaticResource NeuralVButtonStyle}" />
-                                                    </Grid>
-                                                </StackPanel>
-                                            </Border>
-
-                                            <Border Style="{StaticResource SurfaceCardStyle}">
-                                                <StackPanel Spacing="14">
-                                                    <TextBlock Text="Обновления" Style="{StaticResource CardTitleStyle}" />
-                                                    <TextBlock x:Name="UpdateStatusText" Style="{StaticResource BodyTextStyle}" />
-                                                    <Button x:Name="UpdateButton" Content="Скачать обновление" Click="OnDownloadUpdateClick" Style="{StaticResource SecondaryButtonStyle}" Visibility="Collapsed" Width="220" />
-                                                </StackPanel>
-                                            </Border>
-                                        </StackPanel>
-
-                                        <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
-                                            <StackPanel Spacing="14">
-                                                <TextBlock Text="Последние события" Style="{StaticResource CardTitleStyle}" />
-                                                <ListView x:Name="HomeTimelineList"
-                                                          ItemTemplate="{StaticResource TimelineItemTemplate}"
-                                                          ItemContainerStyle="{StaticResource FlatListViewItemStyle}"
-                                                          SelectionMode="None"
-                                                          IsItemClickEnabled="False"
-                                                          BorderThickness="0"
-                                                          Background="Transparent"
-                                                          Height="420" />
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
+                            <ScrollViewer x:Name="LoginView" Visibility="Collapsed">
+                                <StackPanel MaxWidth="760">
+                                    <TextBlock Text="Вход" Foreground="{ThemeResource AppTextBrush}" FontSize="32" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Введи почту и пароль. Потом придёт код подтверждения." Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                    <TextBlock Text="E-mail" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <TextBox x:Name="LoginEmailBox" PlaceholderText="name@example.com" Margin="0,0,0,12" />
+                                    <TextBlock Text="Пароль" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <PasswordBox x:Name="LoginPasswordBox" Margin="0,0,0,18" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Назад" Click="OnBackToWelcomeClick" Margin="0,0,12,0" />
+                                        <Button Content="Продолжить" Click="OnStartLoginClick" />
+                                    </StackPanel>
                                 </StackPanel>
                             </ScrollViewer>
 
-                            <ScrollViewer x:Name="ScanView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <Grid ColumnSpacing="18">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="0.95*" />
-                                        <ColumnDefinition Width="1.05*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <StackPanel Spacing="18">
-                                            <TextBlock Text="Проверка" Style="{StaticResource PageTitleStyle}" />
-                                            <Grid Width="104" Height="104" HorizontalAlignment="Left">
-                                                <Border Width="104"
-                                                        Height="104"
-                                                        CornerRadius="52"
-                                                        Background="{ThemeResource AppAccentSoftBrush}"
-                                                        BorderBrush="{ThemeResource AppOutlineBrush}"
-                                                        BorderThickness="1"
-                                                        Opacity="0.95" />
-                                                <Border Width="78"
-                                                        Height="78"
-                                                        CornerRadius="39"
-                                                        Background="{ThemeResource AppSurfaceStrongBrush}"
-                                                        BorderBrush="{ThemeResource AppOutlineStrongBrush}"
-                                                        BorderThickness="1"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="ScanHaloScale" ScaleX="0.96" ScaleY="0.96" />
-                                                    </Border.RenderTransform>
-                                                </Border>
-                                                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentBrush}">
-                                                        <Ellipse.RenderTransform>
-                                                            <ScaleTransform x:Name="ScanDot1Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                        </Ellipse.RenderTransform>
-                                                    </Ellipse>
-                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentSecondaryBrush}">
-                                                        <Ellipse.RenderTransform>
-                                                            <ScaleTransform x:Name="ScanDot2Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                        </Ellipse.RenderTransform>
-                                                    </Ellipse>
-                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentBrush}">
-                                                        <Ellipse.RenderTransform>
-                                                            <ScaleTransform x:Name="ScanDot3Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                        </Ellipse.RenderTransform>
-                                                    </Ellipse>
-                                                    <Ellipse Width="12" Height="12" Fill="{ThemeResource AppAccentTertiaryBrush}">
-                                                        <Ellipse.RenderTransform>
-                                                            <ScaleTransform x:Name="ScanDot4Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                        </Ellipse.RenderTransform>
-                                                    </Ellipse>
-                                                </StackPanel>
-                                            </Grid>
-                                            <TextBlock x:Name="ScanPrimaryText" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock x:Name="ScanSecondaryText" Style="{StaticResource BodyTextStyle}" />
-                                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                                <Button Content="Отменить проверку" Click="OnCancelScanClick" Style="{StaticResource SecondaryButtonStyle}" Width="220" />
-                                                <Button Content="Назад" Click="OnBackToHomeClick" Style="{StaticResource NeuralVButtonStyle}" Width="150" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
-                                        <StackPanel Spacing="14">
-                                            <TextBlock Text="Что происходит сейчас" Style="{StaticResource CardTitleStyle}" />
-                                            <ListView x:Name="ScanTimelineList"
-                                                      ItemTemplate="{StaticResource TimelineItemTemplate}"
-                                                      ItemContainerStyle="{StaticResource FlatListViewItemStyle}"
-                                                      SelectionMode="None"
-                                                      IsItemClickEnabled="False"
-                                                      BorderThickness="0"
-                                                      Background="Transparent"
-                                                      Height="520" />
-                                        </StackPanel>
-                                    </Border>
-                                </Grid>
+                            <ScrollViewer x:Name="RegisterView" Visibility="Collapsed">
+                                <StackPanel MaxWidth="760">
+                                    <TextBlock Text="Регистрация" Foreground="{ThemeResource AppTextBrush}" FontSize="32" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Создай аккаунт и подтверди почту кодом." Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                    <TextBlock Text="Имя" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <TextBox x:Name="RegisterNameBox" Margin="0,0,0,12" />
+                                    <TextBlock Text="E-mail" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <TextBox x:Name="RegisterEmailBox" PlaceholderText="name@example.com" Margin="0,0,0,12" />
+                                    <TextBlock Text="Пароль" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <PasswordBox x:Name="RegisterPasswordBox" Margin="0,0,0,12" />
+                                    <TextBlock Text="Повтори пароль" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <PasswordBox x:Name="RegisterPasswordRepeatBox" Margin="0,0,0,18" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Назад" Click="OnBackToWelcomeClick" Margin="0,0,12,0" />
+                                        <Button Content="Создать аккаунт" Click="OnStartRegisterClick" />
+                                    </StackPanel>
+                                </StackPanel>
                             </ScrollViewer>
 
-                            <ScrollViewer x:Name="HistoryView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel Spacing="18" Padding="0,2,0,2">
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <StackPanel Spacing="12">
-                                            <TextBlock Text="История" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Последние завершённые проверки сохраняются локально." Style="{StaticResource BodyTextStyle}" />
+                            <ScrollViewer x:Name="CodeView" Visibility="Collapsed">
+                                <StackPanel MaxWidth="760">
+                                    <TextBlock Text="Подтверждение" Foreground="{ThemeResource AppTextBrush}" FontSize="32" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <TextBlock x:Name="CodeHintText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                    <TextBlock Text="Код" Foreground="{ThemeResource AppMutedTextBrush}" Margin="0,0,0,6" />
+                                    <TextBox x:Name="VerificationCodeBox" PlaceholderText="123456" Margin="0,0,0,18" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Назад" Click="OnBackFromCodeClick" Margin="0,0,12,0" />
+                                        <Button Content="Войти" Click="OnVerifyCodeClick" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <ScrollViewer x:Name="HomeView" Visibility="Collapsed">
+                                <StackPanel MaxWidth="960">
+                                    <TextBlock Text="Панель проверки" Foreground="{ThemeResource AppTextBrush}" FontSize="34" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <TextBlock x:Name="HomeStatusText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                                        <Button x:Name="QuickScanButton" Content="Быстрая проверка" Click="OnQuickScanClick" Margin="0,0,12,0" />
+                                        <Button x:Name="DeepScanButton" Content="Глубокая проверка" Click="OnDeepScanClick" />
+                                    </StackPanel>
+                                    <Border Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="14" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <TextBlock Text="Обновления" Foreground="{ThemeResource AppTextBrush}" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                            <TextBlock x:Name="UpdateStatusText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
+                                            <Button x:Name="UpdateButton" Content="Скачать обновление" Click="OnDownloadUpdateClick" Visibility="Collapsed" HorizontalAlignment="Left" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource SurfaceCardStyle}">
-                                        <StackPanel Spacing="14">
-                                            <TextBlock Text="Последние сохранения" Style="{StaticResource CardTitleStyle}" />
-                                            <ListView x:Name="HistoryList"
-                                                      ItemTemplate="{StaticResource HistoryItemTemplate}"
-                                                      ItemContainerStyle="{StaticResource FlatListViewItemStyle}"
-                                                      SelectionMode="None"
-                                                      IsItemClickEnabled="False"
-                                                      BorderThickness="0"
-                                                      Background="Transparent" />
+                                    <Border Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="14">
+                                        <StackPanel>
+                                            <TextBlock Text="Последние события" Foreground="{ThemeResource AppTextBrush}" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                            <ListView x:Name="HomeTimelineList" ItemTemplate="{StaticResource TimelineItemTemplate}" SelectionMode="None" BorderThickness="0" Background="Transparent" MinHeight="340" />
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
                             </ScrollViewer>
 
-                            <ScrollViewer x:Name="SettingsView" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <StackPanel MaxWidth="760" Spacing="18" Padding="0,2,0,2">
-                                    <Border Style="{StaticResource ElevatedSurfaceCardStyle}">
-                                        <StackPanel Spacing="12">
-                                            <TextBlock Text="Настройки" Style="{StaticResource PageTitleStyle}" />
-                                            <TextBlock Text="Здесь только сессия и оформление клиента." Style="{StaticResource BodyTextStyle}" />
+                            <ScrollViewer x:Name="ScanView" Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="330" />
+                                        <ColumnDefinition Width="20" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="18">
+                                        <StackPanel>
+                                            <Border Width="96" Height="96" CornerRadius="48" Background="{ThemeResource AppAccentSoftBrush}" HorizontalAlignment="Left" Margin="0,0,0,18">
+                                                <Grid>
+                                                    <Ellipse Width="72" Height="72" Stroke="{ThemeResource AppAccentBrush}" StrokeThickness="2" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    <TextBlock Text="NV" Foreground="{ThemeResource AppTextBrush}" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                            <TextBlock x:Name="ScanPrimaryText" Foreground="{ThemeResource AppTextBrush}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,10" TextWrapping="Wrap" />
+                                            <TextBlock x:Name="ScanSecondaryText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                            <Button Content="Отменить проверку" Click="OnCancelScanClick" Margin="0,0,0,10" />
+                                            <Button Content="Назад" Click="OnBackToHomeClick" />
                                         </StackPanel>
                                     </Border>
+                                    <Border Grid.Column="2" Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="18">
+                                        <StackPanel>
+                                            <TextBlock Text="Что происходит сейчас" Foreground="{ThemeResource AppTextBrush}" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                            <ListView x:Name="ScanTimelineList" ItemTemplate="{StaticResource TimelineItemTemplate}" SelectionMode="None" BorderThickness="0" Background="Transparent" MinHeight="440" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </ScrollViewer>
 
-                                    <Grid ColumnSpacing="18">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Style="{StaticResource SurfaceCardStyle}">
-                                            <StackPanel Spacing="12">
-                                                <TextBlock Text="Визуальная система" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                                <TextBlock x:Name="SettingsPaletteText" Style="{StaticResource BodyTextStyle}" />
-                                                <TextBlock x:Name="SettingsVersionText" Style="{StaticResource BodyTextStyle}" />
-                                            </StackPanel>
-                                        </Border>
-                                        <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
-                                            <StackPanel Spacing="12">
-                                                <TextBlock Text="Сессия" Style="{StaticResource CardTitleStyle}" FontSize="22" />
-                                                <TextBlock x:Name="SettingsSessionText" Style="{StaticResource BodyTextStyle}" />
-                                                <Button Content="Выйти из аккаунта" Click="OnLogoutClick" Style="{StaticResource SecondaryButtonStyle}" Width="220" />
-                                            </StackPanel>
-                                        </Border>
-                                    </Grid>
+                            <ScrollViewer x:Name="HistoryView" Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock Text="История" Foreground="{ThemeResource AppTextBrush}" FontSize="34" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <TextBlock Text="Последние завершённые проверки сохраняются локально." Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,18" />
+                                    <ListView x:Name="HistoryList" ItemTemplate="{StaticResource HistoryItemTemplate}" SelectionMode="None" BorderThickness="0" Background="Transparent" />
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <ScrollViewer x:Name="SettingsView" Visibility="Collapsed">
+                                <StackPanel MaxWidth="760">
+                                    <TextBlock Text="Настройки" Foreground="{ThemeResource AppTextBrush}" FontSize="34" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                    <Border Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="18" Margin="0,0,0,16">
+                                        <StackPanel>
+                                            <TextBlock Text="Визуальная система" Foreground="{ThemeResource AppTextBrush}" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                            <TextBlock x:Name="SettingsPaletteText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                                            <TextBlock x:Name="SettingsVersionText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineBrush}" BorderThickness="1" CornerRadius="18" Padding="18">
+                                        <StackPanel>
+                                            <TextBlock Text="Сессия" Foreground="{ThemeResource AppTextBrush}" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,10" />
+                                            <TextBlock x:Name="SettingsSessionText" Foreground="{ThemeResource AppMutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                            <Button Content="Выйти из аккаунта" Click="OnLogoutClick" HorizontalAlignment="Left" />
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>
 
-                        <Border x:Name="BusyOverlay"
-                                Grid.RowSpan="3"
-                                Background="{ThemeResource AppOverlayScrimBrush}"
-                                CornerRadius="40"
-                                Visibility="Collapsed">
+                        <Border x:Name="BusyOverlay" Grid.RowSpan="3" Background="{ThemeResource AppOverlayScrimBrush}" CornerRadius="28" Visibility="Collapsed">
                             <Grid>
-                                <Border Style="{StaticResource ElevatedSurfaceCardStyle}" Width="320" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <StackPanel Spacing="14" HorizontalAlignment="Center">
-                                        <Grid Width="82" Height="82" HorizontalAlignment="Center">
-                                            <Border Width="82"
-                                                    Height="82"
-                                                    CornerRadius="41"
-                                                    Background="{ThemeResource AppAccentSoftBrush}"
-                                                    BorderBrush="{ThemeResource AppOutlineBrush}"
-                                                    BorderThickness="1"
-                                                    Opacity="0.96" />
-                                            <Border Width="60"
-                                                    Height="60"
-                                                    CornerRadius="30"
-                                                    Background="{ThemeResource AppSurfaceStrongBrush}"
-                                                    BorderBrush="{ThemeResource AppOutlineStrongBrush}"
-                                                    BorderThickness="1"
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    RenderTransformOrigin="0.5,0.5">
-                                                <Border.RenderTransform>
-                                                    <ScaleTransform x:Name="BusyHaloScale" ScaleX="0.97" ScaleY="0.97" />
-                                                </Border.RenderTransform>
-                                            </Border>
-                                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentBrush}">
-                                                    <Ellipse.RenderTransform>
-                                                        <ScaleTransform x:Name="BusyDot1Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                    </Ellipse.RenderTransform>
-                                                </Ellipse>
-                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentSecondaryBrush}">
-                                                    <Ellipse.RenderTransform>
-                                                        <ScaleTransform x:Name="BusyDot2Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                    </Ellipse.RenderTransform>
-                                                </Ellipse>
-                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentBrush}">
-                                                    <Ellipse.RenderTransform>
-                                                        <ScaleTransform x:Name="BusyDot3Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                    </Ellipse.RenderTransform>
-                                                </Ellipse>
-                                                <Ellipse Width="10" Height="10" Fill="{ThemeResource AppAccentTertiaryBrush}">
-                                                    <Ellipse.RenderTransform>
-                                                        <ScaleTransform x:Name="BusyDot4Scale" ScaleX="0.74" ScaleY="0.74" />
-                                                    </Ellipse.RenderTransform>
-                                                </Ellipse>
-                                            </StackPanel>
-                                        </Grid>
-                                        <TextBlock x:Name="BusyText" Text="Загрузка" Style="{StaticResource BodyTextStyle}" Foreground="{ThemeResource AppTextBrush}" HorizontalAlignment="Center" TextAlignment="Center" />
+                                <Border Background="{ThemeResource AppSurfaceBrush}" BorderBrush="{ThemeResource AppOutlineStrongBrush}" BorderThickness="1" CornerRadius="18" Padding="18" Width="320" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <StackPanel>
+                                        <Border Width="72" Height="72" CornerRadius="36" Background="{ThemeResource AppAccentSoftBrush}" HorizontalAlignment="Center" Margin="0,0,0,14">
+                                            <Grid>
+                                                <Ellipse Width="44" Height="44" Stroke="{ThemeResource AppAccentBrush}" StrokeThickness="2" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <TextBlock x:Name="BusyText" Text="Загрузка" Foreground="{ThemeResource AppTextBrush}" TextAlignment="Center" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </Grid>

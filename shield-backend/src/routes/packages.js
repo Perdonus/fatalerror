@@ -8,6 +8,7 @@ const {
 const {
     clearHubSessionFromRequest,
     createTelegramHubSession,
+    getHubAuthConfig,
     getCreatorProfile,
     getHubPackageDetails,
     getHubSessionFromRequest,
@@ -93,15 +94,16 @@ router.get('/creators', async (req, res) => {
 
 router.get('/creators/:creator', async (req, res) => {
     try {
-        const payload = await getCreatorProfile(req.params.creator);
+        const session = await getHubSessionFromRequest(req).catch(() => null);
+        const payload = await getCreatorProfile(req.params.creator, session);
         if (!payload) {
-            return res.status(404).json({ error: 'Creator not found' });
+            return res.status(404).json({ error: 'Creator not found', code: 'NV_CREATOR_NOT_FOUND' });
         }
         res.set('Cache-Control', 'no-store, max-age=0');
         return res.json(payload);
     } catch (error) {
         console.error('Creator profile error:', error);
-        return res.status(500).json({ error: 'Не удалось загрузить профиль creator' });
+        return res.status(500).json({ error: 'Не удалось загрузить профиль creator', code: 'NV_CREATOR_PROFILE_FAILED' });
     }
 });
 
@@ -149,7 +151,13 @@ router.post('/auth/telegram', async (req, res) => {
         });
     } catch (error) {
         console.error('Telegram hub auth error:', error);
-        return res.status(401).json({ error: error.message || 'Не удалось авторизоваться через Telegram' });
+        const status = error.status || (String(error.message || '').includes('not configured') ? 503 : 401);
+        return res.status(status).json({
+            error: error.message || 'Не удалось авторизоваться через Telegram',
+            code: error.code || 'NV_HUB_AUTH_FAILED',
+            auth: getHubAuthConfig(),
+            details: error.details || null
+        });
     }
 });
 
@@ -157,7 +165,7 @@ router.get('/auth/session', async (req, res) => {
     try {
         const session = await getHubSessionFromRequest(req);
         if (!session) {
-            return res.status(401).json({ error: 'Hub session not found' });
+            return res.status(401).json({ error: 'Hub session not found', code: 'NV_HUB_SESSION_NOT_FOUND', auth: getHubAuthConfig() });
         }
         return res.json({
             success: true,
@@ -165,7 +173,7 @@ router.get('/auth/session', async (req, res) => {
         });
     } catch (error) {
         console.error('Hub session read error:', error);
-        return res.status(401).json({ error: 'Hub session invalid' });
+        return res.status(401).json({ error: 'Hub session invalid', code: 'NV_HUB_SESSION_INVALID', auth: getHubAuthConfig() });
     }
 });
 
@@ -190,7 +198,12 @@ router.post('/publish', async (req, res) => {
         });
     } catch (error) {
         console.error('Hub publish package error:', error);
-        return res.status(error.status || 500).json({ error: error.message || 'Не удалось опубликовать пакет' });
+        return res.status(error.status || 500).json({
+            error: error.message || 'Не удалось опубликовать пакет',
+            code: error.code || 'NV_PUBLISH_PACKAGE_FAILED',
+            auth: getHubAuthConfig(),
+            details: error.details || null
+        });
     }
 });
 
@@ -204,7 +217,12 @@ router.post('/:scope/:name/releases', async (req, res) => {
         });
     } catch (error) {
         console.error('Hub publish release error:', error);
-        return res.status(error.status || 500).json({ error: error.message || 'Не удалось опубликовать релиз' });
+        return res.status(error.status || 500).json({
+            error: error.message || 'Не удалось опубликовать релиз',
+            code: error.code || 'NV_PUBLISH_RELEASE_FAILED',
+            auth: getHubAuthConfig(),
+            details: error.details || null
+        });
     }
 });
 

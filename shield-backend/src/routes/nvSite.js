@@ -47,10 +47,17 @@ router.get('/auth/me', async (req, res) => {
     try {
         noStore(res);
         const session = await getHubSessionFromRequest(req);
-        return res.json(shapeSession(session));
+        return res.json({
+            ...shapeSession(session),
+            auth: getHubAuthConfig()
+        });
     } catch (error) {
         console.error('NV auth me error:', error);
-        return res.status(500).json({ error: 'Не удалось прочитать сессию сайта' });
+        return res.status(500).json({
+            error: 'Не удалось прочитать сессию сайта',
+            code: 'NV_AUTH_ME_FAILED',
+            auth: getHubAuthConfig()
+        });
     }
 });
 
@@ -70,12 +77,23 @@ router.post('/auth/telegram', async (req, res) => {
         console.error('NV telegram auth error:', error);
         const message = String(error?.message || '');
         if (message.includes('not configured')) {
-            return res.status(503).json({ error: 'Telegram login is not configured' });
+            return res.status(503).json({
+                error: 'Telegram login is not configured',
+                code: error.code || 'NV_TELEGRAM_NOT_CONFIGURED',
+                auth: getHubAuthConfig(),
+                details: error.details || null
+            });
         }
         if (message.toLowerCase().includes('telegram')) {
-            return res.status(400).json({ error: 'Недействительный ответ Telegram login' });
+            return res.status(400).json({
+                error: 'Недействительный ответ Telegram login',
+                code: error.code || 'NV_TELEGRAM_AUTH_INVALID'
+            });
         }
-        return res.status(500).json({ error: 'Не удалось создать сессию сайта' });
+        return res.status(500).json({
+            error: 'Не удалось создать сессию сайта',
+            code: error.code || 'NV_TELEGRAM_SESSION_CREATE_FAILED'
+        });
     }
 });
 
@@ -87,7 +105,7 @@ router.post('/auth/logout', async (req, res) => {
         return res.json({ success: true });
     } catch (error) {
         console.error('NV logout error:', error);
-        return res.status(500).json({ error: 'Не удалось завершить сессию сайта' });
+        return res.status(500).json({ error: 'Не удалось завершить сессию сайта', code: 'NV_LOGOUT_FAILED' });
     }
 });
 

@@ -120,10 +120,28 @@ function clearSessionCookie() {
     return `${HUB_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
+function createHubError(message, status = 500, code = 'NV_HUB_ERROR', details = null) {
+    const error = new Error(message);
+    error.status = status;
+    error.code = code;
+    if (details && typeof details === 'object') {
+        error.details = details;
+    }
+    return error;
+}
+
 function getHubAuthConfig() {
+    const issues = {
+        missing_bot_username: !TELEGRAM_BOT_USERNAME,
+        missing_bot_token: !TELEGRAM_BOT_TOKEN,
+        missing_session_secret: !HUB_SESSION_SECRET
+    };
     return {
-        enabled: Boolean(TELEGRAM_BOT_USERNAME && TELEGRAM_BOT_TOKEN && HUB_SESSION_SECRET),
-        bot_username: TELEGRAM_BOT_USERNAME
+        enabled: !Object.values(issues).some(Boolean),
+        provider: 'telegram',
+        bot_username: TELEGRAM_BOT_USERNAME,
+        issues,
+        package_ref_example: '@creator/package'
     };
 }
 
@@ -139,9 +157,7 @@ function sessionCookieOptions() {
 
 function ensureTelegramConfigured() {
     if (!TELEGRAM_BOT_USERNAME || !TELEGRAM_BOT_TOKEN || !HUB_SESSION_SECRET) {
-        const error = new Error('Telegram login is not configured');
-        error.code = 'NV_TELEGRAM_NOT_CONFIGURED';
-        throw error;
+        throw createHubError('Telegram login is not configured', 503, 'NV_TELEGRAM_NOT_CONFIGURED', getHubAuthConfig().issues);
     }
 }
 
@@ -479,7 +495,7 @@ async function listHubCatalog(filters = {}) {
     };
 }
 
-async function getCreatorProfile(creatorSlug) {
+async function getCreatorProfile(creatorSlug, viewerSession = null) {
     const state = await loadHubState();
     const slug = normalizeCreatorSlug(creatorSlug);
     const creator = state.creators.find((entry) => entry.slug === slug);
@@ -497,6 +513,10 @@ async function getCreatorProfile(creatorSlug) {
             avatar_url: creator.avatar_url,
             telegram_username: creator.telegram_username,
             links: clone(creator.links || [])
+        },
+        viewer: {
+            authenticated: Boolean(viewerSession?.creator_slug),
+            can_edit: Boolean(viewerSession?.creator_slug && viewerSession.creator_slug === slug)
         },
         packages
     };
@@ -651,9 +671,9 @@ async function revokeSessionByRequest(req) {
 
 function ensureHubActor(session) {
     if (!session || !session.creator_slug) {
-        const error = new Error('Hub session required');
-        error.status = 401;
-        throw error;
+        throw createHubError('Hub session required', 401, 'NV_HUB_AUTH_REQUIRED', {
+            auth: getHubAuthConfig()
+        });
     }
     return session;
 }
@@ -663,16 +683,12 @@ async function publishHubPackage(actor, payload) {
     const store = pruneSessions(readStore());
     const creatorSlug = normalizeCreatorSlug(payload.creator_slug || actor.creator_slug);
     if (creatorSlug !== actor.creator_slug) {
-        const error = new Error('Creator slug mismatch');
-        error.status = 403;
-        throw error;
+        throw createHubError('Creator slug mismatch', 403, 'NV_CREATOR_MISMATCH');
     }
 
     const packageSlug = normalizePackageSlug(payload.package_slug || parseCanonicalPackageName(payload.name).packageSlug);
     if (!packageSlug) {
-        const error = new Error('package_slug is required');
-        error.status = 400;
-        throw error;
+        throw createHubError('package_slug is required', 400, 'NV_PACKAGE_SLUG_REQUIRED');
     }
 
     const canonicalName = packageNameFromParts(creatorSlug, packageSlug);
@@ -682,9 +698,7 @@ async function publishHubPackage(actor, payload) {
 
     let pkg = ensureArray(store.packages).find((entry) => packageNameFromParts(entry.creator_slug, entry.package_slug) === canonicalName);
     if (pkg && pkg.owner && pkg.owner.provider === 'telegram' && String(pkg.owner.telegram_id || '') !== String(actor.telegram_id || '')) {
-        const error = new Error('Package owner mismatch');
-        error.status = 403;
-        throw error;
+        throw createHubError('Package owner mismatch', 403, 'NV_PACKAGE_OWNER_MISMATCH');
     }
 
     if (!pkg) {
@@ -735,22 +749,16 @@ async function publishHubRelease(actor, packageRef, payload) {
     const parsed = parseCanonicalPackageName(packageRef);
     const pkg = ensureArray(store.packages).find((entry) => packageNameFromParts(entry.creator_slug, entry.package_slug) === parsed.canonicalName);
     if (!pkg) {
-        const error = new Error('Package not found');
-        error.status = 404;
-        throw error;
+        throw createHubError('Package not found', 404, 'NV_PACKAGE_NOT_FOUND');
     }
     if (!pkg.owner || pkg.owner.provider !== 'telegram' || String(pkg.owner.telegram_id || '') !== String(actor.telegram_id || '')) {
-        const error = new Error('Package owner mismatch');
-        error.status = 403;
-        throw error;
+        throw createHubError('Package owner mismatch', 403, 'NV_PACKAGE_OWNER_MISMATCH');
     }
 
     const version = String(payload.version || '').trim();
     const os = normalizeText(payload.os || payload.platform || '');
     if (!version || !os) {
-        const error = new Error('version and os are required');
-        error.status = 400;
-        throw error;
+        throw createHubError('version and os are required', 400, 'NV_RELEASE_FIELDS_REQUIRED');
     }
 
     const release = {

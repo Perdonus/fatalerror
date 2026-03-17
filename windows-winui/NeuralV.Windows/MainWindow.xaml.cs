@@ -1,12 +1,13 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
+using Windows.Foundation;
 using Windows.Graphics;
 using UiColor = global::Windows.UI.Color;
 using WinRT.Interop;
@@ -33,19 +34,28 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
         HomeTimelineList.ItemsSource = _homeTimeline;
         ScanTimelineList.ItemsSource = _scanTimeline;
         HistoryList.ItemsSource = _historyItems;
+
         ExtendsContentIntoTitleBar = false;
         Title = "NeuralV";
+
         var hwnd = WindowNative.GetWindowHandle(this);
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.Resize(new SizeInt32(1440, 920));
-        ThemeModeLabel.Text = App.Palette.IsDark ? "Тёмная" : "Светлая";
-        VersionLabel.Text = $"Windows {_currentVersion}";
-        UpdateStatusText.Text = "Проверяем актуальную сборку...";
+
         ApplyAmbientPalette();
+        ApplyChromeCopy();
+        ApplySessionState();
+        UpdateNavigationState(AppScreen.Splash);
+        UpdateScreenContext(AppScreen.Splash);
+        UpdateStatusHomeFallback();
+
+        UpdateStatusText.Text = "Проверяем актуальную сборку...";
+
         Closed += (_, _) =>
         {
             _scanPollCts?.Cancel();
@@ -59,42 +69,140 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
+
         _initialized = true;
-        if (WindowRoot.Resources["AmbientMotionStoryboard"] is Storyboard storyboard)
+
+        if (WindowRoot.Resources["AmbientMotionStoryboard"] is Storyboard ambientStoryboard)
         {
-            storyboard.Begin();
+            ambientStoryboard.Begin();
         }
         if (WindowRoot.Resources["DotLoadingStoryboard"] is Storyboard dotStoryboard)
         {
             dotStoryboard.Begin();
         }
+        if (WindowRoot.Resources["SplashOrbitStoryboard"] is Storyboard orbitStoryboard)
+        {
+            orbitStoryboard.Begin();
+        }
+
         await InitializeAsync();
     }
 
     private void ApplyAmbientPalette()
     {
-        GlowA.Fill = BuildGlowBrush(App.Palette.Accent, 0.88);
-        GlowB.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.Accent, App.Palette.Text, 0.52), 0.42);
-        GlowC.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.Accent, App.Palette.Background, 0.35), 0.30);
+        BackdropGradient.Fill = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1),
+            GradientStops =
+            {
+                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.Accent, 0.08), Offset = 0.0 },
+                new GradientStop { Color = App.Palette.BackgroundAlt, Offset = 0.34 },
+                new GradientStop { Color = ThemePalette.Blend(App.Palette.Background, App.Palette.AccentSecondary, 0.12), Offset = 1.0 }
+            }
+        };
+
+        FabricLayerA.Fill = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.30);
+        FabricLayerB.Fill = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.05, 0.22);
+        FabricLayerC.Fill = BuildSheenBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary);
+
+        GlowA.Fill = BuildGlowBrush(App.Palette.Accent, 0.92);
+        GlowB.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentSecondary, App.Palette.Text, 0.36), 0.42);
+        GlowC.Fill = BuildGlowBrush(ThemePalette.Blend(App.Palette.AccentTertiary, App.Palette.BackgroundAlt, 0.30), 0.28);
+
+        SplashHalo.Background = BuildGlowBrush(App.Palette.Accent, 0.24);
+        SplashOrbitRing.Stroke = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.AccentSecondary, 0.78));
+
+        PaletteSwatchPrimary.Background = new SolidColorBrush(App.Palette.Accent);
+        PaletteSwatchPrimary.BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.10));
+        PaletteSwatchPrimary.BorderThickness = new Thickness(1);
+
+        PaletteSwatchSecondary.Background = new SolidColorBrush(App.Palette.AccentSecondary);
+        PaletteSwatchSecondary.BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.10));
+        PaletteSwatchSecondary.BorderThickness = new Thickness(1);
+
+        PaletteSwatchTertiary.Background = new SolidColorBrush(App.Palette.AccentTertiary);
+        PaletteSwatchTertiary.BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.10));
+        PaletteSwatchTertiary.BorderThickness = new Thickness(1);
+    }
+
+    private void ApplyChromeCopy()
+    {
+        ThemeModeLabel.Text = App.Palette.IsDark ? "Тёмный режим" : "Светлый режим";
+        PaletteModeHeaderLabel.Text = App.Palette.SourceLabel;
+        VersionLabel.Text = $"Windows {_currentVersion}";
+
+        PaletteSourceLabel.Text = App.Palette.Source switch
+        {
+            PaletteSource.Wallpaper => "Палитра взята из обоев, нормализована по контрасту и разложена в три тона для живого интерфейса.",
+            PaletteSource.WindowsAccent => "Обои недоступны, поэтому палитра мягко строится от системного акцента Windows.",
+            _ => "Не удалось безопасно прочитать обои или акцент Windows. Используем нейтральный резервный вариант без провала по контрасту."
+        };
+        PaletteSeedLabel.Text = $"Акцент {App.Palette.AccentHex}";
+        SettingsPaletteText.Text = $"Источник палитры: {App.Palette.SourceLabel}. Акцент: {App.Palette.AccentHex}.";
+        SettingsVersionText.Text = $"Сборка Windows-клиента: {_currentVersion}. Активный режим: {(App.Palette.IsDark ? "тёмный" : "светлый")}.";
     }
 
     private static Brush BuildGlowBrush(UiColor color, double opacity)
     {
-        var solid = UiColor.FromArgb((byte)(255 * opacity), color.R, color.G, color.B);
         return new RadialGradientBrush
         {
             GradientStops =
             {
-                new GradientStop { Color = solid, Offset = 0.0 },
-                new GradientStop { Color = UiColor.FromArgb(0, color.R, color.G, color.B), Offset = 1.0 }
+                new GradientStop { Color = ThemePalette.WithAlpha(color, opacity), Offset = 0.0 },
+                new GradientStop { Color = ThemePalette.WithAlpha(color, 0.0), Offset = 1.0 }
+            }
+        };
+    }
+
+    private static Brush BuildWeaveBrush(UiColor baseColor, UiColor accentColor, double lowOpacity, double highOpacity)
+    {
+        return new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 1),
+            GradientStops =
+            {
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.00 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.05 },
+                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity), Offset = 0.10 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.16 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.24 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.32 },
+                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity * 0.82), Offset = 0.38 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.46 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.58 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.66 },
+                new GradientStop { Color = ThemePalette.WithAlpha(accentColor, highOpacity * 0.74), Offset = 0.74 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 0.82 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, lowOpacity), Offset = 0.92 },
+                new GradientStop { Color = ThemePalette.WithAlpha(baseColor, 0.02), Offset = 1.00 }
+            }
+        };
+    }
+
+    private static Brush BuildSheenBrush(UiColor first, UiColor second)
+    {
+        return new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 0),
+            GradientStops =
+            {
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 0.00 },
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.14), Offset = 0.24 },
+                new GradientStop { Color = ThemePalette.WithAlpha(second, 0.26), Offset = 0.50 },
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.12), Offset = 0.74 },
+                new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 1.00 }
             }
         };
     }
 
     private async Task InitializeAsync()
     {
-        SetBusy(true, "Поднимаем новую Windows-версию");
+        SetBusy(true, "Поднимаем новый Windows-клиент");
         WindowsLog.Info("InitializeAsync started");
+
         try
         {
             if (App.IsSmokeTest)
@@ -124,6 +232,7 @@ public sealed partial class MainWindow : Window
             }
 
             await LoadHistoryAsync();
+            ApplySessionState();
             ShowScreen(_session is null ? AppScreen.Welcome : AppScreen.Home);
             _ = CheckForUpdatesAsync();
         }
@@ -162,9 +271,11 @@ public sealed partial class MainWindow : Window
     private void ShowScreen(AppScreen screen)
     {
         _screen = screen;
+
         AppNavigationBar.Visibility = screen is AppScreen.Home or AppScreen.Scan or AppScreen.History or AppScreen.Settings
             ? Visibility.Visible
             : Visibility.Collapsed;
+
         SplashView.Visibility = screen == AppScreen.Splash ? Visibility.Visible : Visibility.Collapsed;
         WelcomeView.Visibility = screen == AppScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;
         LoginView.Visibility = screen == AppScreen.Login ? Visibility.Visible : Visibility.Collapsed;
@@ -175,7 +286,97 @@ public sealed partial class MainWindow : Window
         HistoryView.Visibility = screen == AppScreen.History ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = screen == AppScreen.Settings ? Visibility.Visible : Visibility.Collapsed;
 
-        UserLabel.Text = _session?.User.Email ?? "Не авторизован";
+        ApplySessionState();
+        UpdateNavigationState(screen);
+        UpdateScreenContext(screen);
+    }
+
+    private void UpdateNavigationState(AppScreen screen)
+    {
+        ApplyNavButtonStyle(HomeNavButton, screen is AppScreen.Home or AppScreen.Scan);
+        ApplyNavButtonStyle(HistoryNavButton, screen == AppScreen.History);
+        ApplyNavButtonStyle(SettingsNavButton, screen == AppScreen.Settings);
+    }
+
+    private void ApplyNavButtonStyle(Button button, bool active)
+    {
+        if (App.Current.Resources[active ? "SelectedNavTabButtonStyle" : "NavTabButtonStyle"] is Style style)
+        {
+            button.Style = style;
+        }
+    }
+
+    private void UpdateScreenContext(AppScreen screen)
+    {
+        var (badge, headline, description) = screen switch
+        {
+            AppScreen.Splash => (
+                "Запуск",
+                "Подготавливаем выразительный интерфейс",
+                "Палитра, локальная сессия и стартовый контур клиента поднимаются без лишних промежуточных окон."),
+            AppScreen.Welcome => (
+                "Добро пожаловать",
+                "Нативная защита, собранная под Windows",
+                "Вход, регистрация, проверка, история и обновления теперь выглядят как единый Windows-клиент, а не как набор случайных экранов."),
+            AppScreen.Login => (
+                "Вход",
+                "Почта, пароль и быстрый переход к коду",
+                "Поток входа собран в одну форму с ясным следующим шагом и без визуального мусора."),
+            AppScreen.Register => (
+                "Регистрация",
+                "Создать аккаунт и сразу войти в интерфейс",
+                "Регистрация визуально совпадает с входом, чтобы поток не разваливался на отдельные несвязанные экраны."),
+            AppScreen.Code => (
+                "Подтверждение",
+                "Остался один шаг до рабочего интерфейса",
+                "Код подтверждения завершает ветку авторизации и передаёт пользователя прямо на основной экран проверки."),
+            AppScreen.Home => (
+                "Центр контроля",
+                "Проверка, статус и обновления в одном месте",
+                "Главный экран держит быстрые действия слева и живую ленту справа, без перегруза интерфейса."),
+            AppScreen.Scan => (
+                "Проверка",
+                string.IsNullOrWhiteSpace(_activeScan?.Verdict) ? "Серверная проверка уже идёт" : _activeScan!.Verdict,
+                string.IsNullOrWhiteSpace(_activeScan?.Message)
+                    ? "Мы держим состояние сканирования, ленту событий и управление отменой в одном экране."
+                    : _activeScan!.Message),
+            AppScreen.History => (
+                "Локальная история",
+                "Последние завершённые проверки всегда под рукой",
+                "История сохраняется локально и не зависит от текущего состояния серверного экрана."),
+            AppScreen.Settings => (
+                "Сессия и оформление",
+                "Текущий интерфейс объясняет сам себя",
+                "Здесь только рабочие настройки: активная сессия, версия клиента и источник палитры."),
+            _ => (
+                "NeuralV",
+                "Нативный Windows-клиент",
+                "Защитный клиент с единым выразительным языком интерфейса.")
+        };
+
+        RailBadgeText.Text = badge;
+        RailHeadlineText.Text = headline;
+        RailDescriptionText.Text = description;
+    }
+
+    private void ApplySessionState()
+    {
+        var hasSession = _session is not null;
+        var displayName = hasSession
+            ? (!string.IsNullOrWhiteSpace(_session!.User.Name) ? _session.User.Name : _session.User.Email)
+            : "Гостевой режим";
+
+        RailUserNameText.Text = displayName;
+        RailUserMetaText.Text = hasSession
+            ? _session!.User.Email
+            : "Войди, чтобы запускать проверки, сохранять историю и получать обновления внутри клиента.";
+        RailUserStateText.Text = hasSession
+            ? (_session!.User.IsPremium ? "Активная премиум-сессия" : "Активная сессия")
+            : "Сессия не активна";
+        UserLabel.Text = hasSession ? _session!.User.Email : "Не авторизован";
+        SettingsSessionText.Text = hasSession
+            ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}. Идентификатор устройства хранится локально для рабочего сценария входа."
+            : "Активной сессии нет. После входа здесь появится информация о пользователе и текущем рабочем контуре.";
     }
 
     private async Task LoadHistoryAsync()
@@ -183,8 +384,33 @@ public sealed partial class MainWindow : Window
         _historyItems.Clear();
         foreach (var item in await HistoryStore.LoadAsync())
         {
-            _historyItems.Add($"{item.SavedAt.LocalDateTime:dd.MM HH:mm} • {item.Mode} • {item.Verdict} • {item.Message}");
+            _historyItems.Add($"{item.SavedAt.LocalDateTime:dd.MM HH:mm} | {item.Mode} | {item.Verdict} | {item.Message}");
         }
+
+        if (_historyItems.Count == 0)
+        {
+            _historyItems.Add("История появится после первой завершённой проверки.");
+        }
+
+        SeedHomeTimeline();
+    }
+
+    private void SeedHomeTimeline()
+    {
+        if (_homeTimeline.Count > 0)
+        {
+            return;
+        }
+
+        if (_historyItems.Count > 0 && !_historyItems[0].StartsWith("История появится", StringComparison.Ordinal))
+        {
+            _homeTimeline.Add("История загружена. Последние завершённые проверки доступны во вкладке истории.");
+            _homeTimeline.Add(_historyItems[0]);
+            return;
+        }
+
+        _homeTimeline.Add("Интерфейс готов. После первой завершённой проверки здесь появится живая лента.");
+        _homeTimeline.Add("Палитра и визуальная система уже инициализированы.");
     }
 
     private void ApplyUpdateState()
@@ -206,6 +432,7 @@ public sealed partial class MainWindow : Window
         if (_updateInfo.Available)
         {
             UpdateStatusText.Text = $"Доступна версия {_updateInfo.LatestVersion}.";
+            UpdateButton.Content = $"Установить {_updateInfo.LatestVersion}";
             UpdateButton.Visibility = Visibility.Visible;
             return;
         }
@@ -225,10 +452,26 @@ public sealed partial class MainWindow : Window
         var visible = !string.IsNullOrWhiteSpace(message);
         StatusBanner.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         StatusBannerText.Text = visible ? message! : string.Empty;
-        if (visible)
+        HomeStatusText.Text = visible ? message! : GetHomeStatusFallback();
+    }
+
+    private void UpdateStatusHomeFallback()
+    {
+        HomeStatusText.Text = GetHomeStatusFallback();
+    }
+
+    private string GetHomeStatusFallback()
+    {
+        if (_activeScan is not null && !_activeScan.IsFinished)
         {
-            HomeStatusText.Text = message!;
+            return string.IsNullOrWhiteSpace(_activeScan.Message)
+                ? "Проверка в процессе. Перейди на экран проверки для подробной ленты."
+                : _activeScan.Message;
         }
+
+        return _session is null
+            ? "Войди в аккаунт, чтобы запустить первую проверку."
+            : "Готов к новой проверке.";
     }
 
     private void ResetAuthInputs()
@@ -285,6 +528,7 @@ public sealed partial class MainWindow : Window
                 SetStatus(ticket.Error);
                 return;
             }
+
             _challenge = ticket;
             SetStatus(null);
             CodeHintText.Text = $"Код подтверждения отправлен на {ticket.Email}.";
@@ -318,6 +562,7 @@ public sealed partial class MainWindow : Window
                 SetStatus(ticket.Error);
                 return;
             }
+
             _challenge = ticket;
             SetStatus(null);
             CodeHintText.Text = $"Код подтверждения отправлен на {ticket.Email}.";
@@ -355,6 +600,7 @@ public sealed partial class MainWindow : Window
             _session = result.session;
             await SessionStore.SaveSessionAsync(_session);
             ResetAuthInputs();
+            ApplySessionState();
             SetStatus("Вход выполнен.");
             ShowScreen(AppScreen.Home);
         }
@@ -378,6 +624,7 @@ public sealed partial class MainWindow : Window
     {
         if (_session is null)
         {
+            SetStatus("Войди в аккаунт, чтобы запустить проверку.");
             ShowScreen(AppScreen.Welcome);
             return;
         }
@@ -479,9 +726,16 @@ public sealed partial class MainWindow : Window
         }
 
         _homeTimeline.Clear();
-        foreach (var item in _scanTimeline.Take(8))
+        _homeTimeline.Add($"{DateTime.Now:HH:mm} | {ScanPrimaryText.Text}");
+        foreach (var item in _scanTimeline.Take(7))
         {
             _homeTimeline.Add(item);
+        }
+
+        HomeStatusText.Text = scan.PrimarySummary;
+        if (_screen == AppScreen.Scan)
+        {
+            UpdateScreenContext(AppScreen.Scan);
         }
     }
 
@@ -535,6 +789,7 @@ public sealed partial class MainWindow : Window
         _session = null;
         SessionStore.ClearSession();
         ResetAuthInputs();
+        ApplySessionState();
         ShowScreen(AppScreen.Welcome);
     }
 
@@ -547,6 +802,7 @@ public sealed partial class MainWindow : Window
 
         await DownloadAndRunUpdateAsync(_updateInfo.SetupUrl, autoMode: false);
     }
+
     private async Task DownloadAndRunUpdateAsync(string setupUrl, bool autoMode)
     {
         try

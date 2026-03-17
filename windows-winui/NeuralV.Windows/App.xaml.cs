@@ -68,16 +68,27 @@ public partial class App : Application
     public static void ApplyPalette(ResourceDictionary resources, ThemePalette palette)
     {
         resources["AppBackgroundBrush"] = Brush(palette.Background);
+        resources["AppBackgroundAltBrush"] = Brush(palette.BackgroundAlt);
         resources["AppSurfaceBrush"] = Brush(palette.Surface);
         resources["AppSurfaceRaisedBrush"] = Brush(palette.SurfaceRaised);
+        resources["AppSurfaceStrongBrush"] = Brush(palette.SurfaceStrong);
+        resources["AppCardBrush"] = Brush(palette.Card);
+        resources["AppChromeBrush"] = Brush(palette.Chrome);
         resources["AppAccentBrush"] = Brush(palette.Accent);
+        resources["AppAccentSecondaryBrush"] = Brush(palette.AccentSecondary);
+        resources["AppAccentTertiaryBrush"] = Brush(palette.AccentTertiary);
         resources["AppAccentSoftBrush"] = Brush(palette.AccentSoft);
+        resources["AppAccentMutedBrush"] = Brush(palette.AccentMuted);
         resources["AppOutlineBrush"] = Brush(palette.Outline);
+        resources["AppOutlineStrongBrush"] = Brush(palette.OutlineStrong);
         resources["AppTextBrush"] = Brush(palette.Text);
         resources["AppMutedTextBrush"] = Brush(palette.MutedText);
+        resources["AppSubtleTextBrush"] = Brush(palette.SubtleText);
+        resources["AppOnAccentBrush"] = Brush(palette.OnAccent);
         resources["AppSuccessBrush"] = Brush(palette.Success);
         resources["AppWarningBrush"] = Brush(palette.Warning);
         resources["AppDangerBrush"] = Brush(palette.Danger);
+        resources["AppOverlayScrimBrush"] = Brush(ThemePalette.WithAlpha(palette.Background, 0.68));
     }
 
     private static SolidColorBrush Brush(Color color) => new(color);

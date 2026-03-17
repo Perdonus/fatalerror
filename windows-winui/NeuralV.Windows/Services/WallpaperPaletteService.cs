@@ -6,51 +6,242 @@ using UiColor = Windows.UI.Color;
 
 namespace NeuralV.Windows.Services;
 
+public enum PaletteSource
+{
+    Wallpaper,
+    WindowsAccent,
+    Default
+}
+
 public sealed class ThemePalette
 {
     public UiColor Background { get; init; }
+    public UiColor BackgroundAlt { get; init; }
     public UiColor Surface { get; init; }
     public UiColor SurfaceRaised { get; init; }
+    public UiColor SurfaceStrong { get; init; }
+    public UiColor Card { get; init; }
+    public UiColor Chrome { get; init; }
     public UiColor Accent { get; init; }
+    public UiColor AccentSecondary { get; init; }
+    public UiColor AccentTertiary { get; init; }
     public UiColor AccentSoft { get; init; }
+    public UiColor AccentMuted { get; init; }
     public UiColor Outline { get; init; }
+    public UiColor OutlineStrong { get; init; }
     public UiColor Text { get; init; }
     public UiColor MutedText { get; init; }
+    public UiColor SubtleText { get; init; }
+    public UiColor OnAccent { get; init; }
     public UiColor Success { get; init; }
     public UiColor Warning { get; init; }
     public UiColor Danger { get; init; }
     public bool IsDark { get; init; }
+    public PaletteSource Source { get; init; }
 
-    public static ThemePalette DefaultDark() => FromAccent(UiColor.FromArgb(255, 110, 125, 255), true);
-
-    public static ThemePalette FromAccent(UiColor accent, bool isDark)
+    public string SourceLabel => Source switch
     {
-        var background = isDark ? UiColor.FromArgb(255, 14, 18, 27) : UiColor.FromArgb(255, 244, 246, 255);
-        var surface = Blend(background, accent, isDark ? 0.12 : 0.10);
-        var raised = Blend(background, accent, isDark ? 0.18 : 0.16);
+        PaletteSource.Wallpaper => "Обои",
+        PaletteSource.WindowsAccent => "Акцент Windows",
+        _ => "Резервный вариант"
+    };
+
+    public string AccentHex => $"#{Accent.R:X2}{Accent.G:X2}{Accent.B:X2}";
+
+    public static ThemePalette DefaultDark() => FromAccent(UiColor.FromArgb(255, 100, 127, 255), true, PaletteSource.Default);
+
+    public static ThemePalette FromAccent(UiColor accent, bool isDark, PaletteSource source)
+    {
+        accent = NormalizeAccent(accent, isDark);
+        ToHsl(accent, out var hue, out var saturation, out _);
+
+        var background = isDark
+            ? FromHsl(hue, Clamp01(saturation * 0.18 + 0.05), 0.10)
+            : FromHsl(hue, Clamp01(saturation * 0.08 + 0.02), 0.97);
+        var backgroundAlt = isDark
+            ? FromHsl(hue + 12, Clamp01(saturation * 0.24 + 0.06), 0.14)
+            : FromHsl(hue + 10, Clamp01(saturation * 0.10 + 0.03), 0.93);
+        var surface = Blend(background, accent, isDark ? 0.15 : 0.07);
+        var surfaceRaised = Blend(backgroundAlt, accent, isDark ? 0.18 : 0.10);
+        var surfaceStrong = Blend(surfaceRaised, accent, isDark ? 0.22 : 0.14);
+        var card = Blend(surfaceStrong, isDark ? UiColor.FromArgb(255, 255, 255, 255) : UiColor.FromArgb(255, 255, 255, 255), isDark ? 0.03 : 0.18);
+        var chrome = Blend(background, backgroundAlt, 0.58);
+        var accentSecondary = AdjustLightness(RotateHue(accent, -18), isDark ? 0.10 : -0.03);
+        var accentTertiary = AdjustLightness(RotateHue(accent, 24), isDark ? 0.12 : -0.04);
+
         return new ThemePalette
         {
             Background = background,
+            BackgroundAlt = backgroundAlt,
             Surface = surface,
-            SurfaceRaised = raised,
+            SurfaceRaised = surfaceRaised,
+            SurfaceStrong = surfaceStrong,
+            Card = card,
+            Chrome = chrome,
             Accent = accent,
-            AccentSoft = Blend(surface, accent, isDark ? 0.42 : 0.26),
-            Outline = Blend(surface, isDark ? UiColor.FromArgb(255, 157, 167, 198) : UiColor.FromArgb(255, 86, 96, 122), isDark ? 0.24 : 0.32),
-            Text = isDark ? UiColor.FromArgb(255, 245, 247, 255) : UiColor.FromArgb(255, 18, 22, 31),
-            MutedText = isDark ? UiColor.FromArgb(255, 188, 196, 222) : UiColor.FromArgb(255, 92, 101, 126),
-            Success = UiColor.FromArgb(255, 92, 193, 138),
-            Warning = UiColor.FromArgb(255, 255, 184, 97),
-            Danger = UiColor.FromArgb(255, 255, 126, 150),
-            IsDark = isDark
+            AccentSecondary = accentSecondary,
+            AccentTertiary = accentTertiary,
+            AccentSoft = Blend(surfaceStrong, accent, isDark ? 0.42 : 0.28),
+            AccentMuted = Blend(surface, accentSecondary, isDark ? 0.26 : 0.18),
+            Outline = Blend(surfaceStrong, isDark ? UiColor.FromArgb(255, 187, 196, 223) : UiColor.FromArgb(255, 91, 102, 128), isDark ? 0.22 : 0.28),
+            OutlineStrong = Blend(accent, isDark ? UiColor.FromArgb(255, 235, 240, 255) : UiColor.FromArgb(255, 50, 62, 84), isDark ? 0.28 : 0.24),
+            Text = isDark ? UiColor.FromArgb(255, 245, 247, 252) : UiColor.FromArgb(255, 22, 26, 36),
+            MutedText = isDark ? UiColor.FromArgb(255, 194, 202, 226) : UiColor.FromArgb(255, 88, 98, 122),
+            SubtleText = isDark ? UiColor.FromArgb(255, 150, 160, 187) : UiColor.FromArgb(255, 116, 126, 148),
+            OnAccent = GetReadableForeground(accent),
+            Success = Blend(UiColor.FromArgb(255, 83, 205, 146), accentSecondary, 0.08),
+            Warning = Blend(UiColor.FromArgb(255, 255, 184, 88), accentTertiary, 0.06),
+            Danger = Blend(UiColor.FromArgb(255, 255, 121, 144), accentSecondary, 0.12),
+            IsDark = isDark,
+            Source = source
         };
     }
 
     public static UiColor Blend(UiColor from, UiColor to, double ratio)
     {
-        var clamped = Math.Max(0, Math.Min(1, ratio));
-        byte Mix(byte a, byte b) => (byte)(a + (b - a) * clamped);
+        var clamped = Clamp01(ratio);
+        byte Mix(byte a, byte b) => (byte)(a + ((b - a) * clamped));
         return UiColor.FromArgb(255, Mix(from.R, to.R), Mix(from.G, to.G), Mix(from.B, to.B));
     }
+
+    public static UiColor WithAlpha(UiColor color, double opacity)
+    {
+        return UiColor.FromArgb((byte)(Clamp01(opacity) * 255), color.R, color.G, color.B);
+    }
+
+    public static UiColor RotateHue(UiColor color, double delta)
+    {
+        ToHsl(color, out var hue, out var saturation, out var lightness);
+        return FromHsl(hue + delta, saturation, lightness);
+    }
+
+    public static UiColor AdjustLightness(UiColor color, double delta)
+    {
+        ToHsl(color, out var hue, out var saturation, out var lightness);
+        return FromHsl(hue, saturation, Clamp01(lightness + delta));
+    }
+
+    public static UiColor NormalizeAccent(UiColor color, bool isDark)
+    {
+        ToHsl(color, out var hue, out var saturation, out var lightness);
+        saturation = Math.Max(saturation, isDark ? 0.42 : 0.34);
+        lightness = isDark
+            ? Math.Clamp(lightness, 0.56, 0.72)
+            : Math.Clamp(lightness, 0.42, 0.58);
+        return FromHsl(hue, saturation, lightness);
+    }
+
+    public static void ToHsl(UiColor color, out double hue, out double saturation, out double lightness)
+    {
+        var r = color.R / 255d;
+        var g = color.G / 255d;
+        var b = color.B / 255d;
+        var max = Math.Max(r, Math.Max(g, b));
+        var min = Math.Min(r, Math.Min(g, b));
+        var delta = max - min;
+
+        lightness = (max + min) / 2d;
+
+        if (delta == 0)
+        {
+            hue = 0;
+            saturation = 0;
+            return;
+        }
+
+        saturation = lightness > 0.5
+            ? delta / (2d - max - min)
+            : delta / (max + min);
+
+        hue = max switch
+        {
+            _ when max == r => ((g - b) / delta) + (g < b ? 6 : 0),
+            _ when max == g => ((b - r) / delta) + 2,
+            _ => ((r - g) / delta) + 4
+        };
+        hue *= 60d;
+    }
+
+    public static UiColor FromHsl(double hue, double saturation, double lightness)
+    {
+        hue = NormalizeHue(hue) / 360d;
+        saturation = Clamp01(saturation);
+        lightness = Clamp01(lightness);
+
+        double r;
+        double g;
+        double b;
+
+        if (saturation == 0)
+        {
+            r = g = b = lightness;
+        }
+        else
+        {
+            var q = lightness < 0.5
+                ? lightness * (1 + saturation)
+                : lightness + saturation - (lightness * saturation);
+            var p = 2 * lightness - q;
+            r = HueToRgb(p, q, hue + (1d / 3d));
+            g = HueToRgb(p, q, hue);
+            b = HueToRgb(p, q, hue - (1d / 3d));
+        }
+
+        return UiColor.FromArgb(255, (byte)Math.Round(r * 255), (byte)Math.Round(g * 255), (byte)Math.Round(b * 255));
+    }
+
+    private static UiColor GetReadableForeground(UiColor background)
+    {
+        return RelativeLuminance(background) > 0.42
+            ? UiColor.FromArgb(255, 16, 20, 30)
+            : UiColor.FromArgb(255, 248, 250, 255);
+    }
+
+    private static double RelativeLuminance(UiColor color)
+    {
+        static double Channel(byte value)
+        {
+            var normalized = value / 255d;
+            return normalized <= 0.03928
+                ? normalized / 12.92
+                : Math.Pow((normalized + 0.055) / 1.055, 2.4);
+        }
+
+        return (0.2126 * Channel(color.R)) + (0.7152 * Channel(color.G)) + (0.0722 * Channel(color.B));
+    }
+
+    private static double HueToRgb(double p, double q, double t)
+    {
+        if (t < 0)
+        {
+            t += 1;
+        }
+        if (t > 1)
+        {
+            t -= 1;
+        }
+        if (t < 1d / 6d)
+        {
+            return p + ((q - p) * 6d * t);
+        }
+        if (t < 1d / 2d)
+        {
+            return q;
+        }
+        if (t < 2d / 3d)
+        {
+            return p + ((q - p) * ((2d / 3d) - t) * 6d);
+        }
+        return p;
+    }
+
+    private static double NormalizeHue(double hue)
+    {
+        var normalized = hue % 360d;
+        return normalized < 0 ? normalized + 360d : normalized;
+    }
+
+    private static double Clamp01(double value) => Math.Clamp(value, 0d, 1d);
 }
 
 public static class WallpaperPaletteService
@@ -63,10 +254,12 @@ public static class WallpaperPaletteService
         var wallpaperAccent = TryReadWallpaperAccent();
         if (wallpaperAccent.HasValue)
         {
-            return ThemePalette.FromAccent(wallpaperAccent.Value, isDark);
+            return ThemePalette.FromAccent(wallpaperAccent.Value, isDark, PaletteSource.Wallpaper);
         }
 
-        return ThemePalette.FromAccent(ReadAccentColor(), isDark);
+        var accent = ReadAccentColor();
+        var source = accent.HasValue ? PaletteSource.WindowsAccent : PaletteSource.Default;
+        return ThemePalette.FromAccent(accent ?? UiColor.FromArgb(255, 100, 127, 255), isDark, source);
     }
 
     private static bool DetectDarkMode()
@@ -82,29 +275,26 @@ public static class WallpaperPaletteService
         }
     }
 
-    private static UiColor ReadAccentColor()
+    private static UiColor? ReadAccentColor()
     {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM");
             var raw = key?.GetValue("ColorizationColor");
-            if (raw is int value)
+            if (raw is int intValue)
             {
-                var a = (byte)((value >> 24) & 0xFF);
-                var r = (byte)((value >> 16) & 0xFF);
-                var g = (byte)((value >> 8) & 0xFF);
-                var b = (byte)(value & 0xFF);
-                if (a > 0)
-                {
-                    return UiColor.FromArgb(255, r, g, b);
-                }
+                return ColorFromArgb(intValue);
+            }
+            if (raw is uint uintValue)
+            {
+                return ColorFromArgb(unchecked((int)uintValue));
             }
         }
         catch
         {
         }
 
-        return UiColor.FromArgb(255, 110, 125, 255);
+        return null;
     }
 
     private static UiColor? TryReadWallpaperAccent()
@@ -119,37 +309,63 @@ public static class WallpaperPaletteService
         {
             using var bitmap = new DrawingBitmap(path);
             using var sample = new DrawingBitmap(bitmap, new DrawingSize(Math.Min(96, bitmap.Width), Math.Min(96, bitmap.Height)));
-            long sumR = 0;
-            long sumG = 0;
-            long sumB = 0;
-            long count = 0;
+            var buckets = new Dictionary<int, PaletteBucket>();
 
-            var stepX = Math.Max(1, sample.Width / 24);
-            var stepY = Math.Max(1, sample.Height / 24);
+            var stepX = Math.Max(1, sample.Width / 28);
+            var stepY = Math.Max(1, sample.Height / 28);
             for (var y = 0; y < sample.Height; y += stepY)
             {
                 for (var x = 0; x < sample.Width; x += stepX)
                 {
                     var pixel = sample.GetPixel(x, y);
-                    var brightness = pixel.R + pixel.G + pixel.B;
-                    if (brightness < 36 || brightness > 735)
+                    if (pixel.A < 96)
                     {
                         continue;
                     }
 
-                    sumR += pixel.R;
-                    sumG += pixel.G;
-                    sumB += pixel.B;
-                    count++;
+                    var color = UiColor.FromArgb(pixel.A, pixel.R, pixel.G, pixel.B);
+                    ThemePalette.ToHsl(color, out var hue, out var saturation, out var lightness);
+                    if (lightness < 0.14 || lightness > 0.86 || saturation < 0.10)
+                    {
+                        continue;
+                    }
+
+                    var hueBucket = (int)(hue / 18d);
+                    var saturationBucket = Math.Min(4, (int)(saturation * 5d));
+                    var lightBucket = Math.Min(4, (int)(lightness * 5d));
+                    var key = (hueBucket << 8) | (saturationBucket << 4) | lightBucket;
+                    var balance = Math.Max(0.12, 1d - (Math.Abs(lightness - 0.52d) * 1.65d));
+                    var score = (0.35d + (saturation * 0.65d)) * balance;
+
+                    if (!buckets.TryGetValue(key, out var bucket))
+                    {
+                        bucket = new PaletteBucket();
+                        buckets[key] = bucket;
+                    }
+
+                    bucket.Score += score;
+                    bucket.SumR += pixel.R;
+                    bucket.SumG += pixel.G;
+                    bucket.SumB += pixel.B;
+                    bucket.Count++;
                 }
             }
 
-            if (count == 0)
+            var selected = buckets.Values
+                .Where(bucket => bucket.Count > 1)
+                .OrderByDescending(bucket => bucket.Score * Math.Max(2, bucket.Count))
+                .FirstOrDefault();
+
+            if (selected is null)
             {
                 return null;
             }
 
-            return UiColor.FromArgb(255, (byte)(sumR / count), (byte)(sumG / count), (byte)(sumB / count));
+            return UiColor.FromArgb(
+                255,
+                (byte)(selected.SumR / selected.Count),
+                (byte)(selected.SumG / selected.Count),
+                (byte)(selected.SumB / selected.Count));
         }
         catch
         {
@@ -157,9 +373,18 @@ public static class WallpaperPaletteService
         }
     }
 
+    private static UiColor ColorFromArgb(int value)
+    {
+        var a = (byte)((value >> 24) & 0xFF);
+        var r = (byte)((value >> 16) & 0xFF);
+        var g = (byte)((value >> 8) & 0xFF);
+        var b = (byte)(value & 0xFF);
+        return UiColor.FromArgb(a == 0 ? (byte)255 : a, r, g, b);
+    }
+
     private static string GetWallpaperPath()
     {
-        var buffer = new char[260];
+        var buffer = new char[2048];
         return SystemParametersInfoW(SpiGetDeskWallpaper, (uint)buffer.Length, buffer, 0)
             ? new string(buffer).TrimEnd('\0')
             : string.Empty;
@@ -167,4 +392,13 @@ public static class WallpaperPaletteService
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SystemParametersInfoW(uint uiAction, uint uiParam, [Out] char[] pvParam, uint fWinIni);
+
+    private sealed class PaletteBucket
+    {
+        public double Score { get; set; }
+        public long SumR { get; set; }
+        public long SumG { get; set; }
+        public long SumB { get; set; }
+        public int Count { get; set; }
+    }
 }

@@ -5,6 +5,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml.Shapes;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.Foundation;
@@ -30,11 +32,82 @@ public sealed partial class MainWindow : Window
     private bool _initialized;
     private readonly string _currentVersion = VersionInfo.Current;
 
+    private Rectangle BackdropGradient = default!;
+    private Rectangle FabricLayerA = default!;
+    private Rectangle FabricLayerB = default!;
+    private Rectangle FabricLayerC = default!;
+    private Ellipse GlowA = default!;
+    private Ellipse GlowB = default!;
+    private Ellipse GlowC = default!;
+    private Grid ShellFrame = default!;
+    private ColumnDefinition RailColumn = default!;
+    private ColumnDefinition GutterColumn = default!;
+    private ColumnDefinition ContentColumn = default!;
+    private Border RailPanel = default!;
+    private Grid ContentShell = default!;
+    private Grid HeaderMetaBar = default!;
+    private TextBlock RailBadgeText = default!;
+    private TextBlock RailHeadlineText = default!;
+    private TextBlock RailDescriptionText = default!;
+    private TextBlock PaletteSourceLabel = default!;
+    private Border PaletteSwatchPrimary = default!;
+    private Border PaletteSwatchSecondary = default!;
+    private Border PaletteSwatchTertiary = default!;
+    private TextBlock PaletteSeedLabel = default!;
+    private TextBlock RailUserNameText = default!;
+    private TextBlock RailUserMetaText = default!;
+    private TextBlock RailUserStateText = default!;
+    private TextBlock ThemeModeLabel = default!;
+    private TextBlock PaletteModeHeaderLabel = default!;
+    private TextBlock VersionLabel = default!;
+    private Grid AppNavigationBar = default!;
+    private Button HomeNavButton = default!;
+    private Button HistoryNavButton = default!;
+    private Button SettingsNavButton = default!;
+    private TextBlock UserLabel = default!;
+    private Border StatusBanner = default!;
+    private TextBlock StatusBannerText = default!;
+    private FrameworkElement SplashView = default!;
+    private Border SplashHalo = default!;
+    private Ellipse SplashOrbitRing = default!;
+    private FrameworkElement WelcomeView = default!;
+    private FrameworkElement LoginView = default!;
+    private TextBox LoginEmailBox = default!;
+    private PasswordBox LoginPasswordBox = default!;
+    private FrameworkElement RegisterView = default!;
+    private TextBox RegisterNameBox = default!;
+    private TextBox RegisterEmailBox = default!;
+    private PasswordBox RegisterPasswordBox = default!;
+    private PasswordBox RegisterPasswordRepeatBox = default!;
+    private FrameworkElement CodeView = default!;
+    private TextBlock CodeHintText = default!;
+    private TextBox VerificationCodeBox = default!;
+    private FrameworkElement HomeView = default!;
+    private TextBlock HomeStatusText = default!;
+    private Button QuickScanButton = default!;
+    private Button DeepScanButton = default!;
+    private TextBlock UpdateStatusText = default!;
+    private Button UpdateButton = default!;
+    private ListView HomeTimelineList = default!;
+    private FrameworkElement ScanView = default!;
+    private TextBlock ScanPrimaryText = default!;
+    private TextBlock ScanSecondaryText = default!;
+    private ListView ScanTimelineList = default!;
+    private FrameworkElement HistoryView = default!;
+    private ListView HistoryList = default!;
+    private FrameworkElement SettingsView = default!;
+    private TextBlock SettingsPaletteText = default!;
+    private TextBlock SettingsVersionText = default!;
+    private TextBlock SettingsSessionText = default!;
+    private Border BusyOverlay = default!;
+    private TextBlock BusyText = default!;
+
     public MainWindow()
     {
         try
         {
             InitializeComponent();
+            BuildLayout();
 
             HomeTimelineList.ItemsSource = _homeTimeline;
             ScanTimelineList.ItemsSource = _scanTimeline;
@@ -71,27 +144,11 @@ public sealed partial class MainWindow : Window
             TryConfigureWindowFrame();
             TryInitializeChrome();
             UpdateStatusText.Text = "Проверяем актуальную сборку...";
-
-            if (WindowRoot.Resources["AmbientMotionStoryboard"] is Storyboard ambientStoryboard)
-            {
-                ambientStoryboard.Begin();
-            }
-            if (WindowRoot.Resources["DotLoadingStoryboard"] is Storyboard dotStoryboard)
-            {
-                dotStoryboard.Begin();
-            }
-            if (WindowRoot.Resources["ScanDotLoadingStoryboard"] is Storyboard scanLoaderStoryboard)
-            {
-                scanLoaderStoryboard.Begin();
-            }
-            if (WindowRoot.Resources["BusyDotLoadingStoryboard"] is Storyboard busyLoaderStoryboard)
-            {
-                busyLoaderStoryboard.Begin();
-            }
-            if (WindowRoot.Resources["SplashOrbitStoryboard"] is Storyboard orbitStoryboard)
-            {
-                orbitStoryboard.Begin();
-            }
+            TryBeginStoryboard("AmbientMotionStoryboard");
+            TryBeginStoryboard("DotLoadingStoryboard");
+            TryBeginStoryboard("ScanDotLoadingStoryboard");
+            TryBeginStoryboard("BusyDotLoadingStoryboard");
+            TryBeginStoryboard("SplashOrbitStoryboard");
 
             await InitializeAsync();
         }
@@ -146,6 +203,21 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             WindowsLog.Error("Window chrome initialization failed", ex);
+        }
+    }
+
+    private void TryBeginStoryboard(string key)
+    {
+        try
+        {
+            if (WindowRoot.Resources.TryGetValue(key, out var value) && value is Storyboard storyboard)
+            {
+                storyboard.Begin();
+            }
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error($"Storyboard start failed: {key}", ex);
         }
     }
 
@@ -257,6 +329,859 @@ public sealed partial class MainWindow : Window
                 new GradientStop { Color = ThemePalette.WithAlpha(first, 0.0), Offset = 1.00 }
             }
         };
+    }
+
+    private void BuildLayout()
+    {
+        WindowRoot.Children.Clear();
+
+        var ambientLayer = new Grid();
+        BackdropGradient = new Rectangle();
+        FabricLayerA = new Rectangle
+        {
+            Width = 1800,
+            Height = 920,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(-280, -180, 0, 0),
+            Opacity = 0.18
+        };
+        FabricLayerB = new Rectangle
+        {
+            Width = 1700,
+            Height = 960,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -120, -220, 0),
+            Opacity = 0.14
+        };
+        FabricLayerC = new Rectangle
+        {
+            Width = 1650,
+            Height = 940,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, -260),
+            Opacity = 0.10
+        };
+        GlowA = new Ellipse
+        {
+            Width = 560,
+            Height = 560,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(-120, -80, 0, 0),
+            Opacity = 0.28
+        };
+        GlowB = new Ellipse
+        {
+            Width = 700,
+            Height = 700,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, -180, -180),
+            Opacity = 0.22
+        };
+        GlowC = new Ellipse
+        {
+            Width = 460,
+            Height = 460,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, -150),
+            Opacity = 0.16
+        };
+
+        ambientLayer.Children.Add(BackdropGradient);
+        ambientLayer.Children.Add(FabricLayerA);
+        ambientLayer.Children.Add(FabricLayerB);
+        ambientLayer.Children.Add(FabricLayerC);
+        ambientLayer.Children.Add(GlowA);
+        ambientLayer.Children.Add(GlowB);
+        ambientLayer.Children.Add(GlowC);
+        WindowRoot.Children.Add(ambientLayer);
+
+        ShellFrame = new Grid { Padding = new Thickness(24) };
+        RailColumn = new ColumnDefinition { Width = new GridLength(320) };
+        GutterColumn = new ColumnDefinition { Width = new GridLength(20) };
+        ContentColumn = new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) };
+        ShellFrame.ColumnDefinitions.Add(RailColumn);
+        ShellFrame.ColumnDefinitions.Add(GutterColumn);
+        ShellFrame.ColumnDefinitions.Add(ContentColumn);
+        WindowRoot.Children.Add(ShellFrame);
+
+        BuildRail();
+        BuildContentShell();
+    }
+
+    private void BuildRail()
+    {
+        RailPanel = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineBrush", 28, new Thickness(20));
+        Grid.SetColumn(RailPanel, 0);
+        ShellFrame.Children.Add(RailPanel);
+
+        var railScroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+        RailPanel.Child = railScroll;
+
+        var railStack = new StackPanel();
+        railScroll.Content = railStack;
+
+        var brandGrid = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+        brandGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        brandGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var logoShell = CreateCardBorder("AppSurfaceHighBrush", "AppOutlineBrush", 18, new Thickness(12));
+        logoShell.Width = 64;
+        logoShell.Height = 64;
+        logoShell.Child = CreateLogoElement();
+        brandGrid.Children.Add(logoShell);
+
+        var brandText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(brandText, 1);
+        brandText.Children.Add(new TextBlock
+        {
+            Text = "NeuralV",
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 28,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        brandText.Children.Add(new TextBlock
+        {
+            Text = "Windows-клиент",
+            Foreground = ThemeBrush("AppMutedTextBrush")
+        });
+        brandGrid.Children.Add(brandText);
+        railStack.Children.Add(brandGrid);
+
+        var badgePill = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 16, new Thickness(10, 6, 10, 6));
+        badgePill.HorizontalAlignment = HorizontalAlignment.Left;
+        badgePill.Margin = new Thickness(0, 0, 0, 12);
+        RailBadgeText = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
+        badgePill.Child = RailBadgeText;
+        railStack.Children.Add(badgePill);
+
+        RailHeadlineText = new TextBlock
+        {
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 30,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8)
+        };
+        railStack.Children.Add(RailHeadlineText);
+
+        RailDescriptionText = new TextBlock
+        {
+            Foreground = ThemeBrush("AppMutedTextBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 18)
+        };
+        railStack.Children.Add(RailDescriptionText);
+
+        var paletteCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 22, new Thickness(18));
+        paletteCard.Margin = new Thickness(0, 0, 0, 16);
+        var paletteStack = new StackPanel();
+        paletteStack.Children.Add(CreateSectionTitle("Палитра"));
+        PaletteSourceLabel = CreateBodyText("AppMutedTextBrush");
+        PaletteSourceLabel.Margin = new Thickness(0, 0, 0, 10);
+        paletteStack.Children.Add(PaletteSourceLabel);
+        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        PaletteSwatchPrimary = CreateSwatch();
+        PaletteSwatchSecondary = CreateSwatch();
+        PaletteSwatchSecondary.Margin = new Thickness(10, 0, 0, 0);
+        PaletteSwatchTertiary = CreateSwatch();
+        PaletteSwatchTertiary.Margin = new Thickness(10, 0, 0, 0);
+        swatches.Children.Add(PaletteSwatchPrimary);
+        swatches.Children.Add(PaletteSwatchSecondary);
+        swatches.Children.Add(PaletteSwatchTertiary);
+        paletteStack.Children.Add(swatches);
+        PaletteSeedLabel = CreateBodyText("AppSubtleTextBrush");
+        paletteStack.Children.Add(PaletteSeedLabel);
+        paletteCard.Child = paletteStack;
+        railStack.Children.Add(paletteCard);
+
+        var accountCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 22, new Thickness(18));
+        var accountStack = new StackPanel();
+        accountStack.Children.Add(CreateSectionTitle("Аккаунт"));
+        RailUserNameText = new TextBlock
+        {
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        accountStack.Children.Add(RailUserNameText);
+        RailUserMetaText = CreateBodyText("AppMutedTextBrush");
+        RailUserMetaText.Margin = new Thickness(0, 0, 0, 10);
+        accountStack.Children.Add(RailUserMetaText);
+        var accountPill = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 16, new Thickness(10, 6, 10, 6));
+        accountPill.HorizontalAlignment = HorizontalAlignment.Left;
+        RailUserStateText = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
+        accountPill.Child = RailUserStateText;
+        accountStack.Children.Add(accountPill);
+        accountCard.Child = accountStack;
+        railStack.Children.Add(accountCard);
+    }
+
+    private void BuildContentShell()
+    {
+        ContentShell = new Grid();
+        Grid.SetColumn(ContentShell, 2);
+        ContentShell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        ContentShell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        ShellFrame.Children.Add(ContentShell);
+
+        HeaderMetaBar = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        HeaderMetaBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        ContentShell.Children.Add(HeaderMetaBar);
+
+        ThemeModeLabel = AddHeaderPill(HeaderMetaBar, 0, new Thickness(0, 0, 12, 0));
+        PaletteModeHeaderLabel = AddHeaderPill(HeaderMetaBar, 1, new Thickness(0, 0, 12, 0));
+        VersionLabel = AddHeaderPill(HeaderMetaBar, 3, new Thickness(0));
+
+        var frameCard = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineBrush", 28, new Thickness(22));
+        Grid.SetRow(frameCard, 1);
+        ContentShell.Children.Add(frameCard);
+
+        var frameGrid = new Grid();
+        frameGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        frameGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        frameGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        frameCard.Child = frameGrid;
+
+        AppNavigationBar = new Grid { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 18) };
+        AppNavigationBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        AppNavigationBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        frameGrid.Children.Add(AppNavigationBar);
+
+        var navStack = new StackPanel { Orientation = Orientation.Horizontal };
+        HomeNavButton = CreateButton("Обзор", OnHomeClick, "NavTabButtonStyle");
+        HomeNavButton.Margin = new Thickness(0, 0, 10, 0);
+        HistoryNavButton = CreateButton("История", OnHistoryClick, "NavTabButtonStyle");
+        HistoryNavButton.Margin = new Thickness(0, 0, 10, 0);
+        SettingsNavButton = CreateButton("Настройки", OnSettingsClick, "NavTabButtonStyle");
+        navStack.Children.Add(HomeNavButton);
+        navStack.Children.Add(HistoryNavButton);
+        navStack.Children.Add(SettingsNavButton);
+        AppNavigationBar.Children.Add(navStack);
+
+        var userPillShell = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 14, new Thickness(12, 8, 12, 8));
+        Grid.SetColumn(userPillShell, 1);
+        UserLabel = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
+        userPillShell.Child = UserLabel;
+        AppNavigationBar.Children.Add(userPillShell);
+
+        StatusBanner = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14));
+        StatusBanner.Visibility = Visibility.Collapsed;
+        StatusBanner.Margin = new Thickness(0, 0, 0, 16);
+        Grid.SetRow(StatusBanner, 1);
+        StatusBannerText = CreateBodyText("AppTextBrush");
+        StatusBanner.Child = StatusBannerText;
+        frameGrid.Children.Add(StatusBanner);
+
+        var stageGrid = new Grid();
+        Grid.SetRow(stageGrid, 2);
+        frameGrid.Children.Add(stageGrid);
+
+        SplashView = BuildSplashView();
+        stageGrid.Children.Add(SplashView);
+
+        WelcomeView = BuildWelcomeView();
+        stageGrid.Children.Add(WelcomeView);
+
+        LoginView = BuildLoginView();
+        stageGrid.Children.Add(LoginView);
+
+        RegisterView = BuildRegisterView();
+        stageGrid.Children.Add(RegisterView);
+
+        CodeView = BuildCodeView();
+        stageGrid.Children.Add(CodeView);
+
+        HomeView = BuildHomeView();
+        stageGrid.Children.Add(HomeView);
+
+        ScanView = BuildScanView();
+        stageGrid.Children.Add(ScanView);
+
+        HistoryView = BuildHistoryView();
+        stageGrid.Children.Add(HistoryView);
+
+        SettingsView = BuildSettingsView();
+        stageGrid.Children.Add(SettingsView);
+
+        BusyOverlay = new Border
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            CornerRadius = new CornerRadius(28),
+            Visibility = Visibility.Collapsed
+        };
+        Grid.SetRowSpan(BusyOverlay, 3);
+        frameGrid.Children.Add(BusyOverlay);
+
+        var busyHost = new Grid();
+        BusyOverlay.Child = busyHost;
+        var busyCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 18, new Thickness(18));
+        busyCard.Width = 320;
+        busyCard.HorizontalAlignment = HorizontalAlignment.Center;
+        busyCard.VerticalAlignment = VerticalAlignment.Center;
+        busyHost.Children.Add(busyCard);
+        var busyStack = new StackPanel();
+        var busyGlyphShell = new Border
+        {
+            Width = 72,
+            Height = 72,
+            CornerRadius = new CornerRadius(36),
+            Background = ThemeBrush("AppAccentSoftBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 14)
+        };
+        var busyGlyph = new Grid();
+        busyGlyph.Children.Add(new Ellipse
+        {
+            Width = 44,
+            Height = 44,
+            Stroke = ThemeBrush("AppAccentBrush"),
+            StrokeThickness = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        busyGlyphShell.Child = busyGlyph;
+        busyStack.Children.Add(busyGlyphShell);
+        BusyText = new TextBlock
+        {
+            Text = "Загрузка",
+            Foreground = ThemeBrush("AppTextBrush"),
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        };
+        busyStack.Children.Add(BusyText);
+        busyCard.Child = busyStack;
+    }
+
+    private FrameworkElement BuildSplashView()
+    {
+        var host = new Grid();
+        var stack = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 540
+        };
+        host.Children.Add(stack);
+
+        var splashGrid = new Grid
+        {
+            Width = 132,
+            Height = 132,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 18)
+        };
+        SplashHalo = new Border
+        {
+            Width = 132,
+            Height = 132,
+            CornerRadius = new CornerRadius(66),
+            Background = ThemeBrush("AppAccentSoftBrush")
+        };
+        SplashOrbitRing = new Ellipse
+        {
+            Width = 112,
+            Height = 112,
+            Stroke = ThemeBrush("AppAccentBrush"),
+            StrokeThickness = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var splashBadge = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 24, new Thickness(12));
+        splashBadge.Width = 84;
+        splashBadge.Height = 84;
+        splashBadge.HorizontalAlignment = HorizontalAlignment.Center;
+        splashBadge.VerticalAlignment = VerticalAlignment.Center;
+        splashBadge.Child = CreateLogoElement();
+        splashGrid.Children.Add(SplashHalo);
+        splashGrid.Children.Add(SplashOrbitRing);
+        splashGrid.Children.Add(splashBadge);
+        stack.Children.Add(splashGrid);
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Запускаем NeuralV",
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 34,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 10)
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Поднимаем палитру, сессию и основной экран.",
+            Foreground = ThemeBrush("AppMutedTextBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center
+        });
+        return host;
+    }
+
+    private FrameworkElement BuildWelcomeView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack(880);
+        stack.Children.Add(CreatePageTitle("NeuralV для Windows"));
+        stack.Children.Add(CreatePageSubtitle("Нативный клиент для входа, проверки, истории и обновления."));
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var loginButton = CreateButton("Войти в аккаунт", OnShowLoginClick, "NeuralVButtonStyle");
+        loginButton.Margin = new Thickness(0, 0, 12, 0);
+        actions.Children.Add(loginButton);
+        actions.Children.Add(CreateButton("Создать аккаунт", OnShowRegisterClick, "SecondaryButtonStyle"));
+        stack.Children.Add(actions);
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildLoginView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack(760);
+        stack.Children.Add(CreatePageTitle("Вход", 32));
+        stack.Children.Add(CreatePageSubtitle("Введи почту и пароль. Потом придёт код подтверждения."));
+        stack.Children.Add(CreateFieldLabel("E-mail"));
+        LoginEmailBox = CreateTextBox("name@example.com");
+        LoginEmailBox.Margin = new Thickness(0, 0, 0, 12);
+        stack.Children.Add(LoginEmailBox);
+        stack.Children.Add(CreateFieldLabel("Пароль"));
+        LoginPasswordBox = CreatePasswordBox();
+        LoginPasswordBox.Margin = new Thickness(0, 0, 0, 18);
+        stack.Children.Add(LoginPasswordBox);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var backButton = CreateButton("Назад", OnBackToWelcomeClick, "SecondaryButtonStyle");
+        backButton.Margin = new Thickness(0, 0, 12, 0);
+        actions.Children.Add(backButton);
+        actions.Children.Add(CreateButton("Продолжить", OnStartLoginClick, "NeuralVButtonStyle"));
+        stack.Children.Add(actions);
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildRegisterView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack(760);
+        stack.Children.Add(CreatePageTitle("Регистрация", 32));
+        stack.Children.Add(CreatePageSubtitle("Создай аккаунт и подтверди почту кодом."));
+        stack.Children.Add(CreateFieldLabel("Имя"));
+        RegisterNameBox = CreateTextBox();
+        RegisterNameBox.Margin = new Thickness(0, 0, 0, 12);
+        stack.Children.Add(RegisterNameBox);
+        stack.Children.Add(CreateFieldLabel("E-mail"));
+        RegisterEmailBox = CreateTextBox("name@example.com");
+        RegisterEmailBox.Margin = new Thickness(0, 0, 0, 12);
+        stack.Children.Add(RegisterEmailBox);
+        stack.Children.Add(CreateFieldLabel("Пароль"));
+        RegisterPasswordBox = CreatePasswordBox();
+        RegisterPasswordBox.Margin = new Thickness(0, 0, 0, 12);
+        stack.Children.Add(RegisterPasswordBox);
+        stack.Children.Add(CreateFieldLabel("Повтори пароль"));
+        RegisterPasswordRepeatBox = CreatePasswordBox();
+        RegisterPasswordRepeatBox.Margin = new Thickness(0, 0, 0, 18);
+        stack.Children.Add(RegisterPasswordRepeatBox);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var backButton = CreateButton("Назад", OnBackToWelcomeClick, "SecondaryButtonStyle");
+        backButton.Margin = new Thickness(0, 0, 12, 0);
+        actions.Children.Add(backButton);
+        actions.Children.Add(CreateButton("Создать аккаунт", OnStartRegisterClick, "NeuralVButtonStyle"));
+        stack.Children.Add(actions);
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildCodeView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack(760);
+        stack.Children.Add(CreatePageTitle("Подтверждение", 32));
+        CodeHintText = CreatePageSubtitle(string.Empty);
+        stack.Children.Add(CodeHintText);
+        stack.Children.Add(CreateFieldLabel("Код"));
+        VerificationCodeBox = CreateTextBox("123456");
+        VerificationCodeBox.Margin = new Thickness(0, 0, 0, 18);
+        stack.Children.Add(VerificationCodeBox);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var backButton = CreateButton("Назад", OnBackFromCodeClick, "SecondaryButtonStyle");
+        backButton.Margin = new Thickness(0, 0, 12, 0);
+        actions.Children.Add(backButton);
+        actions.Children.Add(CreateButton("Войти", OnVerifyCodeClick, "NeuralVButtonStyle"));
+        stack.Children.Add(actions);
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildHomeView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack(960);
+        stack.Children.Add(CreatePageTitle("Панель проверки"));
+        HomeStatusText = CreatePageSubtitle(string.Empty);
+        stack.Children.Add(HomeStatusText);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 18) };
+        QuickScanButton = CreateButton("Быстрая проверка", OnQuickScanClick, "NeuralVButtonStyle");
+        QuickScanButton.Margin = new Thickness(0, 0, 12, 0);
+        DeepScanButton = CreateButton("Глубокая проверка", OnDeepScanClick, "SecondaryButtonStyle");
+        actions.Children.Add(QuickScanButton);
+        actions.Children.Add(DeepScanButton);
+        stack.Children.Add(actions);
+
+        var updateCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14));
+        updateCard.Margin = new Thickness(0, 0, 0, 16);
+        var updateStack = new StackPanel();
+        updateStack.Children.Add(CreateSectionTitle("Обновления", 20));
+        UpdateStatusText = CreateBodyText("AppMutedTextBrush");
+        UpdateStatusText.Margin = new Thickness(0, 0, 0, 10);
+        updateStack.Children.Add(UpdateStatusText);
+        UpdateButton = CreateButton("Скачать обновление", OnDownloadUpdateClick, "NeuralVButtonStyle");
+        UpdateButton.Visibility = Visibility.Collapsed;
+        UpdateButton.HorizontalAlignment = HorizontalAlignment.Left;
+        updateStack.Children.Add(UpdateButton);
+        updateCard.Child = updateStack;
+        stack.Children.Add(updateCard);
+
+        var timelineCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14));
+        var timelineStack = new StackPanel();
+        timelineStack.Children.Add(CreateSectionTitle("Последние события", 20));
+        HomeTimelineList = CreateListView();
+        HomeTimelineList.MinHeight = 340;
+        timelineStack.Children.Add(HomeTimelineList);
+        timelineCard.Child = timelineStack;
+        stack.Children.Add(timelineCard);
+
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildScanView()
+    {
+        var view = CreatePageScroll();
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(330) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var leftCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
+        Grid.SetColumn(leftCard, 0);
+        var leftStack = new StackPanel();
+        var scanGlyphShell = new Border
+        {
+            Width = 96,
+            Height = 96,
+            CornerRadius = new CornerRadius(48),
+            Background = ThemeBrush("AppAccentSoftBrush"),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, 0, 18)
+        };
+        var scanGlyphGrid = new Grid();
+        scanGlyphGrid.Children.Add(new Ellipse
+        {
+            Width = 72,
+            Height = 72,
+            Stroke = ThemeBrush("AppAccentBrush"),
+            StrokeThickness = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        scanGlyphGrid.Children.Add(new TextBlock
+        {
+            Text = "NV",
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 22,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        scanGlyphShell.Child = scanGlyphGrid;
+        leftStack.Children.Add(scanGlyphShell);
+        ScanPrimaryText = new TextBlock
+        {
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 24,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 10),
+            TextWrapping = TextWrapping.Wrap
+        };
+        leftStack.Children.Add(ScanPrimaryText);
+        ScanSecondaryText = CreateBodyText("AppMutedTextBrush");
+        ScanSecondaryText.Margin = new Thickness(0, 0, 0, 18);
+        leftStack.Children.Add(ScanSecondaryText);
+        var cancelButton = CreateButton("Отменить проверку", OnCancelScanClick, "NeuralVButtonStyle");
+        cancelButton.Margin = new Thickness(0, 0, 0, 10);
+        leftStack.Children.Add(cancelButton);
+        leftStack.Children.Add(CreateButton("Назад", OnBackToHomeClick, "SecondaryButtonStyle"));
+        leftCard.Child = leftStack;
+        grid.Children.Add(leftCard);
+
+        var rightCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
+        Grid.SetColumn(rightCard, 2);
+        var rightStack = new StackPanel();
+        rightStack.Children.Add(CreateSectionTitle("Что происходит сейчас", 20));
+        ScanTimelineList = CreateListView();
+        ScanTimelineList.MinHeight = 440;
+        rightStack.Children.Add(ScanTimelineList);
+        rightCard.Child = rightStack;
+        grid.Children.Add(rightCard);
+
+        view.Content = grid;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildHistoryView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack();
+        stack.Children.Add(CreatePageTitle("История"));
+        stack.Children.Add(CreatePageSubtitle("Последние завершённые проверки сохраняются локально."));
+        HistoryList = CreateListView();
+        stack.Children.Add(HistoryList);
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private FrameworkElement BuildSettingsView()
+    {
+        var view = CreatePageScroll();
+        var stack = CreatePageStack(760);
+        stack.Children.Add(CreatePageTitle("Настройки"));
+
+        var paletteCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
+        paletteCard.Margin = new Thickness(0, 0, 0, 16);
+        var paletteStack = new StackPanel();
+        paletteStack.Children.Add(CreateSectionTitle("Визуальная система", 20));
+        SettingsPaletteText = CreateBodyText("AppMutedTextBrush");
+        SettingsPaletteText.Margin = new Thickness(0, 0, 0, 8);
+        SettingsVersionText = CreateBodyText("AppMutedTextBrush");
+        paletteStack.Children.Add(SettingsPaletteText);
+        paletteStack.Children.Add(SettingsVersionText);
+        paletteCard.Child = paletteStack;
+        stack.Children.Add(paletteCard);
+
+        var sessionCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(18));
+        var sessionStack = new StackPanel();
+        sessionStack.Children.Add(CreateSectionTitle("Сессия", 20));
+        SettingsSessionText = CreateBodyText("AppMutedTextBrush");
+        SettingsSessionText.Margin = new Thickness(0, 0, 0, 12);
+        sessionStack.Children.Add(SettingsSessionText);
+        var logoutButton = CreateButton("Выйти из аккаунта", OnLogoutClick, "SecondaryButtonStyle");
+        logoutButton.HorizontalAlignment = HorizontalAlignment.Left;
+        sessionStack.Children.Add(logoutButton);
+        sessionCard.Child = sessionStack;
+        stack.Children.Add(sessionCard);
+
+        view.Content = stack;
+        view.Visibility = Visibility.Collapsed;
+        return view;
+    }
+
+    private static ScrollViewer CreatePageScroll()
+    {
+        return new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+    }
+
+    private static StackPanel CreatePageStack(double maxWidth = 0)
+    {
+        var stack = new StackPanel();
+        if (maxWidth > 0)
+        {
+            stack.MaxWidth = maxWidth;
+        }
+        return stack;
+    }
+
+    private static TextBlock CreatePageTitle(string text, double size = 34)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = size,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+    }
+
+    private static TextBlock CreatePageSubtitle(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppMutedTextBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 18)
+        };
+    }
+
+    private static TextBlock CreateSectionTitle(string text, double size = 22)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = size,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+    }
+
+    private static TextBlock CreateFieldLabel(string text)
+    {
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = ThemeBrush("AppMutedTextBrush"),
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+    }
+
+    private static TextBlock CreateBodyText(string brushKey)
+    {
+        return new TextBlock
+        {
+            Foreground = ThemeBrush(brushKey),
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private static Border CreateCardBorder(string backgroundKey, string borderKey, double cornerRadius, Thickness padding)
+    {
+        return new Border
+        {
+            Background = ThemeBrush(backgroundKey),
+            BorderBrush = ThemeBrush(borderKey),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(cornerRadius),
+            Padding = padding
+        };
+    }
+
+    private static Border CreateSwatch()
+    {
+        return new Border
+        {
+            Width = 48,
+            Height = 48,
+            CornerRadius = new CornerRadius(14)
+        };
+    }
+
+    private TextBlock AddHeaderPill(Grid parent, int column, Thickness margin)
+    {
+        var shell = CreateCardBorder("AppSecondaryContainerBrush", "AppOutlineBrush", 14, new Thickness(12, 8, 12, 8));
+        shell.Margin = margin;
+        Grid.SetColumn(shell, column);
+        var label = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
+        shell.Child = label;
+        parent.Children.Add(shell);
+        return label;
+    }
+
+    private Button CreateButton(string text, RoutedEventHandler handler, string styleKey)
+    {
+        var button = new Button { Content = text };
+        ApplyAppStyle(button, styleKey);
+        button.Click += handler;
+        return button;
+    }
+
+    private TextBox CreateTextBox(string? placeholderText = null)
+    {
+        var textBox = new TextBox();
+        if (!string.IsNullOrWhiteSpace(placeholderText))
+        {
+            textBox.PlaceholderText = placeholderText;
+        }
+        ApplyAppStyle(textBox, "FieldTextBoxStyle");
+        return textBox;
+    }
+
+    private PasswordBox CreatePasswordBox()
+    {
+        var passwordBox = new PasswordBox();
+        ApplyAppStyle(passwordBox, "FieldPasswordBoxStyle");
+        return passwordBox;
+    }
+
+    private ListView CreateListView()
+    {
+        var listView = new ListView
+        {
+            SelectionMode = ListViewSelectionMode.None,
+            BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0))
+        };
+        ApplyAppStyle(listView, "TertiaryListViewStyle");
+        if (App.Current.Resources.TryGetValue("FlatListViewItemStyle", out var containerStyle) && containerStyle is Style itemStyle)
+        {
+            listView.ItemContainerStyle = itemStyle;
+        }
+        return listView;
+    }
+
+    private static void ApplyAppStyle(Control control, string styleKey)
+    {
+        if (App.Current.Resources.TryGetValue(styleKey, out var style) && style is Style typedStyle)
+        {
+            control.Style = typedStyle;
+        }
+    }
+
+    private static Brush ThemeBrush(string key)
+    {
+        if (App.Current.Resources.TryGetValue(key, out var value) && value is Brush brush)
+        {
+            return brush;
+        }
+
+        return new SolidColorBrush(UiColor.FromArgb(255, 255, 255, 255));
+    }
+
+    private static UIElement CreateLogoElement()
+    {
+        try
+        {
+            return new Image
+            {
+                Source = new BitmapImage(new Uri("ms-appx:///Assets/NeuralV.png")),
+                Stretch = Stretch.Uniform,
+                Margin = new Thickness(12)
+            };
+        }
+        catch
+        {
+            return new TextBlock
+            {
+                Text = "NV",
+                Foreground = ThemeBrush("AppTextBrush"),
+                FontSize = 22,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center
+            };
+        }
     }
 
     private async Task InitializeAsync()

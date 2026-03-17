@@ -6,7 +6,7 @@
     <title>NV</title>
     <meta
       name="description"
-      content="NV — пакетный менеджер для установки, обновления и удаления приложений на Windows и Linux."
+      content="NV — пакетный менеджер для Windows и Linux. Установка, каталог пакетов и creator/package формат в одном месте."
     />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
@@ -14,89 +14,83 @@
   <body data-page="home">
     <div class="nv-shell">
       <header class="topbar">
-        <a class="brand" href="/nv/">NV</a>
+        <a class="brand" href="/nv/">
+          <span class="brand-mark">NV</span>
+          <span class="brand-copy">Менеджер пакетов</span>
+        </a>
         <nav class="topnav" aria-label="Навигация NV">
           <a href="/nv/downloads/">Скачать</a>
           <a href="/nv/packages/">Пакеты</a>
+          <a href="/nv/profile/">Профиль</a>
         </nav>
       </header>
 
       <main class="page-stack">
-        <section class="hero hero-wide">
+        <section class="hero hero-home">
           <div class="hero-copy">
-            <p class="eyebrow">Package manager</p>
+            <p class="eyebrow">Windows и Linux</p>
             <h1>NV</h1>
             <p class="hero-text">
-              Один менеджер пакетов для Windows и Linux. Через NV можно ставить,
-              обновлять и удалять приложения без ручной возни с архивами и длинными инструкциями.
+              Пакетный менеджер, через который можно ставить и обновлять приложения по схеме
+              <code>@creator/package</code>. Сначала ставишь NV, потом работаешь одной короткой командой.
             </p>
             <div class="hero-actions">
-              <a class="primary-button" href="/nv/downloads/">Скачать</a>
-              <a class="ghost-button" href="/nv/packages/">Показать все пакеты</a>
+              <a class="primary-button" href="/nv/downloads/">Скачать NV</a>
+              <a class="ghost-button" href="/nv/packages/">Открыть каталог</a>
             </div>
           </div>
 
-          <aside class="hero-console" aria-hidden="true">
-            <div class="console-window">
-              <div class="console-bar">
-                <span></span><span></span><span></span>
-              </div>
-              <pre>$ nv -v
-$ nv install @lvls/neuralv
-$ nv install @lvls/nv
-$ nv uninstall package</pre>
+          <aside class="command-card" aria-label="Пример установки">
+            <div class="command-topline">
+              <span class="tiny-pill">creator/package</span>
+              <span class="tiny-pill tiny-pill-muted">latest по умолчанию</span>
             </div>
+            <pre># проверить версию менеджера
+nv -v
+
+# поставить пакет
+nv install @lvls/neuralv
+
+# поставить конкретную версию
+nv install @lvls/neuralv@1.5.0</pre>
           </aside>
         </section>
 
-        <section class="panel feature-grid">
-          <article class="feature-card">
-            <h2>Быстрый старт</h2>
-            <p>Ставишь NV один раз, дальше работаешь с пакетами одной командой.</p>
+        <section class="mini-grid" aria-label="Что умеет NV">
+          <article class="mini-card">
+            <h2>Ставит</h2>
+            <p>Берёт пакет из каталога и ставит его на нужную систему.</p>
           </article>
-          <article class="feature-card">
-            <h2>Один каталог</h2>
-            <p>На одной странице видно доступные проекты, платформы и актуальные версии.</p>
+          <article class="mini-card">
+            <h2>Обновляет</h2>
+            <p>Повторная команда установки тянет актуальную версию пакета.</p>
           </article>
-          <article class="feature-card">
-            <h2>Прямое обновление</h2>
-            <p>NV сам ставит свежие сборки, без ручной проверки архивов и ссылок.</p>
+          <article class="mini-card">
+            <h2>Показывает каталог</h2>
+            <p>Даёт creator slug, платформы и актуальные версии без длинных инструкций.</p>
           </article>
         </section>
 
-        <section class="panel panel-spacious">
-          <div class="panel-head row-head">
+        <section class="section-shell">
+          <div class="section-head">
             <div>
               <p class="eyebrow">Пакеты</p>
-              <h2>Что можно ставить через NV</h2>
+              <h2>Часть каталога</h2>
             </div>
-            <a class="ghost-button ghost-button-compact" href="/nv/packages/">Весь каталог</a>
+            <a class="ghost-button ghost-button-compact" href="/nv/packages/">Все пакеты</a>
           </div>
           <div class="package-grid" id="featured-packages" aria-live="polite"></div>
         </section>
 
-        <section class="panel panel-spacious steps-panel">
-          <div class="panel-head">
-            <p class="eyebrow">Как это работает</p>
-            <h2>Три коротких шага</h2>
+        <section class="section-shell creator-strip">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Создатели</p>
+              <h2>Профили и namespace</h2>
+            </div>
+            <a class="ghost-button ghost-button-compact" href="/nv/profile/">Открыть профиль</a>
           </div>
-          <div class="steps-grid">
-            <article class="step-card">
-              <span class="step-index">01</span>
-              <h3>Ставишь NV</h3>
-              <p>Открываешь страницу загрузки и берёшь готовую команду под свою систему.</p>
-            </article>
-            <article class="step-card">
-              <span class="step-index">02</span>
-              <h3>Выбираешь пакет</h3>
-              <p>Открываешь каталог и смотришь, какие приложения есть для Windows и Linux.</p>
-            </article>
-            <article class="step-card">
-              <span class="step-index">03</span>
-              <h3>Ставишь или обновляешь</h3>
-              <p>NV скачивает актуальную версию и дальше обслуживает её той же командой.</p>
-            </article>
-          </div>
+          <div class="creator-grid" id="featured-creators" aria-live="polite"></div>
         </section>
       </main>
     </div>

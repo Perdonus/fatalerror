@@ -6,7 +6,7 @@
     <title>NV Downloads</title>
     <meta
       name="description"
-      content="Скачать NV для Windows и Linux и получить готовую команду установки."
+      content="Скачать NV для Windows и Linux и сразу получить рабочую команду установки."
     />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
@@ -14,64 +14,66 @@
   <body data-page="downloads">
     <div class="nv-shell">
       <header class="topbar">
-        <a class="brand" href="/nv/">NV</a>
+        <a class="brand" href="/nv/">
+          <span class="brand-mark">NV</span>
+          <span class="brand-copy">Менеджер пакетов</span>
+        </a>
         <nav class="topnav" aria-label="Навигация NV">
           <a class="is-active" href="/nv/downloads/">Скачать</a>
           <a href="/nv/packages/">Пакеты</a>
+          <a href="/nv/profile/">Профиль</a>
         </nav>
       </header>
 
       <main class="page-stack">
         <section class="hero hero-compact">
-          <div class="hero-copy">
-            <p class="eyebrow">Downloads</p>
+          <div class="hero-copy hero-copy-tight">
+            <p class="eyebrow">Установка</p>
             <h1>Скачать NV</h1>
             <p class="hero-text">
-              Выбери систему и сразу получи рабочую команду установки. После этого NV сможет ставить и обновлять любые пакеты из каталога.
+              Выбираешь систему, копируешь одну команду и дальше ставишь пакеты вида
+              <code>@creator/package</code> без ручной возни с архивами.
             </p>
           </div>
         </section>
 
-        <section class="panel panel-spacious">
-          <div class="panel-head">
-            <p class="eyebrow">Платформа</p>
-            <h2>Установка NV</h2>
-          </div>
-
+        <section class="section-shell">
           <div class="platform-tabs" role="tablist" aria-label="Платформа NV">
             <button class="tab-button is-active" type="button" data-platform="linux">Linux</button>
             <button class="tab-button" type="button" data-platform="windows">Windows</button>
           </div>
 
-          <div class="downloads-grid">
-            <article class="install-card install-card-emphasis">
-              <div class="install-head">
-                <h3 id="platform-title">Linux</h3>
-                <span class="version-pill" id="platform-version">Загрузка…</span>
+          <div class="downloads-layout">
+            <article class="download-main">
+              <div class="download-main-head">
+                <div>
+                  <p class="eyebrow">Платформа</p>
+                  <h2 id="platform-title">Linux</h2>
+                </div>
+                <span class="version-pill" id="platform-version">—</span>
               </div>
-              <div class="command-block">
-                <div class="command-head">
-                  <span>Команда</span>
+
+              <div class="command-box">
+                <div class="command-box-head">
+                  <span>Команда установки</span>
                   <button id="copy-command" type="button">Копировать</button>
                 </div>
                 <pre id="install-command"></pre>
               </div>
+
+              <div class="download-actions" id="platform-actions"></div>
             </article>
 
-            <article class="install-card install-sidecard">
-              <div class="install-head">
-                <h3>Что дальше</h3>
-              </div>
-              <p class="muted" id="download-note"></p>
-              <ul class="bullet-list">
-                <li>После установки можно ставить пакеты из каталога.</li>
-                <li>NV сам показывает актуальную версию доступного пакета.</li>
-                <li>Команды установки и обновления остаются одинаковыми.</li>
+            <aside class="download-side">
+              <h3>После установки</h3>
+              <ul class="simple-list">
+                <li><code>nv -v</code> проверяет, что менеджер доступен.</li>
+                <li><code>nv install @lvls/neuralv</code> ставит пакет из каталога.</li>
+                <li>Версию можно не указывать: без suffix идёт <code>latest</code>.</li>
               </ul>
-              <div class="mini-actions">
-                <a class="ghost-button ghost-button-compact" href="/nv/packages/">Открыть каталог</a>
-              </div>
-            </article>
+              <p class="side-note" id="download-note"></p>
+              <a class="ghost-button ghost-button-compact" href="/nv/packages/">Посмотреть пакеты</a>
+            </aside>
           </div>
         </section>
       </main>

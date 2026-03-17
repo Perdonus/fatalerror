@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NV Profile</title>
+    <meta
+      name="description"
+      content="Профиль создателя пакетов NV, список пакетов и UX для auth/publish."
+    />
+    <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/nv/app.css" />
+  </head>
+  <body data-page="profile">
+    <div class="nv-shell">
+      <header class="topbar">
+        <a class="brand" href="/nv/">
+          <span class="brand-mark">NV</span>
+          <span class="brand-copy">Менеджер пакетов</span>
+        </a>
+        <nav class="topnav" aria-label="Навигация NV">
+          <a href="/nv/downloads/">Скачать</a>
+          <a href="/nv/packages/">Пакеты</a>
+          <a class="is-active" href="/nv/profile/">Профиль</a>
+        </nav>
+      </header>
+
+      <main class="page-stack">
+        <section class="hero hero-compact">
+          <div class="hero-copy hero-copy-tight">
+            <p class="eyebrow">Создатель</p>
+            <h1 id="profile-title">@creator</h1>
+            <p class="hero-text" id="profile-summary">
+              Профиль собирается из текущего каталога NV и показывает пакеты этого автора.
+            </p>
+          </div>
+        </section>
+
+        <section class="profile-layout">
+          <article class="section-shell profile-main-shell">
+            <div class="profile-meta" id="profile-meta"></div>
+            <div class="package-grid package-grid-wide" id="profile-packages" aria-live="polite"></div>
+            <p class="empty-state" id="profile-empty" hidden>У этого автора пока нет пакетов в каталоге.</p>
+          </article>
+
+          <aside class="profile-sidebar">
+            <article class="section-shell side-stack-card">
+              <div class="section-head section-head-compact">
+                <div>
+                  <p class="eyebrow">Telegram</p>
+                  <h2>Вход создателя</h2>
+                </div>
+              </div>
+              <div class="widget-slot" id="telegram-widget-slot">
+                <strong>Место под Telegram auth widget</strong>
+                <p>Сюда подключается виджет входа, когда будет готов backend verify flow.</p>
+              </div>
+            </article>
+
+            <article class="section-shell side-stack-card">
+              <div class="section-head section-head-compact">
+                <div>
+                  <p class="eyebrow">Publish</p>
+                  <h2>Форма публикации</h2>
+                </div>
+              </div>
+              <form class="publish-form" id="publish-form" action="#" method="dialog">
+                <label class="field">
+                  <span>Creator</span>
+                  <input id="publish-creator" type="text" readonly />
+                </label>
+                <label class="field">
+                  <span>Пакет</span>
+                  <input id="publish-package" type="text" placeholder="neuralv" />
+                </label>
+                <label class="field">
+                  <span>Версия</span>
+                  <input id="publish-version" type="text" placeholder="1.5.0" />
+                </label>
+                <label class="field field-wide">
+                  <span>Описание</span>
+                  <textarea id="publish-description" rows="4" placeholder="Коротко о пакете"></textarea>
+                </label>
+                <div class="toggle-row" aria-label="Платформы пакета">
+                  <label><input type="checkbox" checked /> Windows</label>
+                  <label><input type="checkbox" checked /> Linux</label>
+                </div>
+                <label class="field field-wide">
+                  <span>Источник архива</span>
+                  <input id="publish-url" type="url" placeholder="https://example.com/package.zip" />
+                </label>
+                <div class="form-actions">
+                  <button class="primary-button" type="button" disabled>Опубликовать</button>
+                  <span class="form-note">Frontend UX готов. Отправка появится после backend API.</span>
+                </div>
+              </form>
+            </article>
+          </aside>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/nv/app.js"></script>
+  </body>
+</html>

@@ -6,7 +6,7 @@
     <title>NV Packages</title>
     <meta
       name="description"
-      content="Каталог пакетов NV для Windows и Linux."
+      content="Каталог пакетов NV с фильтрами по платформам и creator/package форматом."
     />
     <link rel="icon" href="/neuralv/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/nv/app.css" />
@@ -14,39 +14,44 @@
   <body data-page="packages">
     <div class="nv-shell">
       <header class="topbar">
-        <a class="brand" href="/nv/">NV</a>
+        <a class="brand" href="/nv/">
+          <span class="brand-mark">NV</span>
+          <span class="brand-copy">Менеджер пакетов</span>
+        </a>
         <nav class="topnav" aria-label="Навигация NV">
           <a href="/nv/downloads/">Скачать</a>
           <a class="is-active" href="/nv/packages/">Пакеты</a>
+          <a href="/nv/profile/">Профиль</a>
         </nav>
       </header>
 
       <main class="page-stack">
         <section class="hero hero-compact">
-          <div class="hero-copy">
-            <p class="eyebrow">Catalog</p>
+          <div class="hero-copy hero-copy-tight">
+            <p class="eyebrow">Каталог</p>
             <h1>Пакеты NV</h1>
             <p class="hero-text">
-              Список пакетов, которые можно ставить через NV. Выбери платформу и посмотри, что доступно прямо сейчас.
+              Все пакеты в формате <code>@creator/package</code>. Фильтруй по платформе и ищи нужный namespace.
             </p>
           </div>
         </section>
 
-        <section class="panel panel-spacious">
-          <div class="panel-head row-head row-head-tight">
-            <div>
-              <p class="eyebrow">Фильтры</p>
-              <h2>Каталог</h2>
-            </div>
+        <section class="section-shell">
+          <div class="catalog-toolbar">
             <div class="filter-tabs" role="tablist" aria-label="Фильтр пакетов">
               <button class="filter-button is-active" type="button" data-filter="all">Все</button>
               <button class="filter-button" type="button" data-filter="windows">Windows</button>
               <button class="filter-button" type="button" data-filter="linux">Linux</button>
             </div>
+            <label class="search-field" aria-label="Поиск по каталогу">
+              <span>Поиск</span>
+              <input id="package-search" type="search" placeholder="creator, пакет или версия" />
+            </label>
           </div>
 
+          <div class="catalog-meta" id="catalog-meta"></div>
           <div class="package-grid package-grid-wide" id="package-list" aria-live="polite"></div>
-          <p class="empty-state" id="package-empty" hidden>Под выбранный фильтр пакеты не найдены.</p>
+          <p class="empty-state" id="package-empty" hidden>Под текущий фильтр ничего не найдено.</p>
         </section>
       </main>
     </div>

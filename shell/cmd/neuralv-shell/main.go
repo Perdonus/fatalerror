@@ -145,34 +145,42 @@ func main() {
 	client := api.NewClient(resolveBaseURL())
 	logging.Event("startup", "base_url=%s low_motion=%t", client.BaseURL(), opts.LowMotion)
 
-	saved, err := store.Load()
-	if err != nil {
-		logging.Error("session load failed: %v", err)
-		log.Fatal(err)
-	}
-	if saved == nil {
-		logging.Event("auth", "no active session; opening auth flow")
-		authProgram := tea.NewProgram(newAuthModel(client, store, opts), tea.WithAltScreen())
-		finalModel, err := authProgram.Run()
+	for {
+		saved, err := store.Load()
 		if err != nil {
-			logging.Error("auth program crashed: %v", err)
+			logging.Error("session load failed: %v", err)
 			log.Fatal(err)
 		}
-		authResult, ok := finalModel.(*authModel)
-		if !ok || authResult.session == nil {
-			logging.Event("auth", "auth flow closed without session")
-			return
+		if saved == nil {
+			logging.Event("auth", "no active session; opening auth flow")
+			authProgram := tea.NewProgram(newAuthModel(client, store, opts), tea.WithAltScreen())
+			finalModel, err := authProgram.Run()
+			if err != nil {
+				logging.Error("auth program crashed: %v", err)
+				log.Fatal(err)
+			}
+			authResult, ok := finalModel.(*authModel)
+			if !ok || authResult.session == nil {
+				logging.Event("auth", "auth flow closed without session")
+				return
+			}
+			logging.Event("auth", "session established for %s", authResult.session.Email)
+		} else {
+			logging.Event("startup", "restored session for %s", saved.Email)
 		}
-		logging.Event("auth", "session established for %s", authResult.session.Email)
-	} else {
-		logging.Event("startup", "restored session for %s", saved.Email)
-	}
 
-	logging.Event("startup", "launching main tui")
-	program := tea.NewProgram(app.NewModel(client, store, opts), tea.WithAltScreen())
-	if _, err := program.Run(); err != nil {
-		logging.Error("main tui crashed: %v", err)
-		log.Fatal(err)
+		logging.Event("startup", "launching main tui")
+		program := tea.NewProgram(app.NewModel(client, store, opts), tea.WithAltScreen())
+		finalModel, err := program.Run()
+		if err != nil {
+			logging.Error("main tui crashed: %v", err)
+			log.Fatal(err)
+		}
+		if result, ok := finalModel.(app.Model); ok && result.ShouldRestartAuth() {
+			logging.Event("logout", "main tui requested auth restart")
+			continue
+		}
+		break
 	}
 	logging.Event("startup", "tui stopped normally")
 }
@@ -594,6 +602,9 @@ func (m *authModel) View() string {
 			titleStyle.Render("NeuralV"),
 			"",
 			lipgloss.NewStyle().Bold(true).Foreground(authSuccessColor()).Render(m.status),
+			"",
+			dimStyle.Render("Сессия сохранена."),
+			dimStyle.Render("Сейчас откроется меню проверки."),
 		}
 	}
 
@@ -899,9 +910,9 @@ func deriveDisplayName(email string) string {
 }
 
 func authAdvanceCmd(lowMotion bool) tea.Cmd {
-	delay := 900 * time.Millisecond
+	delay := 1300 * time.Millisecond
 	if lowMotion {
-		delay = 1200 * time.Millisecond
+		delay = 1600 * time.Millisecond
 	}
 	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return authAdvanceMsg{}

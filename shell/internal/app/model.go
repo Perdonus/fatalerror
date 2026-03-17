@@ -81,6 +81,7 @@ type Model struct {
 	historyOffset int
 
 	settingsCursor int
+	restartAuth    bool
 }
 
 type tickMsg time.Time
@@ -126,7 +127,7 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		store:          store,
 		session:        saved,
 		lowMotion:      opts.LowMotion,
-		screen:         screenAuth,
+		screen:         screenHome,
 		status:         "Готово к проверке",
 		statusTone:     statusInfo,
 		emailInput:     emailInput,
@@ -138,7 +139,6 @@ func NewModel(client *api.Client, store *session.Store, opts Options) Model {
 		settingsCursor: 0,
 	}
 	if saved != nil {
-		model.screen = screenScan
 		model.status = "Сессия восстановлена"
 		model.statusTone = statusSuccess
 		model.emailInput.SetValue(saved.Email)
@@ -279,6 +279,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.screen {
+	case screenAuth:
+		return m.handleAuthKeys(msg)
+	case screenScan:
+		return m.handleScanKeys(msg)
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		logging.Event("startup", "main tui interrupted by ctrl+c")
@@ -290,7 +297,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.nextScreen()
 		return m, nil
 	case "1":
-		m.screen = screenScan
+		m.screen = screenHome
 		return m, nil
 	case "2":
 		m.screen = screenHistory
@@ -298,17 +305,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		m.screen = screenSettings
 		return m, nil
+	case "esc":
+		m.screen = screenHome
+		return m, nil
 	}
 
 	switch m.screen {
-	case screenAuth:
-		return m.handleAuthKeys(msg)
-	case screenScan:
-		return m.handleScanKeys(msg)
+	case screenHome:
+		return m.handleHomeKeys(msg)
 	case screenHistory:
 		return m.handleHistoryKeys(msg)
 	case screenSettings:
 		return m.handleSettingsKeys(msg)
+	}
+
+	return m, nil
+}
+
+func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
+			m.screen = screenScan
+			return m, nil
+		}
+		if m.scanBusy {
+			return m, nil
+		}
+		if m.session == nil {
+			m.restartAuth = true
+			logging.Event("logout", "session missing on home; returning to auth flow")
+			return m, tea.Quit
+		}
+		m.screen = screenScan
+		m.scanBusy = true
+		m.scanLogOffset = 0
+		logging.Event("scan", "start requested token_present=%t", strings.TrimSpace(m.sessionToken()) != "")
+		m.setStatus("Отправляем профиль хоста на сервер", statusInfo)
+		return m, startHostScanCmd(m.client, m.sessionToken())
 	}
 
 	return m, nil
@@ -383,6 +417,9 @@ func (m Model) handleAuthKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleScanKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "esc":
+		m.screen = screenHome
+		return m, nil
 	case "up", "k":
 		m.scrollScanLog(-1)
 		return m, nil
@@ -467,9 +504,11 @@ func (m Model) handleSettingsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if err := m.store.Clear(); err != nil {
 			logging.Error("logout store clear failed: %v", err)
 		}
-		m.resetToAuthScreen()
 		logging.Event("logout", "session cleared email=%s", clearedEmail)
-		m.setStatus("Сессия удалена", statusWarning)
+		m.restartAuth = true
+		return m, tea.Quit
+	case "esc":
+		m.screen = screenHome
 		return m, nil
 	}
 	return m, nil
@@ -534,11 +573,13 @@ func (m Model) View() string {
 
 	horizontalPadding := shellHorizontalPadding(m.width)
 	contentWidth := shellContentWidth(m.width)
-	sections := []string{
-		m.renderHeader(contentWidth),
-		m.renderTabs(contentWidth),
-		m.renderBody(contentWidth),
-		m.renderFooter(contentWidth),
+	sections := []string{m.renderHeader(contentWidth)}
+	if m.screen != screenAuth && m.screen != screenScan {
+		sections = append(sections, m.renderTabs(contentWidth))
+	}
+	sections = append(sections, m.renderBody(contentWidth))
+	if footer := m.renderFooter(contentWidth); footer != "" {
+		sections = append(sections, footer)
 	}
 
 	return lipgloss.NewStyle().Padding(1, horizontalPadding).Render(strings.Join(sections, "\n\n"))
@@ -560,7 +601,7 @@ func (m Model) renderTabs(width int) string {
 		screen screen
 		label  string
 	}{
-		{screen: screenScan, label: "1 Проверки"},
+		{screen: screenHome, label: "1 Меню"},
 		{screen: screenHistory, label: "2 История"},
 		{screen: screenSettings, label: "3 Настройки"},
 	} {
@@ -581,6 +622,8 @@ func (m Model) renderBody(width int) string {
 	switch m.screen {
 	case screenAuth:
 		return m.renderAuth(width)
+	case screenHome:
+		return m.renderHome(width)
 	case screenScan:
 		return m.renderScan(width)
 	case screenHistory:
@@ -588,7 +631,7 @@ func (m Model) renderBody(width int) string {
 	case screenSettings:
 		return m.renderSettings(width)
 	default:
-		return m.renderScan(width)
+		return m.renderHome(width)
 	}
 }
 
@@ -661,33 +704,34 @@ func (m Model) renderAuth(width int) string {
 }
 
 func (m Model) renderHome(width int) string {
-	sessionLabel := "Не авторизован"
+	leftLines := []string{
+		sectionTitle("Меню"),
+		"",
+		renderActionButton(m.homeActionLabel(), true, !m.scanBusy),
+	}
+	if hint := strings.TrimSpace(m.homeActionHint()); hint != "" {
+		leftLines = append(leftLines, "", lipgloss.NewStyle().Foreground(colorMuted()).Render(hint))
+	}
+
+	rightLines := []string{
+		sectionTitle("Разделы"),
+		"",
+		"2 История",
+		"3 Настройки",
+	}
 	if m.session != nil {
-		sessionLabel = m.session.Email
+		rightLines = append(rightLines, "", lipgloss.NewStyle().Foreground(colorMuted()).Render(shortText(m.session.Email, 36)))
 	}
-
-	left := cardStyle(columnWidth(width)).Render(strings.Join([]string{
-		sectionTitle("Сейчас"),
-		fmt.Sprintf("Аккаунт: %s", sessionLabel),
-		fmt.Sprintf("Устройство: %s", m.client.DeviceID()),
-		fmt.Sprintf("Платформа: %s / %s", runtime.GOOS, runtime.GOARCH),
-		fmt.Sprintf("Пакеты: %s", DetectPackageManager()),
-	}, "\n"))
-
-	rightLines := []string{sectionTitle("Что дальше")}
-	if m.lastScan == nil {
-		rightLines = append(rightLines,
-			"Открой экран проверки и запусти первый проход.",
+	if m.lastScan != nil {
+		rightLines = append(
+			rightLines,
 			"",
-			"Последний результат появится здесь и на вкладке истории.",
-		)
-	} else {
-		rightLines = append(rightLines,
-			fmt.Sprintf("Последний вердикт: %s", normalizeVerdict(m.lastScan.Verdict)),
-			fmt.Sprintf("Риск: %d/100", m.lastScan.RiskScore),
-			shortText(defaultScanMessage(m.lastScan), 92),
+			lipgloss.NewStyle().Foreground(colorMuted()).Render("Последний результат"),
+			shortText(defaultScanMessage(m.lastScan), 48),
 		)
 	}
+
+	left := cardStyle(columnWidth(width)).Render(strings.Join(leftLines, "\n"))
 	right := cardStyle(columnWidth(width)).Render(strings.Join(rightLines, "\n"))
 	return joinColumns(width, left, right)
 }
@@ -786,28 +830,30 @@ func (m Model) renderHistory(width int) string {
 func (m Model) renderSettings(width int) string {
 	lines := []string{
 		sectionTitle("Настройки"),
-		"Здесь пока только выход из аккаунта.",
+		"Здесь пока только выход.",
 		"",
 		renderActionButton("Выйти", true, true),
-		lipgloss.NewStyle().Foreground(colorMuted()).Render("Enter очищает сессию и возвращает к входу."),
-	}
-	if status := maybeRenderStatus(m.status, m.statusTone); status != "" {
-		lines = append(lines, "", status)
+		lipgloss.NewStyle().Foreground(colorMuted()).Render("Enter возвращает к экрану входа."),
 	}
 	return cardStyle(width).Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderFooter(width int) string {
-	hints := []string{"1-3 экран", "Enter действие", "Ctrl+C выход"}
+	hints := []string{"Enter проверка", "2 история", "3 настройки", "Ctrl+C выход"}
 	switch m.screen {
 	case screenAuth:
-		hints = []string{"Tab / Shift+Tab фокус", "Enter подтвердить", "Esc назад", "1-3 экран", "Ctrl+C выход"}
+		hints = nil
+	case screenHome:
+		hints = []string{"Enter проверка", "2 история", "3 настройки", "Ctrl+C выход"}
 	case screenScan:
-		hints = []string{"Enter старт/стоп", "Up / Down лог", "Колесо мыши лог", "1-3 экран", "Ctrl+C выход"}
+		hints = []string{"Enter старт/стоп", "Esc меню", "Up / Down лог", "Колесо мыши лог", "Ctrl+C выход"}
 	case screenHistory:
-		hints = []string{"Up / Down история", "PgUp / PgDown", "1-3 экран", "Ctrl+C выход"}
+		hints = []string{"Esc меню", "Up / Down история", "PgUp / PgDown", "Ctrl+C выход"}
 	case screenSettings:
-		hints = []string{"Enter выйти", "1-3 экран", "Ctrl+C выход"}
+		hints = []string{"Enter выйти", "Esc меню", "Ctrl+C выход"}
+	}
+	if len(hints) == 0 {
+		return ""
 	}
 	return lipgloss.NewStyle().Width(width).Foreground(colorMuted()).Render(strings.Join(hints, "  •  "))
 }
@@ -840,7 +886,7 @@ func (m *Model) resetToAuthScreen() {
 func (m *Model) prevScreen() {
 	switch m.activeNavScreen() {
 	case screenHistory:
-		m.screen = screenScan
+		m.screen = screenHome
 	case screenSettings:
 		m.screen = screenHistory
 	default:
@@ -853,7 +899,7 @@ func (m *Model) nextScreen() {
 	case screenHistory:
 		m.screen = screenSettings
 	case screenSettings:
-		m.screen = screenScan
+		m.screen = screenHome
 	default:
 		m.screen = screenHistory
 	}
@@ -861,11 +907,28 @@ func (m *Model) nextScreen() {
 
 func (m Model) activeNavScreen() screen {
 	switch m.screen {
-	case screenHistory, screenSettings:
+	case screenHome, screenHistory, screenSettings:
 		return m.screen
 	default:
-		return screenScan
+		return screenHome
 	}
+}
+
+func (m Model) homeActionLabel() string {
+	if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
+		return "Открыть проверку"
+	}
+	return "Запустить проверку"
+}
+
+func (m Model) homeActionHint() string {
+	if m.currentScan != nil && !isTerminalScanStatus(m.currentScan.Status) {
+		return "Проверка уже идёт. Открой окно и смотри прогресс вживую."
+	}
+	if m.lastScan != nil {
+		return "История хранит прошлый отчёт. Новый запуск откроет отдельное окно проверки."
+	}
+	return "После запуска откроется отдельное окно с прогрессом и живым логом."
 }
 
 func (m Model) scanForDisplay() *api.DesktopScan {
@@ -1200,6 +1263,10 @@ func (m Model) sessionToken() string {
 		return ""
 	}
 	return strings.TrimSpace(m.session.Token)
+}
+
+func (m Model) ShouldRestartAuth() bool {
+	return m.restartAuth
 }
 
 func (m Model) startLoginCmd() tea.Cmd {

@@ -552,13 +552,27 @@ function attachRegistryMetadata(artifact, registryMatch) {
         : (typeof artifact.auto_update === 'boolean' ? artifact.auto_update : updatePolicy === 'startup-auto');
     const sourceRepo = String(source?.repo || variantDef?.source?.repo || artifact?.metadata?.source_repo || '').trim();
     const sourceBranch = String(source?.branch || variantDef?.source?.branch || artifact?.metadata?.source_branch || '').trim();
-    const buildRawUrl = (relativePath, sourceOverride = null) => {
-        const cleanPath = String(relativePath || '').trim().replace(/^\/+/, '');
+    const resolvePathTemplate = (relativePath) => String(relativePath || '')
+        .trim()
+        .replace('{version}', String(artifact?.version || '').trim())
+        .replace(/^\/+/, '');
+    const buildPublishedUrl = (relativePath, sourceOverride = null) => {
+        const cleanPath = resolvePathTemplate(relativePath);
         const effectiveSource = sourceOverride && sourceOverride.repo && sourceOverride.branch
             ? sourceOverride
             : (sourceRepo && sourceBranch ? { repo: sourceRepo, branch: sourceBranch } : null);
-        const rawBase = effectiveSource ? rawBaseForSource(effectiveSource) : '';
-        return rawBase && cleanPath ? `${rawBase}/${cleanPath}` : '';
+        if (!effectiveSource || !cleanPath) {
+            return '';
+        }
+        if (cleanPath.startsWith('releases/')) {
+            const [, tag, ...rest] = cleanPath.split('/');
+            const fileName = rest.join('/');
+            return tag && fileName
+                ? `https://github.com/${effectiveSource.repo}/releases/download/${tag}/${fileName}`
+                : '';
+        }
+        const rawBase = rawBaseForSource(effectiveSource);
+        return rawBase ? `${rawBase}/${cleanPath}` : '';
     };
     const relatedSources = Array.isArray(variantMetadata.relatedSources) ? variantMetadata.relatedSources : [];
     const cliSource = relatedSources.find((entry) => String(entry?.role || '').trim().toLowerCase() === 'cli') || null;
@@ -585,20 +599,24 @@ function attachRegistryMetadata(artifact, registryMatch) {
         version_source_file: String(variantMetadata.versionSourceFile || '').trim()
     };
 
-    if (!metadata.portableUrl && variantMetadata.stablePortableArtifactPath) {
-        metadata.portableUrl = buildRawUrl(variantMetadata.stablePortableArtifactPath);
+    delete metadata.payloadRootPath;
+    delete metadata.versionedPortableArtifactPath;
+    delete metadata.versionedSetupArtifactPath;
+
+    if (variantMetadata.stablePortableArtifactPath) {
+        metadata.portableUrl = buildPublishedUrl(variantMetadata.stablePortableArtifactPath);
     }
-    if (!metadata.setupUrl && variantMetadata.stableSetupArtifactPath) {
-        metadata.setupUrl = buildRawUrl(variantMetadata.stableSetupArtifactPath);
+    if (variantMetadata.stableSetupArtifactPath) {
+        metadata.setupUrl = buildPublishedUrl(variantMetadata.stableSetupArtifactPath);
     }
     if (!metadata.daemonUrl && variantMetadata.stableDaemonArtifactPath) {
-        metadata.daemonUrl = buildRawUrl(variantMetadata.stableDaemonArtifactPath, cliSource);
+        metadata.daemonUrl = buildPublishedUrl(variantMetadata.stableDaemonArtifactPath, cliSource);
     }
     if (!metadata.stableArtifactUrl && variantMetadata.stableArtifactPath) {
-        metadata.stableArtifactUrl = buildRawUrl(variantMetadata.stableArtifactPath);
+        metadata.stableArtifactUrl = buildPublishedUrl(variantMetadata.stableArtifactPath);
     }
     if (!metadata.stableCliArtifactUrl && variantMetadata.stableCliArtifactPath) {
-        metadata.stableCliArtifactUrl = buildRawUrl(variantMetadata.stableCliArtifactPath, cliSource);
+        metadata.stableCliArtifactUrl = buildPublishedUrl(variantMetadata.stableCliArtifactPath, cliSource);
     }
 
     return mergeArtifact(artifact, {

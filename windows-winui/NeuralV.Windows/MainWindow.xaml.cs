@@ -173,10 +173,21 @@ public sealed partial class MainWindow : Window
         }
 
         _initialized = true;
-        TryConfigureWindowHandle();
-        ApplyAmbientPalette();
-        _shapeTimer.Start();
-        await InitializeAsync();
+        WindowsLog.Info("Main window root loaded");
+        try
+        {
+            WindowsLog.Info("Configuring window handle");
+            TryConfigureWindowHandle();
+            WindowsLog.Info("Applying ambient palette on load");
+            ApplyAmbientPalette();
+            WindowsLog.Info("Skipping floating shape animation startup for stability");
+            await InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnRootLoaded failed", ex);
+            SetStatus("Не удалось завершить старт интерфейса. Подробности в log.txt.");
+        }
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
@@ -2328,25 +2339,14 @@ public sealed partial class MainWindow : Window
 
     private static UIElement CreateLogoElement()
     {
-        try
+        return new TextBlock
         {
-            return new Image
-            {
-                Source = new BitmapImage(new Uri("ms-appx:///Assets/NeuralV.png")),
-                Stretch = Stretch.Uniform
-            };
-        }
-        catch
-        {
-            return new TextBlock
-            {
-                Text = "NV",
-                Foreground = ThemeBrush("AppTextBrush"),
-                FontSize = 24,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-        }
+            Text = "NV",
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 24,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
     }
 }

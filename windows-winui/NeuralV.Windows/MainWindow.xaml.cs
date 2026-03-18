@@ -373,8 +373,8 @@ public sealed partial class MainWindow : Window
     {
         _windowRoot.Children.Clear();
         _floatingShapes.Clear();
-        _windowRoot.MinWidth = 1060;
-        _windowRoot.MinHeight = 720;
+        _windowRoot.MinWidth = 1180;
+        _windowRoot.MinHeight = 820;
 
         var ambientLayer = new Grid();
         BackdropGradient = new UiRectangle();
@@ -479,8 +479,17 @@ public sealed partial class MainWindow : Window
         SettingsView = null!;
 
         ScreenHost.Children.Add(SplashView);
-        ScanOverlay = null!;
-        HistoryDetailOverlay = null!;
+
+        // Keep stable overlays attached from startup. Runtime insertion of the
+        // heavier scan overlay tree has been the most probable source of the
+        // WinUI crash path after the first server scan.
+        ScanOverlay = BuildFallbackScanOverlay();
+        Canvas.SetZIndex(ScanOverlay, 40);
+        _windowRoot.Children.Add(ScanOverlay);
+
+        HistoryDetailOverlay = BuildHistoryDetailOverlay();
+        Canvas.SetZIndex(HistoryDetailOverlay, 50);
+        _windowRoot.Children.Add(HistoryDetailOverlay);
 
         DrawerScrim = new Border
         {
@@ -633,6 +642,15 @@ public sealed partial class MainWindow : Window
         var host = new Grid();
         host.Children.Add(BuildWelcomeShapeLayer());
 
+        var centerStack = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 22,
+            MaxWidth = 420
+        };
+        host.Children.Add(centerStack);
+
         var logoShell = new Border
         {
             Width = 164,
@@ -640,20 +658,17 @@ public sealed partial class MainWindow : Window
             Background = ThemeBrush("AppAccentSoftBrush"),
             CornerRadius = new CornerRadius(82),
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
             Padding = new Thickness(18)
         };
         logoShell.Child = CreateLogoElement();
-        host.Children.Add(logoShell);
+        centerStack.Children.Add(logoShell);
 
         var actions = new StackPanel
         {
             MaxWidth = 420,
             Width = 420,
             Spacing = 12,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, 36)
+            HorizontalAlignment = HorizontalAlignment.Center
         };
         var loginButton = CreateFilledButton("Войти", OnShowLoginClick);
         loginButton.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -662,7 +677,7 @@ public sealed partial class MainWindow : Window
         var registerButton = CreateTonalButton("Зарегистрироваться", OnShowRegisterClick);
         registerButton.HorizontalAlignment = HorizontalAlignment.Stretch;
         actions.Children.Add(registerButton);
-        host.Children.Add(actions);
+        centerStack.Children.Add(actions);
         return host;
     }
 
@@ -852,7 +867,7 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(modes, 0);
         content.Children.Add(modes);
 
-        var artifactCard = CreateSlimModePanel("Проверить программу", "▣", "Выбрать", OnProgramScanClick);
+        var artifactCard = CreateSlimModePanel("Проверить программу", "▣", OnProgramScanClick);
         artifactCard.Margin = new Thickness(0, 18, 0, 0);
         Grid.SetRow(artifactCard, 1);
         content.Children.Add(artifactCard);
@@ -906,7 +921,6 @@ public sealed partial class MainWindow : Window
 
         var accountCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
         var accountStack = new StackPanel { Spacing = 12 };
-        accountStack.Children.Add(CreateSectionTitle("Аккаунт", 24));
         SettingsAccountText = CreateBodyText("AppMutedTextBrush");
         accountStack.Children.Add(SettingsAccountText);
         var versionButton = CreateTonalButton(string.Empty, OnVersionTapClick);
@@ -921,7 +935,6 @@ public sealed partial class MainWindow : Window
 
         var lookCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(20));
         var lookStack = new StackPanel { Spacing = 10 };
-        lookStack.Children.Add(CreateSectionTitle("Оформление", 24));
         ThemeModeCombo = new ComboBox
         {
             ItemsSource = new[] { "Как в системе", "Светлая", "Тёмная" },
@@ -1195,7 +1208,7 @@ public sealed partial class MainWindow : Window
         if (ScanOverlay is null)
         {
             WindowsLog.Info("Creating deferred scan overlay");
-            ScanOverlay = BuildScanOverlaySafe();
+            ScanOverlay = BuildFallbackScanOverlay();
             Canvas.SetZIndex(ScanOverlay, 40);
             _windowRoot.Children.Add(ScanOverlay);
             WindowsLog.Info("Deferred scan overlay attached");
@@ -1404,7 +1417,7 @@ public sealed partial class MainWindow : Window
             ActiveScanCardMetaText.Text = $"{progress}% · {(_activeScan.Message ?? _activeScan.Status)}";
         }
 
-        App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose && _activeScan is not null && !_activeScan.IsFinished);
+        App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
         App.WindowLifecycle?.RefreshTrayState();
         UpdateNetworkUi();
     }
@@ -1467,7 +1480,7 @@ public sealed partial class MainWindow : Window
         if (NetworkCountersText is not null)
         {
             NetworkCountersText.Text =
-                $"{_networkState.StatusMessage}\n" +
+                $"{(_networkState.NetworkEnabled ? "Защита в сети включена" : "Защита в сети отключена")}\n" +
                 $"Заблокировано угроз: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedThreatsPlatform)}\n" +
                 $"Заблокировано рекламы: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedAdsPlatform)}";
         }
@@ -1696,15 +1709,63 @@ public sealed partial class MainWindow : Window
 
     private void ResetAuthInputs()
     {
-        if (LoginEmailBox is not null) LoginEmailBox.Text = string.Empty;
-        if (LoginPasswordBox is not null) LoginPasswordBox.Password = string.Empty;
-        if (RegisterNameBox is not null) RegisterNameBox.Text = string.Empty;
-        if (RegisterEmailBox is not null) RegisterEmailBox.Text = string.Empty;
-        if (RegisterPasswordBox is not null) RegisterPasswordBox.Password = string.Empty;
-        if (RegisterPasswordRepeatBox is not null) RegisterPasswordRepeatBox.Password = string.Empty;
-        if (VerificationCodeBox is not null) VerificationCodeBox.Text = string.Empty;
-        if (CodeHintText is not null) CodeHintText.Text = string.Empty;
+        SafeClearTextBox(LoginEmailBox);
+        SafeClearPasswordBox(LoginPasswordBox);
+        SafeClearTextBox(RegisterNameBox);
+        SafeClearTextBox(RegisterEmailBox);
+        SafeClearPasswordBox(RegisterPasswordBox);
+        SafeClearPasswordBox(RegisterPasswordRepeatBox);
+        SafeClearTextBox(VerificationCodeBox);
+        SafeSetText(CodeHintText, string.Empty);
         _challenge = null;
+    }
+
+    private static void SafeClearTextBox(TextBox? textBox)
+    {
+        if (textBox is null)
+        {
+            return;
+        }
+
+        try
+        {
+            textBox.Text = string.Empty;
+        }
+        catch
+        {
+        }
+    }
+
+    private static void SafeClearPasswordBox(PasswordBox? passwordBox)
+    {
+        if (passwordBox is null)
+        {
+            return;
+        }
+
+        try
+        {
+            passwordBox.Password = string.Empty;
+        }
+        catch
+        {
+        }
+    }
+
+    private static void SafeSetText(TextBlock? textBlock, string text)
+    {
+        if (textBlock is null)
+        {
+            return;
+        }
+
+        try
+        {
+            textBlock.Text = text;
+        }
+        catch
+        {
+        }
     }
 
     private void OnShowLoginClick(object sender, RoutedEventArgs e)
@@ -2339,15 +2400,16 @@ public sealed partial class MainWindow : Window
 
         WindowsLog.Info("Logout requested");
         _scanPollCts?.Cancel();
+        SetDrawerState(false);
+        SetScanOverlayState(false);
+        SetHistoryDetailState(false);
         _session = null;
         _activeScan = null;
         SessionStore.ClearSession();
         ResetAuthInputs();
         _networkState = BuildLocalNetworkFallback();
-        App.WindowLifecycle?.SetShouldMinimizeToTray(() => false);
+        App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
         ApplySessionState();
-        SetScanOverlayState(false);
-        SetHistoryDetailState(false);
         App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.CreateIdle());
         ShowScreen(AppScreen.Welcome);
         SetStatus(null);
@@ -2363,7 +2425,7 @@ public sealed partial class MainWindow : Window
         App.WindowLifecycle.RestoreRequested -= OnRestoreRequested;
         App.WindowLifecycle.RestoreRequested += OnRestoreRequested;
         App.WindowLifecycle.SetMinimumSize(1180, 820);
-        App.WindowLifecycle.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose && _activeScan is not null && !_activeScan.IsFinished);
+        App.WindowLifecycle.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
         App.WindowLifecycle.SetTrayStateProvider(() => _activeScan is not null
             ? WindowsTrayProgressService.FromScan(_activeScan)
             : WindowsTrayProgressService.CreateIdle());
@@ -2495,7 +2557,7 @@ public sealed partial class MainWindow : Window
         return card;
     }
 
-    private Border CreateSlimModePanel(string title, string glyph, string actionText, RoutedEventHandler handler)
+    private Border CreateSlimModePanel(string title, string glyph, RoutedEventHandler handler)
     {
         var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", new CornerRadius(22, 34, 22, 34), new Thickness(18));
         var grid = new Grid();
@@ -2509,7 +2571,7 @@ public sealed partial class MainWindow : Window
         titleBlock.Margin = new Thickness(14, 0, 0, 0);
         Grid.SetColumn(titleBlock, 1);
         grid.Children.Add(titleBlock);
-        var button = CreateTonalButton(actionText, handler);
+        var button = CreateRoundActionButton("▶", handler, false);
         Grid.SetColumn(button, 2);
         grid.Children.Add(button);
         card.Child = grid;

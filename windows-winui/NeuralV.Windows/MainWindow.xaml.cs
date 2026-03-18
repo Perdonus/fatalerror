@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
@@ -35,6 +36,7 @@ public sealed partial class MainWindow : Window
     private readonly Grid _windowRoot = new();
     private readonly ObservableCollection<string> _historyItems = new();
     private readonly ObservableCollection<string> _scanTimeline = new();
+    private readonly List<StoredScanRecord> _historyRecords = new();
     private readonly List<FloatingShape> _floatingShapes = new();
     private readonly DispatcherTimer _shapeTimer = new();
     private readonly Random _random = new();
@@ -67,7 +69,9 @@ public sealed partial class MainWindow : Window
     private Border BusyOverlay = default!;
     private Border StatusBanner = default!;
     private Grid ScreenHost = default!;
+    private Grid TopBar = default!;
     private Grid ScanOverlay = default!;
+    private Grid HistoryDetailOverlay = default!;
     private TextBlock HeaderTitleText = default!;
     private TextBlock HeaderSubtitleText = default!;
     private TextBlock AccountChipText = default!;
@@ -99,6 +103,8 @@ public sealed partial class MainWindow : Window
     private Border ActiveScanCard = default!;
     private TextBlock ActiveScanCardTitleText = default!;
     private TextBlock ActiveScanCardMetaText = default!;
+    private FrameworkElement HomePrimaryContent = default!;
+    private Border HomeNetworkCard = default!;
     private ToggleSwitch NetworkProtectionToggle = default!;
     private ToggleSwitch AdBlockToggle = default!;
     private ToggleSwitch UnsafeSitesToggle = default!;
@@ -108,19 +114,25 @@ public sealed partial class MainWindow : Window
     private TextBlock ScanStageText = default!;
     private TextBlock ScanProgressText = default!;
     private TextBlock ScanCountsText = default!;
+    private TextBlock ScanTargetText = default!;
     private ProgressBar ScanProgressBar = default!;
     private ProgressRing ScanProgressRing = default!;
-    private ListView ScanTimelineList = default!;
+    private StackPanel ScanTimelineHost = default!;
 
-    private ListView HistoryList = default!;
+    private StackPanel HistoryItemsHost = default!;
+    private TextBlock HistoryDetailTitleText = default!;
+    private TextBlock HistoryDetailMetaText = default!;
+    private StackPanel HistoryDetailContentHost = default!;
     private TextBlock SettingsAccountText = default!;
     private TextBlock SettingsDeveloperText = default!;
+    private TextBlock SettingsVersionText = default!;
     private ComboBox ThemeModeCombo = default!;
     private ToggleSwitch DynamicColorsToggle = default!;
     private ToggleSwitch AutoStartToggle = default!;
     private ToggleSwitch SettingsNetworkToggle = default!;
     private ToggleSwitch SettingsAdToggle = default!;
     private ToggleSwitch SettingsUnsafeToggle = default!;
+    private int _developerTapCount;
 
     public MainWindow()
     {
@@ -272,7 +284,9 @@ public sealed partial class MainWindow : Window
     private async Task LoadHistoryAsync(CancellationToken cancellationToken = default)
     {
         _historyItems.Clear();
+        _historyRecords.Clear();
         var history = await HistoryStore.LoadAsync(cancellationToken);
+        _historyRecords.AddRange(history);
         foreach (var item in history)
         {
             _historyItems.Add($"{item.SavedAt.LocalDateTime:dd.MM HH:mm} · {item.Mode} · {item.Verdict}");
@@ -286,12 +300,13 @@ public sealed partial class MainWindow : Window
 
     private NetworkProtectionState BuildLocalNetworkFallback()
     {
+        var enabled = _preferences.NetworkProtectionEnabled;
         return new NetworkProtectionState
         {
             Platform = "windows",
-            NetworkEnabled = _preferences.NetworkProtectionEnabled,
-            AdBlockEnabled = _preferences.AdBlockEnabled,
-            UnsafeSitesEnabled = _preferences.UnsafeSitesEnabled,
+            NetworkEnabled = enabled,
+            AdBlockEnabled = enabled,
+            UnsafeSitesEnabled = enabled,
             BlockedAdsPlatform = _preferences.BlockedAds,
             BlockedThreatsPlatform = _preferences.BlockedThreats,
             BlockedAdsTotal = _preferences.BlockedAds,
@@ -352,6 +367,8 @@ public sealed partial class MainWindow : Window
     {
         _windowRoot.Children.Clear();
         _floatingShapes.Clear();
+        _windowRoot.MinWidth = 1060;
+        _windowRoot.MinHeight = 720;
 
         var ambientLayer = new Grid();
         BackdropGradient = new UiRectangle();
@@ -421,15 +438,15 @@ public sealed partial class MainWindow : Window
 
         var shell = new Grid
         {
-            Padding = new Thickness(22)
+            Padding = new Thickness(24)
         };
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _windowRoot.Children.Add(shell);
 
-        var topBar = BuildTopBar();
-        shell.Children.Add(topBar);
+        TopBar = BuildTopBar();
+        shell.Children.Add(TopBar);
 
         StatusBanner = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14, 10, 14, 10));
         StatusBanner.Visibility = Visibility.Collapsed;
@@ -454,11 +471,13 @@ public sealed partial class MainWindow : Window
 
         ScreenHost.Children.Add(SplashView);
         ScanOverlay = null!;
+        HistoryDetailOverlay = null!;
 
         DrawerScrim = new Border
         {
             Background = ThemeBrush("AppOverlayScrimBrush"),
-            Visibility = Visibility.Collapsed
+            Visibility = Visibility.Collapsed,
+            Opacity = 0
         };
         DrawerScrim.Tapped += (_, _) => SetDrawerState(false);
         Canvas.SetZIndex(DrawerScrim, 60);
@@ -466,6 +485,8 @@ public sealed partial class MainWindow : Window
 
         DrawerPanel = BuildDrawerPanel();
         DrawerPanel.Visibility = Visibility.Collapsed;
+        DrawerPanel.Opacity = 0;
+        DrawerPanel.RenderTransform = new TranslateTransform { X = -36 };
         Canvas.SetZIndex(DrawerPanel, 61);
         _windowRoot.Children.Add(DrawerPanel);
 
@@ -500,12 +521,11 @@ public sealed partial class MainWindow : Window
         var topBar = new Grid { Margin = new Thickness(0, 0, 0, 14) };
         topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var drawerButton = CreateIconButton("☰", OnToggleDrawerClick);
         topBar.Children.Add(drawerButton);
 
-        var titleStack = new StackPanel
+        var titleStack = new Grid
         {
             Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center
@@ -518,17 +538,10 @@ public sealed partial class MainWindow : Window
             FontSize = 28,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         };
-        HeaderSubtitleText = CreateBodyText("AppMutedTextBrush");
         titleStack.Children.Add(HeaderTitleText);
-        titleStack.Children.Add(HeaderSubtitleText);
+        HeaderSubtitleText = new TextBlock { Visibility = Visibility.Collapsed };
+        AccountChipText = new TextBlock { Visibility = Visibility.Collapsed };
         topBar.Children.Add(titleStack);
-
-        var accountChip = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14, 10, 14, 10));
-        accountChip.HorizontalAlignment = HorizontalAlignment.Right;
-        AccountChipText = new TextBlock { Foreground = ThemeBrush("AppTextBrush") };
-        accountChip.Child = AccountChipText;
-        Grid.SetColumn(accountChip, 2);
-        topBar.Children.Add(accountChip);
 
         return topBar;
     }
@@ -565,7 +578,6 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(CreateDrawerButton("Главная", OnHomeClick));
         stack.Children.Add(CreateDrawerButton("История", OnHistoryClick));
         stack.Children.Add(CreateDrawerButton("Настройки", OnSettingsClick));
-        stack.Children.Add(CreateDrawerButton("Закрыть меню", (_, _) => SetDrawerState(false), false));
         return stack;
     }
 
@@ -588,20 +600,20 @@ public sealed partial class MainWindow : Window
         logoCard.Child = CreateLogoElement();
         stack.Children.Add(logoCard);
         stack.Children.Add(CreateTitleText("Запускаем NeuralV", 36));
-        stack.Children.Add(CreateSubtitleText("Поднимаем палитру, сессию и Windows-интерфейс."));
         return host;
     }
 
     private FrameworkElement BuildWelcomeView()
     {
         var host = new Grid();
+        host.Children.Add(BuildWelcomeShapeLayer());
 
         var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 32, new Thickness(28));
-        card.MaxWidth = 620;
+        card.MaxWidth = 540;
         card.HorizontalAlignment = HorizontalAlignment.Center;
         card.VerticalAlignment = VerticalAlignment.Center;
 
-        var stack = new StackPanel { Spacing = 14 };
+        var stack = new StackPanel { Spacing = 18 };
         var logoShell = new Border
         {
             Width = 112,
@@ -614,21 +626,18 @@ public sealed partial class MainWindow : Window
         logoShell.Child = CreateLogoElement();
         stack.Children.Add(logoShell);
         stack.Children.Add(CreateTitleText("NeuralV", 40, TextAlignment.Center));
-        stack.Children.Add(CreateSubtitleText("Войди в аккаунт или создай новый, чтобы управлять защитой Windows, историей и серверными проверками.", TextAlignment.Center));
 
-        var actions = new Grid { Margin = new Thickness(0, 8, 0, 0) };
-        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
-        actions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
+        var actions = new StackPanel
+        {
+            Margin = new Thickness(0, 8, 0, 0),
+            Spacing = 12
+        };
         var loginButton = CreateFilledButton("Войти", OnShowLoginClick);
         loginButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        Grid.SetColumn(loginButton, 0);
         actions.Children.Add(loginButton);
 
         var registerButton = CreateTonalButton("Зарегистрироваться", OnShowRegisterClick);
         registerButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        Grid.SetColumn(registerButton, 2);
         actions.Children.Add(registerButton);
         stack.Children.Add(actions);
 
@@ -681,7 +690,6 @@ public sealed partial class MainWindow : Window
     {
         var cardStack = new StackPanel { Spacing = 12 };
         cardStack.Children.Add(CreateTitleText("Вход", 34));
-        cardStack.Children.Add(CreateSubtitleText("Введи почту и пароль. После этого придёт код подтверждения."));
         cardStack.Children.Add(CreateFieldLabel("E-mail"));
         LoginEmailBox = CreateTextBox("name@example.com");
         cardStack.Children.Add(LoginEmailBox);
@@ -698,7 +706,6 @@ public sealed partial class MainWindow : Window
     {
         var cardStack = new StackPanel { Spacing = 12 };
         cardStack.Children.Add(CreateTitleText("Регистрация", 34));
-        cardStack.Children.Add(CreateSubtitleText("Создай аккаунт и подтверди почту кодом."));
         cardStack.Children.Add(CreateFieldLabel("Имя"));
         RegisterNameBox = CreateTextBox();
         cardStack.Children.Add(RegisterNameBox);
@@ -746,26 +753,20 @@ public sealed partial class MainWindow : Window
 
     private FrameworkElement BuildHomeView()
     {
-        var scroll = new ScrollViewer
+        var host = new Grid
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            MaxWidth = 1140,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         var stack = new StackPanel
         {
             Spacing = 18,
-            MaxWidth = 1160
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Center
         };
-
-        var hero = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 30, new Thickness(24));
-        var heroStack = new StackPanel { Spacing = 8 };
-        HomeHeroTitleText = CreateTitleText("Главное меню", 36);
-        HomeHeroSubtitleText = CreateSubtitleText("Запускай нужный режим проверки или включай защиту в сети.");
-        heroStack.Children.Add(HomeHeroTitleText);
-        heroStack.Children.Add(HomeHeroSubtitleText);
-        hero.Child = heroStack;
-        stack.Children.Add(hero);
+        host.Children.Add(stack);
 
         ActiveScanCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 24, new Thickness(18));
         ActiveScanCard.Visibility = Visibility.Collapsed;
@@ -784,6 +785,10 @@ public sealed partial class MainWindow : Window
         ActiveScanCard.Child = activeGrid;
         stack.Children.Add(ActiveScanCard);
 
+        var content = new StackPanel { Spacing = 18 };
+        HomePrimaryContent = content;
+        stack.Children.Add(content);
+
         var modes = new Grid();
         modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
@@ -792,47 +797,47 @@ public sealed partial class MainWindow : Window
         modes.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
         modes.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var quickCard = CreateModeCard("⚡", "Быстрая", "Локальный быстрый проход по частым зонам риска.", OnQuickScanClick, true);
+        var deepCard = CreateWideModePanel("Глубокая", "◎", "Серверная проверка системы, программ и связанных корней.", OnDeepScanClick);
+        Grid.SetColumnSpan(deepCard, 3);
+        Grid.SetRow(deepCard, 0);
+        modes.Children.Add(deepCard);
+
+        var quickCard = CreateGridModePanel("Быстрая", "⚡", OnQuickScanClick, true);
         Grid.SetColumn(quickCard, 0);
-        Grid.SetRow(quickCard, 0);
+        Grid.SetRow(quickCard, 2);
         modes.Children.Add(quickCard);
 
-        var fullCard = CreateModeCard("◎", "Глубокая", "Серверный проход по системе, программам и связанным корням.", OnDeepScanClick, false);
-        Grid.SetColumn(fullCard, 2);
-        Grid.SetRow(fullCard, 0);
-        modes.Children.Add(fullCard);
-
-        var selectiveCard = CreateModeCard("◌", "Выборочная", "Таргетированный проход по ключевым путям и компонентам.", OnSelectiveScanClick, false);
-        Grid.SetColumn(selectiveCard, 0);
+        var selectiveCard = CreateGridModePanel("Выборочная", "◌", OnSelectiveScanClick, false);
+        Grid.SetColumn(selectiveCard, 2);
         Grid.SetRow(selectiveCard, 2);
         modes.Children.Add(selectiveCard);
+        content.Children.Add(modes);
 
-        var artifactCard = CreateModeCard("▣", "Проверить программу", "Выбери корневую папку программы для отдельного анализа.", OnProgramScanClick, false);
-        Grid.SetColumn(artifactCard, 2);
-        Grid.SetRow(artifactCard, 2);
-        modes.Children.Add(artifactCard);
-        stack.Children.Add(modes);
+        var artifactCard = CreateSlimModePanel("Проверить программу", "▣", "Выбрать", OnProgramScanClick);
+        content.Children.Add(artifactCard);
 
-        var networkCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(20));
-        var networkStack = new StackPanel { Spacing = 10 };
-        networkStack.Children.Add(CreateSectionTitle("Защита в сети", 24));
-        networkStack.Children.Add(CreateSubtitleText("Включи сетевую защиту, блокировку рекламы и опасных сайтов."));
-        NetworkProtectionToggle = new ToggleSwitch { Header = "Включить защиту в сети" };
-        NetworkProtectionToggle.Toggled += OnNetworkProtectionToggled;
-        AdBlockToggle = new ToggleSwitch { Header = "Блокировать рекламу" };
-        AdBlockToggle.Toggled += OnAdBlockToggled;
-        UnsafeSitesToggle = new ToggleSwitch { Header = "Блокировать опасные сайты" };
-        UnsafeSitesToggle.Toggled += OnUnsafeSitesToggled;
+        HomeNetworkCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
+        var networkGrid = new Grid();
+        networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var networkText = new StackPanel { Spacing = 8 };
+        networkText.Children.Add(CreateSectionTitle("Защита в сети", 24));
         NetworkCountersText = CreateBodyText("AppMutedTextBrush");
-        networkStack.Children.Add(NetworkProtectionToggle);
-        networkStack.Children.Add(AdBlockToggle);
-        networkStack.Children.Add(UnsafeSitesToggle);
-        networkStack.Children.Add(NetworkCountersText);
-        networkCard.Child = networkStack;
-        stack.Children.Add(networkCard);
+        networkText.Children.Add(NetworkCountersText);
+        networkGrid.Children.Add(networkText);
+        NetworkProtectionToggle = new ToggleSwitch
+        {
+            Header = string.Empty,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        NetworkProtectionToggle.Toggled += OnNetworkProtectionToggled;
+        Grid.SetColumn(NetworkProtectionToggle, 1);
+        networkGrid.Children.Add(NetworkProtectionToggle);
+        HomeNetworkCard.Child = networkGrid;
+        content.Children.Add(HomeNetworkCard);
 
-        scroll.Content = stack;
-        return scroll;
+        return host;
     }
 
     private FrameworkElement BuildHistoryView()
@@ -845,15 +850,13 @@ public sealed partial class MainWindow : Window
 
         var stack = new StackPanel
         {
-            Spacing = 16,
-            MaxWidth = 1000
+            Spacing = 14,
+            MaxWidth = 980,
+            HorizontalAlignment = HorizontalAlignment.Center
         };
-        stack.Children.Add(CreateTitleText("История", 36));
-        stack.Children.Add(CreateSubtitleText("Старые завершённые проверки и их краткие результаты."));
         var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(18));
-        HistoryList = CreateListView();
-        HistoryList.ItemsSource = _historyItems;
-        card.Child = HistoryList;
+        HistoryItemsHost = new StackPanel { Spacing = 12 };
+        card.Child = HistoryItemsHost;
         stack.Children.Add(card);
         scroll.Content = stack;
         return scroll;
@@ -870,17 +873,22 @@ public sealed partial class MainWindow : Window
         var stack = new StackPanel
         {
             Spacing = 16,
-            MaxWidth = 860
+            MaxWidth = 860,
+            HorizontalAlignment = HorizontalAlignment.Center
         };
-        stack.Children.Add(CreateTitleText("Настройки", 36));
 
         var accountCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
-        var accountStack = new StackPanel { Spacing = 8 };
+        var accountStack = new StackPanel { Spacing = 12 };
         accountStack.Children.Add(CreateSectionTitle("Аккаунт", 24));
         SettingsAccountText = CreateBodyText("AppMutedTextBrush");
         accountStack.Children.Add(SettingsAccountText);
-        var logoutButton = CreateTonalButton("Выйти", OnLogoutClick);
-        accountStack.Children.Add(logoutButton);
+        var versionButton = CreateTonalButton(string.Empty, OnVersionTapClick);
+        versionButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        SettingsVersionText = CreateBodyText("AppTextBrush");
+        versionButton.Content = SettingsVersionText;
+        accountStack.Children.Add(versionButton);
+        SettingsDeveloperText = CreateBodyText("AppMutedTextBrush");
+        accountStack.Children.Add(SettingsDeveloperText);
         accountCard.Child = accountStack;
         stack.Children.Add(accountCard);
 
@@ -905,22 +913,9 @@ public sealed partial class MainWindow : Window
         lookCard.Child = lookStack;
         stack.Children.Add(lookCard);
 
-        var protectionCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(20));
-        var protectionStack = new StackPanel { Spacing = 10 };
-        protectionStack.Children.Add(CreateSectionTitle("Защита", 24));
-        SettingsDeveloperText = CreateBodyText("AppMutedTextBrush");
-        SettingsNetworkToggle = new ToggleSwitch { Header = "Защита в сети" };
-        SettingsNetworkToggle.Toggled += OnSettingsNetworkToggled;
-        SettingsAdToggle = new ToggleSwitch { Header = "Блокировать рекламу" };
-        SettingsAdToggle.Toggled += OnSettingsAdToggled;
-        SettingsUnsafeToggle = new ToggleSwitch { Header = "Блокировать опасные сайты" };
-        SettingsUnsafeToggle.Toggled += OnSettingsUnsafeToggled;
-        protectionStack.Children.Add(SettingsDeveloperText);
-        protectionStack.Children.Add(SettingsNetworkToggle);
-        protectionStack.Children.Add(SettingsAdToggle);
-        protectionStack.Children.Add(SettingsUnsafeToggle);
-        protectionCard.Child = protectionStack;
-        stack.Children.Add(protectionCard);
+        var logoutButton = CreateTonalButton("Выйти", OnLogoutClick);
+        logoutButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        stack.Children.Add(logoutButton);
 
         scroll.Content = stack;
         return scroll;
@@ -934,54 +929,65 @@ public sealed partial class MainWindow : Window
             Visibility = Visibility.Collapsed
         };
 
-        var frame = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineStrongBrush", 30, new Thickness(22));
-        frame.MaxWidth = 1220;
-        frame.MaxHeight = 760;
+        var frame = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineStrongBrush", 32, new Thickness(22));
+        frame.MaxWidth = 1180;
+        frame.MaxHeight = 780;
         frame.HorizontalAlignment = HorizontalAlignment.Center;
         frame.VerticalAlignment = VerticalAlignment.Center;
         overlay.Children.Add(frame);
 
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        frame.Child = root;
+
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 16) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(CreateSectionTitle("Проверка", 24));
+        var hideButton = CreateIconButton("×", OnHideScanOverlayClick);
+        Grid.SetColumn(hideButton, 1);
+        header.Children.Add(hideButton);
+        root.Children.Add(header);
+
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(350) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        frame.Child = grid;
+        Grid.SetRow(grid, 1);
+        root.Children.Add(grid);
 
-        var leftCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
+        var leftCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 28, new Thickness(20));
         Grid.SetColumn(leftCard, 0);
         var leftStack = new StackPanel { Spacing = 12 };
-        leftStack.Children.Add(CreateSectionTitle("Проверка", 24));
-        ScanModeText = CreateTitleText("NeuralV", 28);
+        ScanModeText = CreateTitleText("Проверка", 28);
         ScanStageText = CreateBodyText("AppMutedTextBrush");
+        ScanTargetText = CreateBodyText("AppMutedTextBrush");
         leftStack.Children.Add(ScanModeText);
         leftStack.Children.Add(ScanStageText);
+        leftStack.Children.Add(ScanTargetText);
 
-        var ringShell = new Grid
+        var ringShell = new Border
         {
             Width = 220,
             Height = 220,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 10, 0, 6)
+            Margin = new Thickness(0, 10, 0, 6),
+            CornerRadius = new CornerRadius(110),
+            BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
+            BorderThickness = new Thickness(3),
+            Background = ThemeBrush("AppAccentSoftGradientBrush")
         };
-        ScanProgressRing = new ProgressRing
-        {
-            IsActive = true,
-            Width = 190,
-            Height = 190,
-            Foreground = ThemeBrush("AppAccentBrush"),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
+        ScanProgressRing = null!;
         ScanProgressText = new TextBlock
         {
             Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 34,
+            FontSize = 42,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        ringShell.Children.Add(ScanProgressRing);
-        ringShell.Children.Add(ScanProgressText);
+        ringShell.Child = ScanProgressText;
         leftStack.Children.Add(ringShell);
 
         ScanCountsText = CreateBodyText("AppMutedTextBrush");
@@ -995,22 +1001,67 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 4, 0, 8)
         };
         leftStack.Children.Add(ScanProgressBar);
-        leftStack.Children.Add(CreateActionRow(
-            CreateFilledButton("Отменить проверку", OnCancelScanClick),
-            CreateTonalButton("Скрыть панель", OnHideScanOverlayClick)));
+        var cancelButton = CreateFilledButton("Остановить", OnCancelScanClick);
+        cancelButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        leftStack.Children.Add(cancelButton);
         leftCard.Child = leftStack;
         grid.Children.Add(leftCard);
 
-        var rightCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(18));
+        var rightCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 28, new Thickness(18));
         Grid.SetColumn(rightCard, 2);
-        var rightStack = new StackPanel { Spacing = 10 };
-        rightStack.Children.Add(CreateSectionTitle("Что происходит сейчас", 22));
-        ScanTimelineList = CreateListView();
-        ScanTimelineList.ItemsSource = _scanTimeline;
-        ScanTimelineList.MinHeight = 520;
-        rightStack.Children.Add(ScanTimelineList);
+        var rightStack = new StackPanel { Spacing = 12 };
+        rightStack.Children.Add(CreateSectionTitle("Что происходит", 22));
+        var timelineScroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
+        ScanTimelineHost = new StackPanel { Spacing = 10 };
+        timelineScroll.Content = ScanTimelineHost;
+        rightStack.Children.Add(timelineScroll);
         rightCard.Child = rightStack;
         grid.Children.Add(rightCard);
+
+        return overlay;
+    }
+
+    private Grid BuildHistoryDetailOverlay()
+    {
+        var overlay = new Grid
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            Visibility = Visibility.Collapsed
+        };
+        overlay.Tapped += (_, _) => SetHistoryDetailState(false);
+
+        var frame = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineStrongBrush", 30, new Thickness(22));
+        frame.MaxWidth = 960;
+        frame.MaxHeight = 760;
+        frame.HorizontalAlignment = HorizontalAlignment.Center;
+        frame.VerticalAlignment = VerticalAlignment.Center;
+        frame.Tapped += (_, args) => args.Handled = true;
+        overlay.Children.Add(frame);
+
+        var stack = new StackPanel { Spacing = 14 };
+        HistoryDetailTitleText = CreateTitleText("Проверка", 26);
+        HistoryDetailMetaText = CreateBodyText("AppMutedTextBrush");
+        stack.Children.Add(HistoryDetailTitleText);
+        stack.Children.Add(HistoryDetailMetaText);
+
+        var scroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxHeight = 520
+        };
+        HistoryDetailContentHost = new StackPanel { Spacing = 10 };
+        scroll.Content = HistoryDetailContentHost;
+        stack.Children.Add(scroll);
+
+        var closeButton = CreateTonalButton("Закрыть", (_, _) => SetHistoryDetailState(false));
+        closeButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        stack.Children.Add(closeButton);
+        frame.Child = stack;
 
         return overlay;
     }
@@ -1093,14 +1144,20 @@ public sealed partial class MainWindow : Window
             WindowsLog.Info("Creating deferred scan overlay");
             ScanOverlay = BuildScanOverlay();
             Canvas.SetZIndex(ScanOverlay, 40);
-            WindowsLog.Info("Deferred scan overlay created");
-        }
-
-        if (!ScreenHost.Children.Contains(ScanOverlay))
-        {
-            WindowsLog.Info("Attaching deferred scan overlay");
-            ScreenHost.Children.Add(ScanOverlay);
+            _windowRoot.Children.Add(ScanOverlay);
             WindowsLog.Info("Deferred scan overlay attached");
+        }
+    }
+
+    private void EnsureHistoryDetailOverlayReady()
+    {
+        if (HistoryDetailOverlay is null)
+        {
+            WindowsLog.Info("Creating deferred history detail overlay");
+            HistoryDetailOverlay = BuildHistoryDetailOverlay();
+            Canvas.SetZIndex(HistoryDetailOverlay, 50);
+            _windowRoot.Children.Add(HistoryDetailOverlay);
+            WindowsLog.Info("Deferred history detail overlay attached");
         }
     }
 
@@ -1121,6 +1178,17 @@ public sealed partial class MainWindow : Window
         if (HistoryView is not null) HistoryView.Visibility = screen == AppScreen.History ? Visibility.Visible : Visibility.Collapsed;
         if (SettingsView is not null) SettingsView.Visibility = screen == AppScreen.Settings ? Visibility.Visible : Visibility.Collapsed;
 
+        var chromeVisible = screen is AppScreen.Home or AppScreen.History or AppScreen.Settings;
+        TopBar.Visibility = chromeVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (screen == AppScreen.Welcome)
+        {
+            _shapeTimer.Start();
+        }
+        else
+        {
+            _shapeTimer.Stop();
+        }
+
         SetDrawerState(false);
         UpdateHeader();
         ApplySessionState();
@@ -1133,25 +1201,10 @@ public sealed partial class MainWindow : Window
     {
         HeaderTitleText.Text = _screen switch
         {
-            AppScreen.Login => "Вход",
-            AppScreen.Register => "Регистрация",
-            AppScreen.Code => "Подтверждение",
             AppScreen.Home => "NeuralV",
             AppScreen.History => "История",
             AppScreen.Settings => "Настройки",
             _ => "NeuralV"
-        };
-
-        HeaderSubtitleText.Text = _screen switch
-        {
-            AppScreen.Home when _activeScan is not null && !_activeScan.IsFinished => "Проверка продолжается. Можно вернуться к ней в один клик.",
-            AppScreen.Home => "Защита Windows, история и сетевые переключатели в одном окне.",
-            AppScreen.History => "Последние завершённые проверки.",
-            AppScreen.Settings => "Аккаунт, оформление и параметры защиты.",
-            AppScreen.Login => "Вход по почте, паролю и коду подтверждения.",
-            AppScreen.Register => "Создание аккаунта NeuralV.",
-            AppScreen.Code => "Подтверди вход кодом из письма.",
-            _ => ""
         };
     }
 
@@ -1162,44 +1215,53 @@ public sealed partial class MainWindow : Window
             ? (!string.IsNullOrWhiteSpace(_session!.User.Name) ? _session.User.Name : _session.User.Email)
             : "Гостевой режим";
 
-        AccountChipText.Text = hasSession ? _session!.User.Email : "Вход не выполнен";
-        DrawerUserNameText.Text = displayName;
-        DrawerUserMetaText.Text = hasSession
-            ? _session!.User.Email
-            : "Войди, чтобы запускать серверные проверки и хранить историю.";
+        if (AccountChipText is not null)
+        {
+            AccountChipText.Text = hasSession ? _session!.User.Email : string.Empty;
+        }
+        if (DrawerUserNameText is not null)
+        {
+            DrawerUserNameText.Text = displayName;
+        }
+        if (DrawerUserMetaText is not null)
+        {
+            DrawerUserMetaText.Text = hasSession
+                ? _session!.User.Email
+                : "Вход не выполнен";
+        }
         if (SettingsAccountText is not null)
         {
             SettingsAccountText.Text = hasSession
-                ? $"Пользователь: {displayName}. Почта: {_session!.User.Email}."
+                ? $"{displayName}\n{_session!.User.Email}"
                 : "Активной сессии нет.";
+        }
+        if (SettingsVersionText is not null)
+        {
+            SettingsVersionText.Text = $"Версия {_currentVersion}";
         }
         if (SettingsDeveloperText is not null)
         {
-            SettingsDeveloperText.Text = hasSession && _session!.User.IsDeveloperMode
+            SettingsDeveloperText.Text = (_preferences.DeveloperModeEnabled || (hasSession && _session!.User.IsDeveloperMode))
                 ? "Режим разработчика активен. Серверные лимиты отключены."
-                : "Режим разработчика не активен.";
+                : string.Empty;
+            SettingsDeveloperText.Visibility = string.IsNullOrWhiteSpace(SettingsDeveloperText.Text) ? Visibility.Collapsed : Visibility.Visible;
         }
     }
 
     private void UpdateHomeState()
     {
-        if (HomeHeroTitleText is null || HomeHeroSubtitleText is null || ActiveScanCard is null || ActiveScanCardTitleText is null || ActiveScanCardMetaText is null)
+        if (ActiveScanCard is null || ActiveScanCardTitleText is null || ActiveScanCardMetaText is null)
         {
             UpdateNetworkUi();
             return;
         }
 
-        HomeHeroTitleText.Text = _activeScan is not null && !_activeScan.IsFinished
-            ? "Проверка уже идёт"
-            : "Главное меню";
-        HomeHeroSubtitleText.Text = _activeScan is not null && !_activeScan.IsFinished
-            ? (_activeScan.Message ?? "Можно вернуться к текущей проверке или запустить сеть.")
-            : (_session is null
-                ? "Войди в аккаунт для серверных режимов или запусти локальную быструю проверку."
-                : "Выбери режим проверки или включи защиту в сети.");
-
         var running = _activeScan is not null && !_activeScan.IsFinished;
         ActiveScanCard.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        if (HomePrimaryContent is not null)
+        {
+            HomePrimaryContent.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+        }
         if (running && _activeScan is not null)
         {
             var progress = WindowsTrayProgressService.EstimateProgressPercent(_activeScan);
@@ -1213,14 +1275,31 @@ public sealed partial class MainWindow : Window
             ActiveScanCardMetaText.Text = $"{progress}% · {(_activeScan.Message ?? _activeScan.Status)}";
         }
 
+        App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose && _activeScan is not null && !_activeScan.IsFinished);
+        App.WindowLifecycle?.RefreshTrayState();
         UpdateNetworkUi();
     }
 
     private void UpdateHistoryState()
     {
-        if (HistoryList is not null)
+        if (HistoryItemsHost is null)
         {
-            HistoryList.ItemsSource = _historyItems;
+            return;
+        }
+
+        HistoryItemsHost.Children.Clear();
+        if (_historyRecords.Count == 0)
+        {
+            var empty = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineBrush", 22, new Thickness(16));
+            empty.Child = CreateBodyText("AppMutedTextBrush");
+            ((TextBlock)empty.Child).Text = "История появится после первой завершённой проверки.";
+            HistoryItemsHost.Children.Add(empty);
+            return;
+        }
+
+        foreach (var item in _historyRecords)
+        {
+            HistoryItemsHost.Children.Add(CreateHistoryRecordCard(item));
         }
     }
 
@@ -1237,7 +1316,6 @@ public sealed partial class MainWindow : Window
         DynamicColorsToggle.IsOn = _preferences.DynamicColorsEnabled;
         AutoStartToggle.IsOn = _preferences.AutoStartEnabled;
         _preferenceUiSync = false;
-        UpdateNetworkUi();
     }
 
     private void UpdateNetworkUi()
@@ -1248,33 +1326,12 @@ public sealed partial class MainWindow : Window
         {
             NetworkProtectionToggle.IsOn = _networkState.NetworkEnabled;
         }
-        if (AdBlockToggle is not null)
-        {
-            AdBlockToggle.IsOn = _networkState.AdBlockEnabled;
-            AdBlockToggle.IsEnabled = _networkState.NetworkEnabled;
-        }
-        if (UnsafeSitesToggle is not null)
-        {
-            UnsafeSitesToggle.IsOn = _networkState.UnsafeSitesEnabled;
-            UnsafeSitesToggle.IsEnabled = _networkState.NetworkEnabled;
-        }
-        if (SettingsNetworkToggle is not null)
-        {
-            SettingsNetworkToggle.IsOn = _networkState.NetworkEnabled;
-        }
-        if (SettingsAdToggle is not null)
-        {
-            SettingsAdToggle.IsOn = _networkState.AdBlockEnabled;
-            SettingsAdToggle.IsEnabled = _networkState.NetworkEnabled;
-        }
-        if (SettingsUnsafeToggle is not null)
-        {
-            SettingsUnsafeToggle.IsOn = _networkState.UnsafeSitesEnabled;
-            SettingsUnsafeToggle.IsEnabled = _networkState.NetworkEnabled;
-        }
         if (NetworkCountersText is not null)
         {
-            NetworkCountersText.Text = $"Заблокировано угроз в сети: {_networkState.BlockedThreatsPlatform} · рекламы: {_networkState.BlockedAdsPlatform}";
+            NetworkCountersText.Text =
+                $"{_networkState.StatusMessage}\n" +
+                $"Заблокировано угроз: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedThreatsPlatform)}\n" +
+                $"Заблокировано рекламы: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedAdsPlatform)}";
         }
 
         _networkUiSync = false;
@@ -1283,8 +1340,45 @@ public sealed partial class MainWindow : Window
     private void SetDrawerState(bool isOpen)
     {
         _drawerOpen = isOpen;
-        DrawerScrim.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
-        DrawerPanel.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (isOpen)
+        {
+            DrawerScrim.Visibility = Visibility.Visible;
+            DrawerPanel.Visibility = Visibility.Visible;
+        }
+
+        AnimateElement(DrawerScrim, "Opacity", isOpen ? 1 : 0, 220, () =>
+        {
+            if (!isOpen)
+            {
+                DrawerScrim.Visibility = Visibility.Collapsed;
+            }
+        });
+        AnimateElement(DrawerPanel, "Opacity", isOpen ? 1 : 0, 220, () =>
+        {
+            if (!isOpen)
+            {
+                DrawerPanel.Visibility = Visibility.Collapsed;
+            }
+        });
+
+        if (DrawerPanel.RenderTransform is TranslateTransform translate)
+        {
+            AnimateElement(translate, "X", isOpen ? 0 : -36, 220);
+        }
+    }
+
+    private void SetHistoryDetailState(bool isOpen)
+    {
+        if (isOpen)
+        {
+            EnsureHistoryDetailOverlayReady();
+        }
+        if (HistoryDetailOverlay is null)
+        {
+            return;
+        }
+
+        HistoryDetailOverlay.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void SetScanOverlayState(bool isOpen)
@@ -1303,8 +1397,21 @@ public sealed partial class MainWindow : Window
         if (isOpen)
         {
             SetDrawerState(false);
+            SetHistoryDetailState(false);
         }
         UpdateHomeState();
+    }
+
+    private void ShowActiveScanOverlay()
+    {
+        if (_activeScan is null)
+        {
+            return;
+        }
+
+        ShowScreen(AppScreen.Home);
+        RenderScan(_activeScan);
+        SetScanOverlayState(true);
     }
 
     private void SetBusy(bool isBusy, string? message = null)
@@ -1446,14 +1553,14 @@ public sealed partial class MainWindow : Window
 
     private void ResetAuthInputs()
     {
-        LoginEmailBox.Text = string.Empty;
-        LoginPasswordBox.Password = string.Empty;
-        RegisterNameBox.Text = string.Empty;
-        RegisterEmailBox.Text = string.Empty;
-        RegisterPasswordBox.Password = string.Empty;
-        RegisterPasswordRepeatBox.Password = string.Empty;
-        VerificationCodeBox.Text = string.Empty;
-        CodeHintText.Text = string.Empty;
+        if (LoginEmailBox is not null) LoginEmailBox.Text = string.Empty;
+        if (LoginPasswordBox is not null) LoginPasswordBox.Password = string.Empty;
+        if (RegisterNameBox is not null) RegisterNameBox.Text = string.Empty;
+        if (RegisterEmailBox is not null) RegisterEmailBox.Text = string.Empty;
+        if (RegisterPasswordBox is not null) RegisterPasswordBox.Password = string.Empty;
+        if (RegisterPasswordRepeatBox is not null) RegisterPasswordRepeatBox.Password = string.Empty;
+        if (VerificationCodeBox is not null) VerificationCodeBox.Text = string.Empty;
+        if (CodeHintText is not null) CodeHintText.Text = string.Empty;
         _challenge = null;
     }
 
@@ -1585,7 +1692,7 @@ public sealed partial class MainWindow : Window
             ResetAuthInputs();
             ApplySessionState();
             ShowScreen(AppScreen.Home);
-            SetStatus("Вход выполнен.");
+            SetStatus(null);
         }
         catch (Exception ex)
         {
@@ -1624,9 +1731,7 @@ public sealed partial class MainWindow : Window
                 }
             };
             _activeScan = initial;
-            RenderScan(initial);
-            SetScanOverlayState(true);
-            ShowScreen(AppScreen.Home);
+            ShowActiveScanOverlay();
 
             var result = await Task.Run(ExecuteLocalQuickScan);
             _activeScan = result;
@@ -1722,9 +1827,7 @@ public sealed partial class MainWindow : Window
             _scanPollCts?.Cancel();
             _scanPollCts = new CancellationTokenSource();
             _activeScan = result.scan;
-            RenderScan(result.scan);
-            SetScanOverlayState(true);
-            ShowScreen(AppScreen.Home);
+            ShowActiveScanOverlay();
             _ = PollScanAsync(result.scan.Id, _scanPollCts.Token);
         }
         catch (Exception ex)
@@ -1762,7 +1865,7 @@ public sealed partial class MainWindow : Window
                         await HistoryStore.AppendAsync(result.scan, cancellationToken);
                         await LoadHistoryAsync(cancellationToken);
                     }
-                    SetStatus(result.scan.PrimarySummary);
+                    SetStatus(null);
                     WindowsLog.Info($"Desktop scan finished: {result.scan.Status} / {result.scan.Verdict}");
                     return;
                 }
@@ -1803,10 +1906,15 @@ public sealed partial class MainWindow : Window
             _ => "Проверка"
         };
         ScanStageText.Text = string.IsNullOrWhiteSpace(scan.Message) ? $"Статус: {scan.Status}" : scan.Message;
+        if (ScanTargetText is not null)
+        {
+            ScanTargetText.Text = scan.Platform.Equals("windows", StringComparison.OrdinalIgnoreCase)
+                ? $"Статус: {WindowsTrayProgressService.ResolveStatusLabel(scan.Status)}"
+                : scan.Platform;
+        }
         ScanProgressText.Text = $"{progress}%";
         ScanCountsText.Text = $"Этапов в ленте: {scan.Timeline.Count} · находок: {scan.SurfacedFindings}";
         ScanProgressBar.Value = progress;
-        ScanProgressRing.IsActive = !scan.IsFinished;
 
         _scanTimeline.Clear();
         foreach (var item in scan.Timeline.DefaultIfEmpty(string.IsNullOrWhiteSpace(scan.Message) ? "Сервер обрабатывает проверку." : scan.Message))
@@ -1818,7 +1926,20 @@ public sealed partial class MainWindow : Window
             _scanTimeline.Add($"{finding.Title}: {finding.Summary}");
         }
 
+        if (ScanTimelineHost is not null)
+        {
+            ScanTimelineHost.Children.Clear();
+            foreach (var line in _scanTimeline)
+            {
+                var card = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 18, new Thickness(14, 12, 14, 12));
+                card.Child = CreateBodyText("AppTextBrush");
+                ((TextBlock)card.Child).Text = line;
+                ScanTimelineHost.Children.Add(card);
+            }
+        }
+
         UpdateHomeState();
+        App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.FromScan(scan));
         if (_scanOverlayOpen)
         {
             SetScanOverlayState(true);
@@ -1880,13 +2001,7 @@ public sealed partial class MainWindow : Window
 
     private void OnOpenScanOverlayClick(object sender, RoutedEventArgs e)
     {
-        if (_activeScan is null)
-        {
-            return;
-        }
-
-        SetScanOverlayState(true);
-        ShowScreen(AppScreen.Home);
+        ShowActiveScanOverlay();
     }
 
     private void OnHomeClick(object sender, RoutedEventArgs e)
@@ -1975,8 +2090,8 @@ public sealed partial class MainWindow : Window
         {
             Platform = "windows",
             NetworkEnabled = NetworkProtectionToggle.IsOn,
-            AdBlockEnabled = AdBlockToggle.IsOn,
-            UnsafeSitesEnabled = UnsafeSitesToggle.IsOn,
+            AdBlockEnabled = NetworkProtectionToggle.IsOn,
+            UnsafeSitesEnabled = NetworkProtectionToggle.IsOn,
             BlockedAdsPlatform = _networkState.BlockedAdsPlatform,
             BlockedThreatsPlatform = _networkState.BlockedThreatsPlatform,
             BlockedAdsTotal = _networkState.BlockedAdsTotal,
@@ -1988,94 +2103,47 @@ public sealed partial class MainWindow : Window
 
     private async void OnAdBlockToggled(object sender, RoutedEventArgs e)
     {
-        if (_networkUiSync)
-        {
-            return;
-        }
-
-        _networkState = new NetworkProtectionState
-        {
-            Platform = "windows",
-            NetworkEnabled = NetworkProtectionToggle.IsOn,
-            AdBlockEnabled = AdBlockToggle.IsOn,
-            UnsafeSitesEnabled = UnsafeSitesToggle.IsOn,
-            BlockedAdsPlatform = _networkState.BlockedAdsPlatform,
-            BlockedThreatsPlatform = _networkState.BlockedThreatsPlatform,
-            BlockedAdsTotal = _networkState.BlockedAdsTotal,
-            BlockedThreatsTotal = _networkState.BlockedThreatsTotal,
-            DeveloperMode = _networkState.DeveloperMode
-        };
-        await PushNetworkStateAsync();
+        await OnNetworkProtectionFallbackAsync();
     }
 
     private async void OnUnsafeSitesToggled(object sender, RoutedEventArgs e)
     {
-        if (_networkUiSync)
-        {
-            return;
-        }
-
-        _networkState = new NetworkProtectionState
-        {
-            Platform = "windows",
-            NetworkEnabled = NetworkProtectionToggle.IsOn,
-            AdBlockEnabled = AdBlockToggle.IsOn,
-            UnsafeSitesEnabled = UnsafeSitesToggle.IsOn,
-            BlockedAdsPlatform = _networkState.BlockedAdsPlatform,
-            BlockedThreatsPlatform = _networkState.BlockedThreatsPlatform,
-            BlockedAdsTotal = _networkState.BlockedAdsTotal,
-            BlockedThreatsTotal = _networkState.BlockedThreatsTotal,
-            DeveloperMode = _networkState.DeveloperMode
-        };
-        await PushNetworkStateAsync();
+        await OnNetworkProtectionFallbackAsync();
     }
 
     private async void OnSettingsNetworkToggled(object sender, RoutedEventArgs e)
     {
-        if (_networkUiSync)
-        {
-            return;
-        }
-
-        _networkUiSync = true;
-        NetworkProtectionToggle.IsOn = SettingsNetworkToggle.IsOn;
-        _networkUiSync = false;
-        await PushNetworkStateAsync();
+        await OnNetworkProtectionFallbackAsync();
     }
 
     private async void OnSettingsAdToggled(object sender, RoutedEventArgs e)
     {
-        if (_networkUiSync)
-        {
-            return;
-        }
-
-        _networkUiSync = true;
-        AdBlockToggle.IsOn = SettingsAdToggle.IsOn;
-        _networkUiSync = false;
-        await PushNetworkStateAsync();
+        await OnNetworkProtectionFallbackAsync();
     }
 
     private async void OnSettingsUnsafeToggled(object sender, RoutedEventArgs e)
     {
-        if (_networkUiSync)
+        await OnNetworkProtectionFallbackAsync();
+    }
+
+    private async Task OnNetworkProtectionFallbackAsync()
+    {
+        if (_networkUiSync || NetworkProtectionToggle is null)
         {
             return;
         }
 
-        _networkUiSync = true;
-        UnsafeSitesToggle.IsOn = SettingsUnsafeToggle.IsOn;
-        _networkUiSync = false;
         await PushNetworkStateAsync();
     }
 
     private async Task PushNetworkStateAsync()
     {
+        var enabled = NetworkProtectionToggle?.IsOn == true;
         _preferences = await ClientPreferencesStateService.UpdateAsync(state =>
         {
-            state.NetworkProtectionEnabled = NetworkProtectionToggle.IsOn;
-            state.AdBlockEnabled = AdBlockToggle.IsOn;
-            state.UnsafeSitesEnabled = UnsafeSitesToggle.IsOn;
+            state.NetworkProtectionEnabled = enabled;
+            state.AdBlockEnabled = enabled;
+            state.UnsafeSitesEnabled = enabled;
             return state;
         });
 
@@ -2088,12 +2156,12 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            var result = await _apiClient.UpdateNetworkProtectionStateAsync(_session, NetworkProtectionToggle.IsOn, AdBlockToggle.IsOn, UnsafeSitesToggle.IsOn, "windows");
+            var result = await _apiClient.UpdateNetworkProtectionStateAsync(_session, enabled, enabled, enabled, "windows");
             if (result.state is not null)
             {
                 _networkState = result.state;
                 _preferences = await ClientPreferencesStateService.ApplyRemoteNetworkStateAsync(result.state);
-                SetStatus("Параметры сетевой защиты обновлены.");
+                SetStatus(null);
             }
             else
             {
@@ -2131,7 +2199,32 @@ public sealed partial class MainWindow : Window
         _networkState = BuildLocalNetworkFallback();
         ApplySessionState();
         SetScanOverlayState(false);
+        SetHistoryDetailState(false);
+        App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.CreateIdle());
         ShowScreen(AppScreen.Welcome);
+        SetStatus(null);
+    }
+
+    private async void OnVersionTapClick(object sender, RoutedEventArgs e)
+    {
+        _developerTapCount++;
+        if (_developerTapCount < 7)
+        {
+            return;
+        }
+
+        _developerTapCount = 0;
+        await SavePreferencesAsync(prefs =>
+        {
+            prefs.DeveloperModeEnabled = true;
+        }, rebuildVisualTree: false);
+
+        if (_session is not null)
+        {
+            _session.User.IsDeveloperMode = true;
+        }
+
+        ApplySessionState();
         SetStatus(null);
     }
 
@@ -2140,6 +2233,221 @@ public sealed partial class MainWindow : Window
         var button = filled ? CreateFilledButton(text, handler) : CreateTonalButton(text, handler);
         button.HorizontalAlignment = HorizontalAlignment.Stretch;
         return button;
+    }
+
+    private Border CreateWideModePanel(string title, string glyph, string meta, RoutedEventHandler handler)
+    {
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 30, new Thickness(20));
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var glyphShell = CreateGlyphShell(glyph, 64);
+        grid.Children.Add(glyphShell);
+
+        var textStack = new StackPanel
+        {
+            Margin = new Thickness(16, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 4
+        };
+        textStack.Children.Add(CreateSectionTitle(title, 26));
+        textStack.Children.Add(CreateBodyText("AppMutedTextBrush"));
+        ((TextBlock)textStack.Children[^1]).Text = meta;
+        Grid.SetColumn(textStack, 1);
+        grid.Children.Add(textStack);
+
+        var action = CreateRoundActionButton("▶", handler, true);
+        Grid.SetColumn(action, 2);
+        grid.Children.Add(action);
+        card.Child = grid;
+        return card;
+    }
+
+    private Border CreateGridModePanel(string title, string glyph, RoutedEventHandler handler, bool emphasized)
+    {
+        var card = CreateCardBorder(
+            emphasized ? "AppAccentSoftGradientBrush" : "AppSurfaceBrush",
+            emphasized ? "AppOutlineStrongBrush" : "AppOutlineBrush",
+            emphasized ? 36 : 28,
+            new Thickness(18));
+        card.MinHeight = 184;
+        var stack = new StackPanel
+        {
+            Spacing = 12,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        stack.Children.Add(CreateGlyphShell(glyph, emphasized ? 60 : 54));
+        stack.Children.Add(CreateTitleText(title, 24, TextAlignment.Center));
+        stack.Children.Add(CreateRoundActionButton("▶", handler, emphasized));
+        card.Child = stack;
+        return card;
+    }
+
+    private Border CreateSlimModePanel(string title, string glyph, string actionText, RoutedEventHandler handler)
+    {
+        var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 24, new Thickness(18));
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var icon = CreateGlyphShell(glyph, 52);
+        grid.Children.Add(icon);
+        var titleBlock = CreateSectionTitle(title, 22);
+        titleBlock.VerticalAlignment = VerticalAlignment.Center;
+        titleBlock.Margin = new Thickness(14, 0, 0, 0);
+        Grid.SetColumn(titleBlock, 1);
+        grid.Children.Add(titleBlock);
+        var button = CreateTonalButton(actionText, handler);
+        Grid.SetColumn(button, 2);
+        grid.Children.Add(button);
+        card.Child = grid;
+        return card;
+    }
+
+    private Border CreateGlyphShell(string glyph, double size)
+    {
+        var shell = new Border
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            Background = ThemeBrush("AppAccentSoftBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        shell.Child = new TextBlock
+        {
+            Text = glyph,
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = size * 0.45,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextAlignment = TextAlignment.Center
+        };
+        return shell;
+    }
+
+    private Button CreateRoundActionButton(string glyph, RoutedEventHandler handler, bool emphasized)
+    {
+        var button = new Button
+        {
+            Content = glyph,
+            Width = emphasized ? 62 : 56,
+            Height = emphasized ? 62 : 56,
+            Background = emphasized ? ThemeBrush("AppPrimaryContainerBrush") : ThemeBrush("AppSurfaceStrongBrush"),
+            Foreground = emphasized ? ThemeBrush("AppOnAccentBrush") : ThemeBrush("AppTextBrush"),
+            BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(31),
+            FontSize = 24,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private Border CreateHistoryRecordCard(StoredScanRecord item)
+    {
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineBrush", 22, new Thickness(16));
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var left = new StackPanel { Spacing = 6 };
+        left.Children.Add(CreateSectionTitle(WindowsTrayProgressService.ResolveModeLabel(item.Mode), 22));
+        var meta = CreateBodyText("AppMutedTextBrush");
+        meta.Text = $"{item.SavedAt.LocalDateTime:dd.MM.yyyy HH:mm} · находок: {item.Findings.Count}";
+        left.Children.Add(meta);
+        grid.Children.Add(left);
+
+        var verdict = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 18, new Thickness(12, 8, 12, 8));
+        verdict.VerticalAlignment = VerticalAlignment.Center;
+        verdict.Child = CreateBodyText("AppTextBrush");
+        ((TextBlock)verdict.Child).Text = item.Verdict;
+        Grid.SetColumn(verdict, 1);
+        grid.Children.Add(verdict);
+
+        var button = new Button
+        {
+            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0)),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = grid
+        };
+        button.Click += (_, _) => OpenHistoryRecord(item);
+        card.Child = button;
+        return card;
+    }
+
+    private void OpenHistoryRecord(StoredScanRecord item)
+    {
+        EnsureHistoryDetailOverlayReady();
+        if (HistoryDetailTitleText is null || HistoryDetailMetaText is null || HistoryDetailContentHost is null)
+        {
+            return;
+        }
+
+        HistoryDetailTitleText.Text = WindowsTrayProgressService.ResolveModeLabel(item.Mode);
+        HistoryDetailMetaText.Text = $"{item.SavedAt.LocalDateTime:dd.MM.yyyy HH:mm} · {item.Verdict}";
+        HistoryDetailContentHost.Children.Clear();
+        if (!string.IsNullOrWhiteSpace(item.Message))
+        {
+            var summary = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 18, new Thickness(14));
+            summary.Child = CreateBodyText("AppTextBrush");
+            ((TextBlock)summary.Child).Text = item.Message;
+            HistoryDetailContentHost.Children.Add(summary);
+        }
+        foreach (var finding in item.Findings)
+        {
+            var findingCard = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 18, new Thickness(14));
+            var stack = new StackPanel { Spacing = 6 };
+            stack.Children.Add(CreateSectionTitle(finding.Title, 18));
+            var verdict = CreateBodyText("AppMutedTextBrush");
+            verdict.Text = finding.Verdict;
+            stack.Children.Add(verdict);
+            var summary = CreateBodyText("AppTextBrush");
+            summary.Text = finding.Summary;
+            stack.Children.Add(summary);
+            findingCard.Child = stack;
+            HistoryDetailContentHost.Children.Add(findingCard);
+        }
+        foreach (var line in item.Timeline)
+        {
+            var lineCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 16, new Thickness(12));
+            lineCard.Child = CreateBodyText("AppTextBrush");
+            ((TextBlock)lineCard.Child).Text = line;
+            HistoryDetailContentHost.Children.Add(lineCard);
+        }
+        SetHistoryDetailState(true);
+    }
+
+    private void AnimateElement(DependencyObject target, string propertyPath, double to, int durationMs, Action? completed = null)
+    {
+        var storyboard = new Storyboard();
+        var animation = new DoubleAnimation
+        {
+            To = to,
+            Duration = TimeSpan.FromMilliseconds(durationMs),
+            EnableDependentAnimation = true
+        };
+        Storyboard.SetTarget(animation, target);
+        Storyboard.SetTargetProperty(animation, propertyPath);
+        storyboard.Children.Add(animation);
+        if (completed is not null)
+        {
+            storyboard.Completed += (_, _) => completed();
+        }
+        storyboard.Begin();
     }
 
     private Grid CreateActionRow(Button left, Button right)

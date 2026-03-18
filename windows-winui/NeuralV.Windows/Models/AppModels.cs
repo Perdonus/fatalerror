@@ -42,6 +42,7 @@ public enum WindowsScanRootKind
     Documents,
     LocalAppData,
     RoamingAppData,
+    ProgramData,
     ProgramFiles,
     ProgramFilesX86,
     StartMenu,
@@ -137,6 +138,7 @@ public sealed class ClientPreferences
     public ThemeModePreference ThemeMode { get; set; } = ThemeModePreference.System;
     public bool DynamicColorsEnabled { get; set; } = true;
     public bool DeveloperModeEnabled { get; set; }
+    public bool AutoStartEnabled { get; set; } = true;
     public bool NetworkProtectionEnabled { get; set; }
     public bool AdBlockEnabled { get; set; }
     public bool UnsafeSitesEnabled { get; set; }

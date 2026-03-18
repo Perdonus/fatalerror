@@ -232,6 +232,8 @@ a {
   min-height: 52px;
   cursor: pointer;
   isolation: isolate;
+  border-radius: 18px;
+  outline: none;
 }
 
 .auth-widget-button {
@@ -249,6 +251,13 @@ a {
   width: 100%;
   user-select: none;
   pointer-events: none;
+}
+
+.auth-widget-shell:focus-visible .auth-widget-button,
+.auth-widget-shell:hover .auth-widget-button {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 18px 32px rgba(69, 108, 255, 0.28);
 }
 
 .auth-widget-button-mark {
@@ -502,6 +511,11 @@ a {
   border: 1px solid var(--line);
   content-visibility: auto;
   contain-intrinsic-size: 200px;
+}
+
+.section-shell:not(.section-shell-tight) {
+  content-visibility: auto;
+  contain-intrinsic-size: 360px;
 }
 
 .mini-card h3,

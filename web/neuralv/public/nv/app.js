@@ -72,6 +72,37 @@ const state = {
   }
 };
 
+function extractAuthMessage(raw) {
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw.trim();
+  if (typeof raw.message === 'string' && raw.message.trim()) return raw.message.trim();
+  if (typeof raw.error === 'string' && raw.error.trim()) return raw.error.trim();
+  return '';
+}
+
+function extractAuthCode(raw) {
+  if (!raw || typeof raw !== 'object') return '';
+  if (typeof raw.code === 'string' && raw.code.trim()) return raw.code.trim();
+  if (typeof raw.payload?.code === 'string' && raw.payload.code.trim()) return raw.payload.code.trim();
+  return '';
+}
+
+function normalizeAuthError(raw) {
+  if (!raw) return null;
+  const message = extractAuthMessage(raw);
+  const code = extractAuthCode(raw);
+  const status = Number(raw.status || raw.payload?.status || 0) || 0;
+  const hint = typeof raw.payload?.hint === 'string' ? raw.payload.hint.trim() : '';
+  const details = raw.payload?.details || null;
+  return {
+    message: message || 'Вход временно недоступен',
+    code,
+    status,
+    hint,
+    details
+  };
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -107,24 +138,30 @@ function normalizeCreatorSlug(value) {
   return String(value || '').trim().replace(/^@+/, '').toLowerCase();
 }
 
-function isTelegramDomainError(message) {
-  return /bot domain invalid|domain invalid|origin invalid/i.test(String(message || ''));
+function isTelegramDomainError(raw) {
+  const code = extractAuthCode(raw);
+  const message = [
+    extractAuthMessage(raw),
+    typeof raw?.hint === 'string' ? raw.hint : '',
+    typeof raw?.details?.reason === 'string' ? raw.details.reason : ''
+  ].join(' ');
+  return code === 'NV_TELEGRAM_DOMAIN_INVALID' || /bot domain invalid|domain invalid|origin invalid/i.test(message);
 }
 
 function authConfigStatus() {
   const issues = state.auth.issues || {};
   if (issues.missing_bot_username || issues.missing_bot_token) {
     return {
-      title: 'Telegram login ещё не настроен',
-      body: 'Вход для авторов появится после привязки бота к сайту.',
-      hint: 'Для виджета должен быть разрешён домен sosiskibot.ru.'
+      title: 'Вход через Telegram ещё не включён',
+      body: 'Сайт пока не может открыть авторский вход.',
+      hint: 'Сначала нужно привязать бота и домен sosiskibot.ru к Telegram Login Widget.'
     };
   }
   if (issues.missing_session_secret) {
     return {
       title: 'Авторизация временно недоступна',
       body: 'Сайт не может открыть сессию автора.',
-      hint: 'Проверь конфиг NV сайта и секрет сессии.'
+      hint: 'Это серверная настройка сайта. Попробуй позже.'
     };
   }
   return {
@@ -135,7 +172,8 @@ function authConfigStatus() {
 }
 
 function authErrorStatus(rawMessage) {
-  const message = String(rawMessage || '').trim();
+  const normalized = normalizeAuthError(rawMessage);
+  const message = extractAuthMessage(normalized || rawMessage);
   if (!message) {
     return {
       title: 'Вход временно недоступен',
@@ -143,11 +181,11 @@ function authErrorStatus(rawMessage) {
       hint: 'Попробуй позже.'
     };
   }
-  if (isTelegramDomainError(message)) {
+  if (isTelegramDomainError(normalized || rawMessage)) {
     return {
-      title: 'Telegram login настроен не до конца',
-      body: 'Виджет отклонил домен сайта.',
-      hint: 'Для бота должен быть разрешён домен sosiskibot.ru в BotFather.'
+      title: 'Вход через Telegram пока не включён',
+      body: 'Бот ещё не разрешён для домена сайта.',
+      hint: 'Нужен /setdomain в BotFather и домен sosiskibot.ru. Это проблема настройки сайта, не твоего аккаунта.'
     };
   }
   if (/not configured|не настро/i.test(message)) {
@@ -167,20 +205,44 @@ function authErrorStatus(rawMessage) {
   return {
     title: 'Вход временно недоступен',
     body: message,
-    hint: 'Попробуй ещё раз чуть позже.'
+    hint: normalized?.hint || 'Попробуй ещё раз чуть позже.'
   };
 }
 
 function renderTelegramLoginButton(slotId, label = 'Войти') {
   return `
-    <div class="auth-widget-shell">
+    <div class="auth-widget-shell" data-widget-slot="${escapeHtml(slotId)}" role="button" tabindex="0" aria-label="${escapeHtml(label)}">
       <div class="auth-widget-button" aria-hidden="true">
         <span class="auth-widget-button-mark">TG</span>
         <span class="auth-widget-button-copy">${escapeHtml(label)}</span>
       </div>
-      <div class="auth-widget-overlay" id="${escapeHtml(slotId)}"></div>
+      <div class="auth-widget-overlay" id="${escapeHtml(slotId)}" aria-hidden="true"></div>
     </div>
   `;
+}
+
+function triggerTelegramWidget(shell) {
+  if (!(shell instanceof HTMLElement)) return false;
+  const host = shell.querySelector('.telegram-widget-host');
+  const overlay = shell.querySelector('.auth-widget-overlay');
+  const target = overlay?.querySelector('iframe, button, a') || host?.querySelector('iframe, button, a');
+  if (target instanceof HTMLElement) {
+    target.click();
+    return true;
+  }
+  return false;
+}
+
+function bindTelegramShell(container) {
+  const shell = container?.closest('.auth-widget-shell');
+  if (!(shell instanceof HTMLElement) || shell.dataset.bound === '1') return;
+  shell.dataset.bound = '1';
+  shell.addEventListener('keydown', (event) => {
+    if (!(event instanceof KeyboardEvent)) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    triggerTelegramWidget(shell);
+  });
 }
 
 function ownerProfileLink() {
@@ -381,7 +443,7 @@ async function loadAuthState() {
     state.auth.issues = null;
     state.auth.user = null;
     state.auth.creator = null;
-    state.auth.error = error instanceof Error ? error.message : 'Не удалось загрузить вход';
+    state.auth.error = normalizeAuthError(error) || { message: 'Не удалось загрузить вход' };
   } finally {
     state.auth.loading = false;
     renderAuthSlot();
@@ -422,7 +484,13 @@ function mountTelegramWidget(container) {
   script.setAttribute('data-request-access', 'write');
   script.setAttribute('data-onauth', 'window.NVTelegramAuth(user)');
   script.addEventListener('error', () => {
-    state.auth.error = 'Telegram login сейчас не загружается';
+    state.auth.error = normalizeAuthError({
+      message: 'Telegram login сейчас не загружается',
+      code: 'NV_TELEGRAM_WIDGET_LOAD_FAILED',
+      payload: {
+        hint: 'Попробуй обновить страницу чуть позже.'
+      }
+    });
     renderAuthSlot();
     if (state.page === 'profile') {
       renderProfile();
@@ -430,6 +498,7 @@ function mountTelegramWidget(container) {
   });
   host.appendChild(script);
   container.appendChild(host);
+  bindTelegramShell(container);
 }
 
 function renderAuthSlot() {
@@ -515,8 +584,11 @@ async function handleTelegramWidgetAuth(user) {
     }
   } catch (error) {
     console.warn('NV Telegram login failed', error);
-    state.auth.error = error instanceof Error ? error.message : 'Не удалось завершить вход';
+    state.auth.error = normalizeAuthError(error) || { message: 'Не удалось завершить вход' };
     renderAuthSlot();
+    if (state.page === 'profile') {
+      await renderProfile();
+    }
   }
 }
 
@@ -1242,23 +1314,27 @@ function attachCopyDelegation() {
 async function init() {
   window.NVTelegramAuth = handleTelegramWidgetAuth;
   attachCopyDelegation();
+  renderAuthSlot();
 
   if (state.page === 'home') {
     await loadRegistry();
-    await Promise.all([loadCatalog(), loadAuthState()]);
+    deriveCatalogFromRegistry();
     renderHome();
+    void loadAuthState();
     return;
   }
 
   if (state.page === 'downloads') {
-    await Promise.all([loadRegistry(), loadAuthState()]);
+    await loadRegistry();
     attachDownloadTabs();
+    void loadAuthState();
     return;
   }
 
   if (state.page === 'packages') {
-    await Promise.all([loadCatalog(), loadAuthState()]);
+    await loadCatalog();
     attachCatalogControls();
+    void loadAuthState();
     return;
   }
 

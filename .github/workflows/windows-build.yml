@@ -52,14 +52,14 @@ jobs:
           restore-keys: |
             windows-winui-nuget-${{ runner.os }}-
 
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --no-progress -y
-
-      - name: Restore Windows WinUI project
+      - name: Restore Windows projects
         shell: pwsh
         run: |
           dotnet restore windows-winui/NeuralV.Windows/NeuralV.Windows.csproj
+          dotnet restore windows-winui/NeuralV.Cmd/NeuralV.Cmd.csproj
+          dotnet restore windows-winui/NeuralV.Launcher/NeuralV.Launcher.csproj
+          dotnet restore windows-winui/NeuralV.Updater/NeuralV.Updater.csproj
+          dotnet restore windows-winui/NeuralV.Setup/NeuralV.Setup.csproj
 
       - name: Publish Windows WinUI client
         shell: pwsh
@@ -83,6 +83,28 @@ jobs:
             -o dist\windows\NeuralV 2>&1 | Tee-Object -FilePath windows-build.log
           "WINDOWS_WINUI_BUILD_EXIT=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Publish Windows launcher
+        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
+        shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
+        run: |
+          $semver = "${env:NEURALV_VERSION}"
+          $assemblyVersion = "$semver.0"
+          Remove-Item -Recurse -Force dist\windows\launcher-temp -ErrorAction SilentlyContinue
+          dotnet publish windows-winui/NeuralV.Launcher/NeuralV.Launcher.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:PublishSingleFile=true `
+            -o dist\windows\launcher-temp
+          $launcherExe = Resolve-Path 'dist/windows/launcher-temp/NeuralV.exe'
+          Copy-Item $launcherExe 'dist/windows/NeuralV/NeuralV.exe' -Force
+
       - name: Publish Windows CLI companion
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
         shell: pwsh
@@ -103,8 +125,30 @@ jobs:
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -o dist\windows\cli-temp
-          $cliExe = Resolve-Path 'dist/windows/cli-temp/neuralv-cmd.exe'
-          Copy-Item $cliExe 'dist/windows/NeuralV/neuralv-cmd.exe' -Force
+          $cliExe = Resolve-Path 'dist/windows/cli-temp/neuralv.exe'
+          Copy-Item $cliExe 'dist/windows/NeuralV/neuralv.exe' -Force
+
+      - name: Publish Windows updater
+        if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
+        shell: pwsh
+        env:
+          NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
+        run: |
+          $semver = "${env:NEURALV_VERSION}"
+          $assemblyVersion = "$semver.0"
+          Remove-Item -Recurse -Force dist\windows\updater-temp -ErrorAction SilentlyContinue
+          dotnet publish windows-winui/NeuralV.Updater/NeuralV.Updater.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:PublishSingleFile=true `
+            -o dist\windows\updater-temp
+          $updaterExe = Resolve-Path 'dist/windows/updater-temp/neuralv-updater.exe'
+          Copy-Item $updaterExe 'dist/windows/NeuralV/neuralv-updater.exe' -Force
 
       - name: Smoke test published Windows client
         if: env.WINDOWS_WINUI_BUILD_EXIT == '0'
@@ -134,8 +178,9 @@ jobs:
             }
             return (($parts -join ' | ') -replace '\s+', ' ').Trim()
           }
-          $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.exe'
+          $exe = Resolve-Path 'dist/windows/NeuralV/NeuralV.Gui.exe'
           $env:NEURALV_SMOKE_TEST = '1'
+          $env:NEURALV_SKIP_UPDATER = '1'
           $proc = Start-Process -FilePath $exe -ArgumentList '--smoke-test' -PassThru -WorkingDirectory (Split-Path $exe)
           if (-not $proc.WaitForExit(30000)) {
             $details = Get-NeuralVSmokeDetails
@@ -163,20 +208,25 @@ jobs:
           }
           Compress-Archive -Path dist\windows\NeuralV -DestinationPath dist\windows\neuralv-windows.zip -Force
 
-      - name: Build Windows setup with Inno Setup
+      - name: Build Windows setup bootstrapper
         shell: pwsh
         env:
           NEURALV_VERSION: ${{ steps.release_version.outputs.semver }}
         run: |
           $semver = "${env:NEURALV_VERSION}"
-          if (-not $semver) { throw 'versions/windows.txt is missing a valid semver' }
-          $env:NEURALV_VERSION = $semver
-          $env:NEURALV_STAGE_DIR = (Resolve-Path 'dist/windows').Path
-          $env:NEURALV_OUTPUT_DIR = (Resolve-Path 'dist/windows').Path
-          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' '/Qp' 'windows-native/setup/NeuralV.iss'
-          if (-not (Test-Path 'dist/windows/neuralv-setup.exe')) {
-            throw 'Inno Setup did not produce neuralv-setup.exe'
-          }
+          $assemblyVersion = "$semver.0"
+          Remove-Item -Recurse -Force dist\windows\setup-temp -ErrorAction SilentlyContinue
+          dotnet publish windows-winui/NeuralV.Setup/NeuralV.Setup.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Version=$semver `
+            -p:InformationalVersion=$semver `
+            -p:AssemblyVersion=$assemblyVersion `
+            -p:FileVersion=$assemblyVersion `
+            -p:PublishSingleFile=true `
+            -o dist\windows\setup-temp
+          Copy-Item 'dist/windows/setup-temp/neuralv-setup.exe' 'dist/windows/neuralv-setup.exe' -Force
 
       - name: Upload Windows build log
         if: always()
@@ -307,8 +357,11 @@ jobs:
                       "notes": ["WinUI Windows portable archive."],
                       "metadata": {
                           "setupUrl": f"{os.environ['RELEASE_BASE']}/neuralv-setup.exe",
-                          "bundledComponents": ["gui", "cli"],
-                          "cliBinaryName": "neuralv-cmd.exe",
+                          "bundledComponents": ["gui", "cli", "updater"],
+                          "cliBinaryName": "neuralv.exe",
+                          "guiBinaryName": "NeuralV.Gui.exe",
+                          "launcherBinaryName": "NeuralV.exe",
+                          "updaterBinaryName": "neuralv-updater.exe",
                           "portableArtifactPath": "releases/windows-v{version}/neuralv-windows.zip",
                           "setupArtifactPath": "releases/windows-v{version}/neuralv-setup.exe",
                           "setupSha256": os.environ["SHA_SETUP"],
@@ -326,6 +379,7 @@ jobs:
                           "setupDownloadLabel": "Скачать setup",
                           "nativeClient": True,
                           "uiStack": "winui3",
+                          "installMode": "bootstrap-setup",
                           "setupCreatesShortcuts": True,
                           "powershellCreatesShortcuts": True,
                           "cmdCreatesShortcuts": True,

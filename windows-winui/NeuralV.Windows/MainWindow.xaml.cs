@@ -117,6 +117,7 @@ public sealed partial class MainWindow : Window
     private TextBlock SettingsDeveloperText = default!;
     private ComboBox ThemeModeCombo = default!;
     private ToggleSwitch DynamicColorsToggle = default!;
+    private ToggleSwitch AutoStartToggle = default!;
     private ToggleSwitch SettingsNetworkToggle = default!;
     private ToggleSwitch SettingsAdToggle = default!;
     private ToggleSwitch SettingsUnsafeToggle = default!;
@@ -898,6 +899,9 @@ public sealed partial class MainWindow : Window
         lookStack.Children.Add(CreateFieldLabel("Тема"));
         lookStack.Children.Add(ThemeModeCombo);
         lookStack.Children.Add(DynamicColorsToggle);
+        AutoStartToggle = new ToggleSwitch { Header = "Автозапуск", IsOn = _preferences.AutoStartEnabled };
+        AutoStartToggle.Toggled += OnAutoStartToggled;
+        lookStack.Children.Add(AutoStartToggle);
         lookCard.Child = lookStack;
         stack.Children.Add(lookCard);
 
@@ -1191,6 +1195,7 @@ public sealed partial class MainWindow : Window
         _preferenceUiSync = true;
         ThemeModeCombo.SelectedIndex = ThemeModeToIndex(_preferences.ThemeMode);
         DynamicColorsToggle.IsOn = _preferences.DynamicColorsEnabled;
+        AutoStartToggle.IsOn = _preferences.AutoStartEnabled;
         _preferenceUiSync = false;
         UpdateNetworkUi();
     }
@@ -1594,116 +1599,7 @@ public sealed partial class MainWindow : Window
 
     private DesktopScanState ExecuteLocalQuickScan()
     {
-        var startedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var timeline = new List<string> { "Запускаем локальный быстрый проход." };
-        var findings = new List<DesktopScanFinding>();
-        var riskyExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".exe", ".dll", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".jar", ".scr", ".hta", ".com"
-        };
-
-        var roots = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
-            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-            Environment.GetFolderPath(Environment.SpecialFolder.Startup),
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup),
-            Path.GetTempPath(),
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-        }
-        .Where(path => !string.IsNullOrWhiteSpace(path) && (Directory.Exists(path) || File.Exists(path)))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToArray();
-
-        var scanned = 0;
-        foreach (var root in roots)
-        {
-            var recentMatches = EnumerateQuickCandidates(root, riskyExtensions, 32).ToList();
-            scanned += recentMatches.Count;
-            timeline.Add($"{root}: найдено {recentMatches.Count} подходящих объектов для локальной оценки.");
-            foreach (var file in recentMatches.Take(2))
-            {
-                findings.Add(new DesktopScanFinding
-                {
-                    Id = file,
-                    Title = Path.GetFileName(file),
-                    Verdict = "review",
-                    Summary = $"Локальная проверка советует отдельно прогнать: {file}",
-                    Engines = Array.Empty<string>()
-                });
-            }
-        }
-
-        var completedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var surfaced = findings.Count;
-        var message = surfaced > 0
-            ? $"Локально нашли {surfaced} объекта для отдельной проверки."
-            : "Локальных подозрительных совпадений не найдено.";
-
-        return new DesktopScanState
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Platform = "windows",
-            Mode = "QUICK",
-            Status = "COMPLETED",
-            Verdict = surfaced > 0 ? "Требуется дополнительная проверка" : "Совпадений не найдено",
-            Message = message,
-            RiskScore = surfaced > 0 ? Math.Min(60, surfaced * 10) : 0,
-            SurfacedFindings = surfaced,
-            HiddenFindings = 0,
-            StartedAt = startedAt,
-            CompletedAt = completedAt,
-            Timeline = timeline,
-            Findings = findings
-        };
-    }
-
-    private static IEnumerable<string> EnumerateQuickCandidates(string root, HashSet<string> riskyExtensions, int limit)
-    {
-        var results = new List<(string Path, DateTime Timestamp)>();
-        try
-        {
-            var searchOption = Path.GetFileName(root).Equals("Local", StringComparison.OrdinalIgnoreCase)
-                ? SearchOption.TopDirectoryOnly
-                : SearchOption.AllDirectories;
-
-            foreach (var file in Directory.EnumerateFiles(root, "*", searchOption))
-            {
-                var extension = Path.GetExtension(file);
-                if (!riskyExtensions.Contains(extension))
-                {
-                    continue;
-                }
-
-                DateTime timestamp;
-                try
-                {
-                    timestamp = File.GetLastWriteTimeUtc(file);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (timestamp < DateTime.UtcNow.AddDays(-30))
-                {
-                    continue;
-                }
-
-                results.Add((file, timestamp));
-                if (results.Count >= limit)
-                {
-                    break;
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return results
-            .OrderByDescending(item => item.Timestamp)
-            .Select(item => item.Path);
+        return WindowsLocalQuickScanService.Run();
     }
 
     private async void OnDeepScanClick(object sender, RoutedEventArgs e)
@@ -1994,6 +1890,26 @@ public sealed partial class MainWindow : Window
         {
             prefs.DynamicColorsEnabled = DynamicColorsToggle.IsOn;
         }, rebuildVisualTree: true);
+    }
+
+    private async void OnAutoStartToggled(object sender, RoutedEventArgs e)
+    {
+        if (_preferenceUiSync)
+        {
+            return;
+        }
+
+        await SavePreferencesAsync(prefs =>
+        {
+            prefs.AutoStartEnabled = AutoStartToggle.IsOn;
+        });
+
+        var installState = InstallStateStore.ResolveExistingInstall(Environment.ProcessPath)
+            ?? InstallStateStore.CreateDefault(AppContext.BaseDirectory, VersionInfo.Current);
+        installState.Version = VersionInfo.Current;
+        installState.AutoStartEnabled = AutoStartToggle.IsOn;
+        InstallStateStore.Save(installState);
+        WindowsBundleInstaller.EnsureAutoStart(installState);
     }
 
     private async void OnNetworkProtectionToggled(object sender, RoutedEventArgs e)

@@ -81,6 +81,7 @@ public static class WindowsScanPlanService
         AddExistingRoot(roots, WindowsScanRootKind.Documents, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Документы");
         AddExistingRoot(roots, WindowsScanRootKind.LocalAppData, Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Local AppData");
         AddExistingRoot(roots, WindowsScanRootKind.RoamingAppData, Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Roaming AppData");
+        AddExistingRoot(roots, WindowsScanRootKind.ProgramData, Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ProgramData");
         AddExistingRoot(roots, WindowsScanRootKind.ProgramFiles, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Program Files");
         AddExistingRoot(roots, WindowsScanRootKind.ProgramFilesX86, Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Program Files (x86)");
         AddExistingRoot(roots, WindowsScanRootKind.StartMenu, Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Меню Пуск");

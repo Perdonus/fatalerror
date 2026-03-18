@@ -49,6 +49,13 @@ public static class ClientPreferencesStateService
             return state;
         }, cancellationToken);
 
+    public static Task<ClientPreferences> SetAutoStartEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
+        UpdateAsync(state =>
+        {
+            state.AutoStartEnabled = enabled;
+            return state;
+        }, cancellationToken);
+
     public static Task<ClientPreferences> SetBlockedCountersAsync(int blockedThreats, int blockedAds, CancellationToken cancellationToken = default) =>
         UpdateAsync(state =>
         {
@@ -112,6 +119,7 @@ public static class ClientPreferencesStateService
             AdBlockEnabled = source.AdBlockEnabled,
             UnsafeSitesEnabled = source.UnsafeSitesEnabled,
             MinimizeToTrayOnClose = source.MinimizeToTrayOnClose,
+            AutoStartEnabled = source.AutoStartEnabled,
             BlockedThreats = source.BlockedThreats,
             BlockedAds = source.BlockedAds
         };

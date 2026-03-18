@@ -4,8 +4,6 @@ using Microsoft.UI.Xaml.Controls;
 using NeuralV.Windows.Models;
 using NeuralV.Windows.Services;
 using Windows.UI;
-using System.Diagnostics;
-
 namespace NeuralV.Windows;
 
 public partial class App : Application
@@ -41,7 +39,9 @@ public partial class App : Application
         {
             WindowsLog.Info($"Launch arguments: {args.Arguments}");
             WindowsLog.Info($"Smoke test mode: {IsSmokeTest}");
+            WindowsLog.Info("Loading client preferences");
             Preferences = ClientPreferencesStore.Load();
+            WindowsLog.Info("Loading palette");
             Palette = WallpaperPaletteService.Load(Preferences.ThemeMode, Preferences.DynamicColorsEnabled);
         }
         catch (Exception ex)
@@ -55,6 +55,15 @@ public partial class App : Application
 
         try
         {
+            WindowsLog.Info("Touching install metadata");
+            var installState = InstallStateStore.ResolveExistingInstall(Environment.ProcessPath)
+                ?? InstallStateStore.CreateDefault(AppContext.BaseDirectory, VersionInfo.Current);
+            installState.Version = VersionInfo.Current;
+            installState.AutoStartEnabled = Preferences.AutoStartEnabled;
+            InstallStateStore.Save(installState);
+            WindowsBundleInstaller.EnsureAutoStart(installState);
+
+            WindowsLog.Info("Creating main window");
             _window = new MainWindow();
 
             if (IsSmokeTest && _window is MainWindow smokeWindow)

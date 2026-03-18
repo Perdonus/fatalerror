@@ -10,12 +10,15 @@ public static class WindowsSmokeVerifier
         _ = SessionStore.AppDirectory;
         _ = WindowsEnvironmentService.DetectScanRoots();
         _ = WindowsEnvironmentService.DetectInstallRoots();
+        InstallStateStore.Save(InstallStateStore.CreateDefault(AppContext.BaseDirectory, VersionInfo.Current));
         var processPath = Environment.ProcessPath ?? string.Empty;
         if (string.IsNullOrWhiteSpace(processPath) || !File.Exists(processPath))
         {
             throw new FileNotFoundException("Smoke verifier did not find process executable", processPath);
         }
         WindowsLog.Info($"Smoke verifier process ok: {processPath}");
+        var installState = InstallStateStore.ResolveExistingInstall(processPath);
+        WindowsLog.Info($"Smoke verifier updater path: {InstallLayout.UpdaterPath(installState?.InstallRoot ?? AppContext.BaseDirectory)}");
 
         var assetPath = Path.Combine(AppContext.BaseDirectory, "Assets", "NeuralV.png");
         if (File.Exists(assetPath))

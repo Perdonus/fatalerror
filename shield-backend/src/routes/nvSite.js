@@ -76,23 +76,38 @@ router.post('/auth/telegram', async (req, res) => {
     } catch (error) {
         console.error('NV telegram auth error:', error);
         const message = String(error?.message || '');
+        const lowerMessage = message.toLowerCase();
         if (message.includes('not configured')) {
             return res.status(503).json({
                 error: 'Telegram login для NV ещё не настроен',
                 code: error.code || 'NV_TELEGRAM_NOT_CONFIGURED',
+                hint: 'Проверь username бота, токен и домен сайта для виджета.',
                 auth: getHubAuthConfig(),
                 details: error.details || null
             });
         }
-        if (message.toLowerCase().includes('telegram')) {
+        if (/(bot domain invalid|domain invalid|origin invalid)/i.test(lowerMessage)) {
             return res.status(400).json({
-                error: 'Telegram login отклонил вход. Проверь домен бота и настройки виджета.',
-                code: error.code || 'NV_TELEGRAM_AUTH_INVALID'
+                error: 'Вход через Telegram пока не включён для домена сайта',
+                code: 'NV_TELEGRAM_DOMAIN_INVALID',
+                hint: 'Для бота в BotFather должен быть указан домен sosiskibot.ru через /setdomain.',
+                details: {
+                    ...(error.details || {}),
+                    reason: 'bot_domain_invalid'
+                }
+            });
+        }
+        if (lowerMessage.includes('telegram')) {
+            return res.status(400).json({
+                error: 'Telegram не подтвердил вход для сайта',
+                code: error.code || 'NV_TELEGRAM_AUTH_INVALID',
+                hint: 'Проверь настройки Telegram Login Widget и попробуй ещё раз.'
             });
         }
         return res.status(500).json({
             error: 'Не удалось создать сессию сайта',
-            code: error.code || 'NV_TELEGRAM_SESSION_CREATE_FAILED'
+            code: error.code || 'NV_TELEGRAM_SESSION_CREATE_FAILED',
+            hint: 'Попробуй чуть позже.'
         });
     }
 });

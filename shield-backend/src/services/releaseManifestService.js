@@ -191,7 +191,7 @@ function fallbackArtifacts() {
             channel: 'beta',
             version: PLATFORM_FALLBACK_VERSIONS.windows,
             sha256: '',
-            download_url: `https://raw.githubusercontent.com/${PUBLIC_REPOSITORY}/windows-builds/windows/neuralv-windows.zip`,
+            download_url: `https://github.com/${PUBLIC_REPOSITORY}/releases/download/windows-v${PLATFORM_FALLBACK_VERSIONS.windows}/neuralv-windows.zip`,
             install_command: 'winget install --id NeuralV.NeuralV -e',
             update_command: '%LOCALAPPDATA%\\NV\\nv.exe install @lvls/neuralv',
             update_policy: 'startup-auto',
@@ -207,12 +207,11 @@ function fallbackArtifacts() {
                 artifactPlatform: 'windows',
                 desktopTrack: 'windows',
                 version_source: 'versions/windows.txt',
-                portableArtifactPath: 'windows/neuralv-windows.zip',
-                setupArtifactPath: 'windows/neuralv-setup.exe',
-                stablePortableArtifactPath: 'windows/neuralv-windows.zip',
-                stableSetupArtifactPath: 'windows/neuralv-setup.exe',
-                versionedPortableArtifactPath: `windows/neuralv-windows-${PLATFORM_FALLBACK_VERSIONS.windows}.zip`,
-                versionedSetupArtifactPath: `windows/neuralv-setup-${PLATFORM_FALLBACK_VERSIONS.windows}.exe`
+                portableArtifactPath: 'releases/windows-v{version}/neuralv-windows.zip',
+                setupArtifactPath: 'releases/windows-v{version}/neuralv-setup.exe',
+                stablePortableArtifactPath: `releases/windows-v${PLATFORM_FALLBACK_VERSIONS.windows}/neuralv-windows.zip`,
+                stableSetupArtifactPath: `releases/windows-v${PLATFORM_FALLBACK_VERSIONS.windows}/neuralv-setup.exe`,
+                releaseTag: `windows-v${PLATFORM_FALLBACK_VERSIONS.windows}`
             }
         },
         {

@@ -29,6 +29,7 @@
     <Compile Include="..\NeuralV.Windows\Services\SessionStore.cs" Link="Shared\SessionStore.cs" />
     <Compile Include="..\NeuralV.Windows\Services\HistoryStore.cs" Link="Shared\HistoryStore.cs" />
     <Compile Include="..\NeuralV.Windows\Services\WindowsEnvironmentService.cs" Link="Shared\WindowsEnvironmentService.cs" />
+    <Compile Include="..\NeuralV.Windows\Services\WindowsNetworkProtectionStateService.cs" Link="Shared\WindowsNetworkProtectionStateService.cs" />
     <Compile Include="..\NeuralV.Windows\Services\WindowsScanPlanService.cs" Link="Shared\WindowsScanPlanService.cs" />
     <Compile Include="..\NeuralV.Windows\Services\WindowsLocalQuickScanService.cs" Link="Shared\WindowsLocalQuickScanService.cs" />
     <Compile Include="..\NeuralV.Windows\Services\WindowsLog.cs" Link="Shared\WindowsLog.cs" />

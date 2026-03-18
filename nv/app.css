@@ -201,20 +201,6 @@ a {
   gap: 12px;
 }
 
-.auth-widget-card {
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.auth-widget-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.auth-widget-card-error {
-  align-items: flex-start;
-}
-
 .auth-user-link {
   min-width: 0;
 }
@@ -579,70 +565,9 @@ a {
   min-height: 22px;
 }
 
-.metric-note,
-.profile-subtitle,
-.state-note {
-  color: var(--muted);
-}
-
 .profile-head {
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-
-.profile-head-main,
-.profile-head-copy,
-.profile-head-actions,
-.state-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.profile-head-main {
   align-items: center;
-}
-
-.profile-head-copy {
-  flex-direction: column;
-  min-width: 0;
-}
-
-.profile-head-actions,
-.state-actions {
-  flex-wrap: wrap;
-}
-
-.profile-head-actions {
-  justify-content: flex-end;
-}
-
-.profile-subtitle,
-.metric-note,
-.state-note {
-  font-size: 14px;
-}
-
-.metric-note {
-  margin-top: 8px;
-}
-
-.state-shell {
-  padding: 28px;
-}
-
-.state-card {
-  display: grid;
-  gap: 16px;
-}
-
-.state-title {
-  margin-bottom: 12px;
-}
-
-.state-copy {
-  max-width: 760px;
+  margin-bottom: 18px;
 }
 
 .telegram-widget-host {
@@ -675,13 +600,8 @@ a {
   .catalog-toolbar,
   .section-head,
   .download-main-head,
-  .command-box-head,
-  .profile-head {
+  .command-box-head {
     flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .profile-head-main {
     align-items: flex-start;
   }
 }

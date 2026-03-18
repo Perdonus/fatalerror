@@ -60,7 +60,6 @@ const state = {
   platformFilter: 'all',
   searchTerm: '',
   downloadPlatform: 'linux',
-  profileRequestId: 0,
   auth: {
     loading: true,
     enabled: false,
@@ -102,17 +101,8 @@ function parsePackageName(rawName) {
   };
 }
 
-function normalizeCreatorSlug(value) {
-  return String(value || '').trim().replace(/^@+/, '').toLowerCase();
-}
-
-function ownerProfileLink() {
-  return '/nv/profile/owner/';
-}
-
 function creatorLink(creator) {
-  const slug = normalizeCreatorSlug(creator);
-  return slug ? `/nv/profile/creator/?slug=${encodeURIComponent(slug)}` : '/nv/profile/creator/';
+  return `/nv/profile/?creator=${encodeURIComponent(creator)}`;
 }
 
 function normalizeVariant(variant) {
@@ -200,11 +190,7 @@ async function fetchJson(url, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const message = payload?.error || `HTTP ${response.status}`;
-    const error = new Error(message);
-    error.status = response.status;
-    error.code = payload?.code || '';
-    error.payload = payload;
-    throw error;
+    throw new Error(message);
   }
   return payload;
 }
@@ -242,42 +228,29 @@ async function loadCatalog() {
 }
 
 async function loadCreatorProfile(creatorSlug) {
-  const slug = normalizeCreatorSlug(creatorSlug);
-  if (!slug) {
-    return {
-      status: 'empty',
-      creator: null,
-      packages: [],
-      viewer: { authenticated: Boolean(state.auth.creator?.slug), can_edit: false }
-    };
-  }
   try {
-    const payload = await fetchJson(API.creator(slug));
+    const payload = await fetchJson(API.creator(creatorSlug));
     return {
-      status: 'success',
       creator: payload.creator || null,
-      packages: safeArray(payload.packages).map(normalizeCatalogPackage),
-      viewer: payload.viewer || { authenticated: false, can_edit: false }
+      packages: safeArray(payload.packages).map(normalizeCatalogPackage)
     };
   } catch (error) {
-    if (error.status === 404) {
-      return {
-        status: 'not-found',
-        creator: null,
-        creatorSlug: slug,
-        packages: [],
-        viewer: { authenticated: Boolean(state.auth.creator?.slug), can_edit: false },
-        error
-      };
-    }
-    console.warn('NV creator profile request failed', error);
+    console.warn('NV creator fallback', error);
+    const slug = String(creatorSlug || '').trim().replace(/^@/, '').toLowerCase();
+    const packages = state.catalogPackages.filter((pkg) => pkg.creator.toLowerCase() === slug);
+    const creator = state.creators.find((item) => item.slug.toLowerCase() === slug) || null;
     return {
-      status: 'error',
-      creator: null,
-      creatorSlug: slug,
-      packages: [],
-      viewer: { authenticated: Boolean(state.auth.creator?.slug), can_edit: false },
-      error
+      creator: creator
+        ? {
+            slug: creator.slug,
+            display_name: creator.display_name,
+            bio: '',
+            avatar_url: creator.avatar_url,
+            telegram_username: '',
+            links: []
+          }
+        : null,
+      packages
     };
   }
 }
@@ -358,7 +331,7 @@ function renderAuthSlot() {
   if (state.auth.user && state.auth.creator) {
     slot.innerHTML = `
       <div class="auth-user-card">
-        <a class="auth-user-link" href="${ownerProfileLink()}">
+        <a class="auth-user-link" href="/nv/profile/">
           ${authAvatarMarkup('auth-avatar')}
           <span class="auth-meta">
             <strong>${escapeHtml(authDisplayName())}</strong>
@@ -369,22 +342,6 @@ function renderAuthSlot() {
       </div>
     `;
     document.getElementById('nv-logout-button')?.addEventListener('click', logoutSiteUser);
-    return;
-  }
-
-  if (state.auth.error) {
-    slot.innerHTML = `
-      <div class="auth-widget-card auth-widget-card-error">
-        <div class="auth-widget-copy">
-          <strong>Вход сейчас недоступен</strong>
-          <span>${escapeHtml(state.auth.error)}</span>
-        </div>
-        ${state.auth.enabled ? '<div id="telegram-widget-slot"></div>' : ''}
-      </div>
-    `;
-    if (state.auth.enabled) {
-      mountTelegramWidget(document.getElementById('telegram-widget-slot'));
-    }
     return;
   }
 
@@ -399,7 +356,7 @@ function renderAuthSlot() {
 
   slot.innerHTML = `
     <div class="auth-widget-card">
-      <div class="auth-widget-copy">
+      <div>
         <strong>Войти через Telegram</strong>
         <span>Чтобы открыть профиль и публиковать пакеты.</span>
       </div>
@@ -421,11 +378,6 @@ async function handleTelegramWidgetAuth(user) {
     state.auth.error = null;
     renderAuthSlot();
     if (state.page === 'profile') {
-      const route = readProfileRoute();
-      if (route.view === 'landing' || route.view === 'owner') {
-        window.location.assign(ownerProfileLink());
-        return;
-      }
       await renderProfile();
     }
   } catch (error) {
@@ -443,14 +395,8 @@ async function logoutSiteUser() {
   }
   state.auth.user = null;
   state.auth.creator = null;
-  state.auth.error = null;
   renderAuthSlot();
   if (state.page === 'profile') {
-    const route = readProfileRoute();
-    if (route.view === 'owner') {
-      window.location.assign('/nv/profile/');
-      return;
-    }
     await renderProfile();
   }
 }
@@ -514,6 +460,7 @@ function renderHome() {
   creatorsEl.innerHTML = featuredCreators.length
     ? featuredCreators.map(renderCreatorCard).join('')
     : '<p class="empty-state">Авторы появятся здесь после первой публикации.</p>';
+  bindCopyButtons();
 }
 
 function resolveNvVariant(platform) {
@@ -604,21 +551,33 @@ function renderCatalog() {
   list.innerHTML = filtered.map(renderPackageCard).join('');
   empty.hidden = filtered.length > 0;
   meta.textContent = `${filtered.length} пакета · ${state.creators.length} создателя`;
+  bindCopyButtons();
+}
+
+function bindCopyButtons() {
+  document.querySelectorAll('[data-copy]').forEach((node) => {
+    if (node.dataset.bound === '1') return;
+    node.dataset.bound = '1';
+    node.addEventListener('click', async () => {
+      const value = String(node.getAttribute('data-copy') || '').trim();
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        const previous = node.textContent;
+        node.textContent = 'Скопировано';
+        setTimeout(() => {
+          node.textContent = previous || 'Копировать';
+        }, 1200);
+      } catch (error) {
+        console.warn('Copy failed', error);
+      }
+    });
+  });
 }
 
 function attachCatalogControls() {
   const buttons = Array.from(document.querySelectorAll('.filter-button'));
   const search = document.getElementById('package-search');
-  const params = new URLSearchParams(window.location.search);
-  const creatorFilter = normalizeCreatorSlug(params.get('creator'));
-  const initialSearch = String(params.get('q') || params.get('search') || (creatorFilter ? `@${creatorFilter}/` : '')).trim();
-
-  if (initialSearch) {
-    state.searchTerm = initialSearch.toLowerCase();
-    if (search) {
-      search.value = initialSearch;
-    }
-  }
 
   buttons.forEach((button) => {
     button.addEventListener('click', () => {
@@ -745,6 +704,7 @@ function bindProfileForms(creatorSlug) {
     try {
       await submitPackageForm(packageForm, creatorSlug);
       if (packageStatus) packageStatus.textContent = 'Пакет сохранён.';
+      await loadCatalog();
       await renderProfile();
     } catch (error) {
       if (packageStatus) packageStatus.textContent = error instanceof Error ? error.message : 'Не удалось сохранить пакет';
@@ -757,6 +717,7 @@ function bindProfileForms(creatorSlug) {
     try {
       await submitReleaseForm(releaseForm, creatorSlug);
       if (releaseStatus) releaseStatus.textContent = 'Релиз опубликован.';
+      await loadCatalog();
       await renderProfile();
     } catch (error) {
       if (releaseStatus) releaseStatus.textContent = error instanceof Error ? error.message : 'Не удалось выложить релиз';
@@ -764,101 +725,33 @@ function bindProfileForms(creatorSlug) {
   });
 }
 
-function readProfileRoute() {
-  const url = new URL(window.location.href);
-  const normalizedPath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
-  const profilePrefix = '/nv/profile/';
-  const relativePath = normalizedPath.startsWith(profilePrefix) ? normalizedPath.slice(profilePrefix.length) : '';
-  const segments = relativePath.split('/').filter(Boolean);
-  const legacyCreator = normalizeCreatorSlug(url.searchParams.get('creator'));
-  const slugParam = normalizeCreatorSlug(url.searchParams.get('slug')) || legacyCreator;
-  const firstSegment = segments[0] || '';
+async function renderProfile() {
+  const root = document.getElementById('profile-content');
+  if (!root) return;
 
-  if (firstSegment === 'owner') {
-    return {
-      view: 'owner',
-      creatorSlug: normalizeCreatorSlug(state.auth.creator?.slug),
-      legacyQuery: false
-    };
-  }
-  if (firstSegment === 'creator') {
-    return {
-      view: 'creator',
-      creatorSlug: slugParam,
-      legacyQuery: Boolean(legacyCreator)
-    };
-  }
-  if (firstSegment && firstSegment !== 'index.html') {
-    return {
-      view: 'creator',
-      creatorSlug: normalizeCreatorSlug(firstSegment),
-      legacyQuery: false
-    };
-  }
-  if (slugParam) {
-    return {
-      view: 'creator',
-      creatorSlug: slugParam,
-      legacyQuery: true
-    };
-  }
-  return { view: 'landing', creatorSlug: '', legacyQuery: false };
-}
+  const params = new URLSearchParams(window.location.search);
+  const requestedCreator = String(params.get('creator') || state.auth.creator?.slug || state.creators[0]?.slug || 'lvls').trim().replace(/^@/, '');
+  const profile = await loadCreatorProfile(requestedCreator);
+  const creator = profile.creator || {
+    slug: requestedCreator,
+    display_name: requestedCreator,
+    bio: '',
+    avatar_url: '',
+    telegram_username: '',
+    links: []
+  };
+  const packages = profile.packages || [];
+  const canEdit = Boolean(state.auth.creator?.slug && state.auth.creator.slug.toLowerCase() === creator.slug.toLowerCase());
 
-function syncLegacyProfileRoute(route) {
-  if (state.page !== 'profile') return route;
-  if (route.view === 'creator' && route.creatorSlug && route.legacyQuery) {
-    window.history.replaceState({}, '', creatorLink(route.creatorSlug));
-    return readProfileRoute();
-  }
-  return route;
-}
-
-function profileStateMarkup({ eyebrow = 'Профиль', title, copy, actions = '', extra = '' }) {
-  return `
-    <section class="section-shell state-shell">
-      <p class="eyebrow">${escapeHtml(eyebrow)}</p>
-      <div class="state-card">
-        <div class="state-copy-block">
-          <h1 class="section-title state-title">${escapeHtml(title)}</h1>
-          <p class="section-copy state-copy">${escapeHtml(copy)}</p>
-        </div>
-        ${extra}
-        ${actions ? `<div class="state-actions">${actions}</div>` : ''}
-      </div>
-    </section>
-  `;
-}
-
-function profileAvatarMarkup(creator, { preferAuthAvatar = false } = {}) {
-  if (preferAuthAvatar && state.auth.user?.photo_url) {
-    return authAvatarMarkup('profile-avatar');
-  }
-  if (creator?.avatar_url) {
-    return `<span class="profile-avatar"><img class="auth-avatar-image" src="${escapeHtml(creator.avatar_url)}" alt="${escapeHtml(creator.display_name || creator.slug || 'Creator')}" /></span>`;
-  }
-  const letter = String(creator?.display_name || creator?.slug || '@').trim().charAt(0).toUpperCase() || '@';
-  return `<span class="profile-avatar"><span class="auth-avatar-fallback">${escapeHtml(letter)}</span></span>`;
-}
-
-function renderProfileHeader({ creator, packages, statusLabel, statusNote = '', actions = '', preferAuthAvatar = false }) {
-  const subtitle = creator.display_name && creator.display_name !== creator.slug
-    ? `<p class="profile-subtitle">${escapeHtml(creator.display_name)}</p>`
-    : '';
-
-  return `
+  root.innerHTML = `
     <section class="section-shell profile-shell">
       <div class="profile-head">
-        <div class="profile-head-main">
-          ${profileAvatarMarkup(creator, { preferAuthAvatar })}
-          <div class="profile-head-copy">
-            <p class="eyebrow">Creator</p>
-            <h1 class="section-title">@${escapeHtml(creator.slug)}</h1>
-            ${subtitle}
-            <p class="section-copy">${escapeHtml(creator.bio || 'Публичный профиль автора пакетов NV.')}</p>
-          </div>
+        ${canEdit ? authAvatarMarkup('profile-avatar') : '<span class="profile-avatar"><span class="auth-avatar-fallback">@</span></span>'}
+        <div>
+          <p class="eyebrow">Creator</p>
+          <h1 class="section-title">@${escapeHtml(creator.slug)}</h1>
+          <p class="section-copy">${escapeHtml(creator.bio || 'Публичный профиль автора пакетов NV.')}</p>
         </div>
-        ${actions ? `<div class="profile-head-actions">${actions}</div>` : ''}
       </div>
       <div class="profile-metrics">
         <article class="metric-card">
@@ -870,261 +763,40 @@ function renderProfileHeader({ creator, packages, statusLabel, statusNote = '', 
           <span class="metric-label">namespace</span>
         </article>
         <article class="metric-card">
-          <span class="metric-value">${escapeHtml(statusLabel)}</span>
-          <span class="metric-label">режим</span>
-          ${statusNote ? `<p class="metric-note">${escapeHtml(statusNote)}</p>` : ''}
+          <span class="metric-value">${canEdit ? 'owner' : 'public'}</span>
+          <span class="metric-label">статус</span>
         </article>
       </div>
     </section>
-  `;
-}
 
-function renderProfilePackagesSection(packages, { eyebrow = 'Пакеты', title = 'Опубликованные пакеты', emptyTitle = 'Пока пусто', emptyCopy = 'Пакеты появятся после первой публикации.' } = {}) {
-  return `
+    ${canEdit
+      ? publishFormMarkup(creator.slug, packages)
+      : `
+        <section class="section-shell">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Публикация</p>
+              <h2>Хочешь выкладывать свои пакеты?</h2>
+            </div>
+          </div>
+          <p class="section-copy">Войди через Telegram. После входа здесь появятся формы для пакетов и релизов.</p>
+        </section>`}
+
     <section class="section-shell">
       <div class="section-head">
         <div>
-          <p class="eyebrow">${escapeHtml(eyebrow)}</p>
-          <h2>${escapeHtml(packages.length ? title : emptyTitle)}</h2>
+          <p class="eyebrow">Пакеты автора</p>
+          <h2>${packages.length ? 'Опубликованные пакеты' : 'Пока пусто'}</h2>
         </div>
       </div>
-      ${packages.length
-        ? `<div class="package-grid package-grid-wide">${packages.map(renderPackageCard).join('')}</div>`
-        : `<p class="empty-state">${escapeHtml(emptyCopy)}</p>`}
+      <div class="package-grid package-grid-wide">${packages.map(renderPackageCard).join('')}</div>
+      <p class="empty-state" ${packages.length ? 'hidden' : ''}>У этого автора ещё нет пакетов.</p>
     </section>
   `;
-}
 
-function renderLandingProfile(root) {
-  const authenticated = Boolean(state.auth.user && state.auth.creator);
-  const actions = authenticated
-    ? `
-      <a class="primary-button" href="${ownerProfileLink()}">Открыть owner-зону</a>
-      <a class="ghost-button" href="${creatorLink(state.auth.creator.slug)}">Публичный профиль</a>
-      <a class="ghost-button" href="/nv/packages/">Каталог пакетов</a>
-    `
-    : `
-      <a class="primary-button" href="/nv/packages/">Смотреть пакеты</a>
-      <a class="ghost-button" href="/nv/downloads/">Установить NV</a>
-    `;
-  const note = authenticated
-    ? `<p class="state-note">Ты уже вошёл как ${escapeHtml(authHandle())}. Управление пакетами и релизами теперь живёт в отдельной owner-зоне.</p>`
-    : `<p class="state-note">Публичные creator-профили и owner-зона теперь разделены. Вход через Telegram нужен только для публикации и редактирования.</p>`;
-  const widgetHost = !authenticated && state.auth.enabled && !state.auth.error
-    ? '<div id="profile-telegram-widget-slot"></div>'
-    : '';
-
-  root.innerHTML = profileStateMarkup({
-    eyebrow: 'Профиль',
-    title: authenticated ? 'Creator-зона готова' : 'Профили NV',
-    copy: authenticated
-      ? 'Используй landing как точку входа, owner-зону для публикации и отдельные public creator pages для внешних ссылок.'
-      : 'Открывай публичные профили авторов отдельно, а свою creator-зону держи в owner-route без смешивания состояний.',
-    actions,
-    extra: `${note}${widgetHost}`
-  });
-
-  if (widgetHost) {
-    mountTelegramWidget(document.getElementById('profile-telegram-widget-slot'));
+  if (canEdit) {
+    bindProfileForms(creator.slug);
   }
-}
-
-function renderOwnerAccessState(root) {
-  const hasWidget = state.auth.enabled;
-  root.innerHTML = profileStateMarkup({
-    eyebrow: 'Owner',
-    title: 'Owner-зона требует вход',
-    copy: hasWidget
-      ? (state.auth.error
-          ? `${state.auth.error}. Повтори вход через Telegram, чтобы открыть публикацию пакетов и релизов.`
-          : 'Войди через Telegram, чтобы получить свой creator slug и открыть публикацию пакетов и релизов.')
-      : state.auth.error || 'Telegram-вход сейчас недоступен, поэтому owner-зона временно закрыта.',
-    actions: `
-      <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
-      <a class="ghost-button" href="/nv/packages/">Открыть каталог</a>
-    `,
-    extra: hasWidget ? '<div id="profile-telegram-widget-slot"></div>' : ''
-  });
-
-  if (hasWidget) {
-    mountTelegramWidget(document.getElementById('profile-telegram-widget-slot'));
-  }
-}
-
-function renderProfileErrorState(root, { eyebrow = 'Профиль', title, copy, actions = '' }) {
-  root.innerHTML = profileStateMarkup({ eyebrow, title, copy, actions });
-}
-
-function renderOwnerProfile(root, profile) {
-  const creator = profile.creator || state.auth.creator || {
-    slug: normalizeCreatorSlug(state.auth.creator?.slug),
-    display_name: state.auth.creator?.display_name || state.auth.creator?.slug || '',
-    bio: '',
-    avatar_url: state.auth.creator?.avatar_url || '',
-    telegram_username: '',
-    links: []
-  };
-  const packages = profile.packages || [];
-
-  root.innerHTML = `
-    ${renderProfileHeader({
-      creator,
-      packages,
-      statusLabel: 'owner',
-      statusNote: 'Публикация пакетов и релизов доступна только здесь.',
-      actions: `<a class="ghost-button" href="${creatorLink(creator.slug)}">Открыть public page</a>`,
-      preferAuthAvatar: true
-    })}
-    ${publishFormMarkup(creator.slug, packages)}
-    ${renderProfilePackagesSection(packages, {
-      eyebrow: 'Пакеты автора',
-      title: 'Опубликованные пакеты',
-      emptyTitle: 'Пакетов ещё нет',
-      emptyCopy: 'Namespace уже создан. Следующий шаг: сохранить карточку первого пакета и затем выложить релиз.'
-    })}
-  `;
-
-  bindProfileForms(creator.slug);
-}
-
-function renderPublicCreatorProfile(root, profile) {
-  const creator = profile.creator;
-  const packages = profile.packages || [];
-  const viewerCanEdit = Boolean(profile.viewer?.can_edit);
-  const actions = viewerCanEdit
-    ? `
-      <a class="primary-button" href="${ownerProfileLink()}">Перейти в owner-зону</a>
-      <a class="ghost-button" href="/nv/packages/?creator=${encodeURIComponent(creator.slug)}">Все пакеты</a>
-    `
-    : `<a class="ghost-button" href="/nv/packages/?creator=${encodeURIComponent(creator.slug)}">Все пакеты</a>`;
-
-  root.innerHTML = `
-    ${renderProfileHeader({
-      creator,
-      packages,
-      statusLabel: 'public',
-      statusNote: viewerCanEdit ? 'Это твой публичный creator profile.' : 'Эта страница только для чтения.',
-      actions
-    })}
-    ${viewerCanEdit
-      ? `
-        <section class="section-shell section-shell-tight">
-          <p class="state-note">Для редактирования карточки пакетов и публикации релизов используй owner-route, а не публичную страницу.</p>
-        </section>
-      `
-      : ''}
-    ${renderProfilePackagesSection(packages, {
-      eyebrow: 'Пакеты автора',
-      title: 'Опубликованные пакеты',
-      emptyTitle: 'Публичных пакетов пока нет',
-      emptyCopy: 'У этого creator ещё нет опубликованных пакетов.'
-    })}
-  `;
-}
-
-async function renderProfile() {
-  const root = document.getElementById('profile-content');
-  if (!root) return;
-
-  const requestId = ++state.profileRequestId;
-  const route = syncLegacyProfileRoute(readProfileRoute());
-
-  if (route.view === 'landing') {
-    if (requestId !== state.profileRequestId) return;
-    renderLandingProfile(root);
-    return;
-  }
-
-  if (route.view === 'owner') {
-    if (!state.auth.creator?.slug) {
-      if (requestId !== state.profileRequestId) return;
-      renderOwnerAccessState(root);
-      return;
-    }
-
-    root.innerHTML = profileStateMarkup({
-      eyebrow: 'Owner',
-      title: 'Открываем creator-зону',
-      copy: `Загружаем профиль @${state.auth.creator.slug} и формы публикации.`
-    });
-
-    const profile = await loadCreatorProfile(state.auth.creator.slug);
-    if (requestId !== state.profileRequestId) return;
-
-    if (profile.status === 'success') {
-      renderOwnerProfile(root, profile);
-      return;
-    }
-
-    if (profile.status === 'not-found') {
-      renderProfileErrorState(root, {
-        eyebrow: 'Owner',
-        title: 'Creator не найден',
-        copy: `Профиль @${state.auth.creator.slug} не найден в каталоге. Попробуй выйти и войти снова через Telegram.`,
-        actions: `<a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>`
-      });
-      return;
-    }
-
-    renderProfileErrorState(root, {
-      eyebrow: 'Owner',
-      title: 'Не удалось открыть owner-зону',
-      copy: profile.error?.message || 'Профиль временно недоступен. Попробуй обновить страницу позже.',
-      actions: `<a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>`
-    });
-    return;
-  }
-
-  if (!route.creatorSlug) {
-    if (requestId !== state.profileRequestId) return;
-    renderProfileErrorState(root, {
-      eyebrow: 'Creator',
-      title: 'Creator slug не указан',
-      copy: 'Открой public creator page через каталог пакетов или передай slug в URL.',
-      actions: `
-        <a class="primary-button" href="/nv/packages/">Открыть каталог</a>
-        <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
-      `
-    });
-    return;
-  }
-
-  root.innerHTML = profileStateMarkup({
-    eyebrow: 'Creator',
-    title: `Загружаем @${route.creatorSlug}`,
-    copy: 'Читаем публичный профиль автора и опубликованные пакеты.'
-  });
-
-  const profile = await loadCreatorProfile(route.creatorSlug);
-  if (requestId !== state.profileRequestId) return;
-
-  if (profile.status === 'success' && profile.creator) {
-    renderPublicCreatorProfile(root, profile);
-    return;
-  }
-
-  if (profile.status === 'not-found') {
-    renderProfileErrorState(root, {
-      eyebrow: 'Creator',
-      title: 'Профиль не найден',
-      copy: `У creator @${route.creatorSlug} пока нет публичной страницы или такой slug не существует.`,
-      actions: `
-        <a class="primary-button" href="/nv/packages/">Открыть каталог</a>
-        <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
-      `
-    });
-    return;
-  }
-
-  renderProfileErrorState(root, {
-    eyebrow: 'Creator',
-    title: 'Не удалось загрузить профиль',
-    copy: profile.error?.message || 'Публичный профиль временно недоступен. Попробуй позже.',
-    actions: `
-      <a class="ghost-button" href="/nv/packages/">Открыть каталог</a>
-      <a class="ghost-button" href="/nv/profile/">Вернуться на landing</a>
-    `
-  });
 }
 
 async function copyFromData(button) {
@@ -1154,33 +826,24 @@ function attachCopyDelegation() {
 async function init() {
   window.NVTelegramAuth = handleTelegramWidgetAuth;
   attachCopyDelegation();
+  await loadRegistry();
+  await Promise.all([loadCatalog(), loadAuthState()]);
 
   if (state.page === 'home') {
-    await loadRegistry();
-    await Promise.all([loadCatalog(), loadAuthState()]);
     renderHome();
     return;
   }
-
   if (state.page === 'downloads') {
-    await Promise.all([loadRegistry(), loadAuthState()]);
     attachDownloadTabs();
     return;
   }
-
   if (state.page === 'packages') {
-    await Promise.all([loadCatalog(), loadAuthState()]);
     attachCatalogControls();
     return;
   }
-
   if (state.page === 'profile') {
-    await loadAuthState();
     await renderProfile();
-    return;
   }
-
-  await loadAuthState();
 }
 
 init();

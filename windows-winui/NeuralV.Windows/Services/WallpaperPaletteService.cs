@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using NeuralV.Windows.Models;
 using DrawingBitmap = System.Drawing.Bitmap;
 using DrawingSize = System.Drawing.Size;
 using UiColor = Windows.UI.Color;

@@ -826,8 +826,8 @@ public static class WindowsScanPlanService
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        return
-        [
+        return new[]
+        {
             Path.Combine(localAppData, "Programs"),
             localAppData,
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -836,7 +836,7 @@ public static class WindowsScanPlanService
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Common Files"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Common Files")
-        ]
+        }
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Distinct(StringComparer.OrdinalIgnoreCase);
     }

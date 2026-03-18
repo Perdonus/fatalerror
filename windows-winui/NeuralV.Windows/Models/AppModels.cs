@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using NeuralV.Windows.Services;
 
 namespace NeuralV.Windows.Models;
 
@@ -157,29 +158,39 @@ public sealed class ClientPreferences
     public bool DynamicColorsEnabled { get; set; } = true;
     public bool DeveloperModeEnabled { get; set; }
     public bool AutoStartEnabled { get; set; } = true;
-    public bool NetworkProtectionEnabled { get; set; }
-    public bool AdBlockEnabled { get; set; }
-    public bool UnsafeSitesEnabled { get; set; }
+    public bool NetworkProtectionEnabled { get; set; } = true;
+    public bool AdBlockEnabled { get; set; } = true;
+    public bool UnsafeSitesEnabled { get; set; } = true;
     public bool MinimizeToTrayOnClose { get; set; } = true;
     public int BlockedThreats { get; set; }
     public int BlockedAds { get; set; }
 
     public string NetworkProtectionSummary =>
-        $"Заблокировано угроз: {BlockedThreats} · рекламы: {BlockedAds}";
+        BlockedThreats == 0 && BlockedAds == 0
+            ? "Пока ничего не заблокировано"
+            : $"Угроз: {WindowsNetworkProtectionStateService.FormatCounter(BlockedThreats)} · рекламы: {WindowsNetworkProtectionStateService.FormatCounter(BlockedAds)}";
 }
 
 public sealed class NetworkProtectionState
 {
+    public string Mode { get; init; } = "unified";
     public string Platform { get; init; } = string.Empty;
-    public bool NetworkEnabled { get; init; }
-    public bool AdBlockEnabled { get; init; }
-    public bool UnsafeSitesEnabled { get; init; }
+    public bool NetworkEnabled { get; init; } = true;
+    public bool AdBlockEnabled { get; init; } = true;
+    public bool UnsafeSitesEnabled { get; init; } = true;
     public int BlockedAdsTotal { get; init; }
     public int BlockedThreatsTotal { get; init; }
     public int BlockedAdsPlatform { get; init; }
     public int BlockedThreatsPlatform { get; init; }
     public bool DeveloperMode { get; init; }
-    public string Summary => $"Заблокировано угроз: {BlockedThreatsPlatform} · рекламы: {BlockedAdsPlatform}";
+    public bool LocalEnforcementAvailable { get; init; }
+    public bool LocalEnforcementActive { get; init; }
+    public bool EffectiveEnabled { get; init; }
+    public string StatusMessage { get; init; } = string.Empty;
+    public string Summary =>
+        BlockedThreatsPlatform == 0 && BlockedAdsPlatform == 0
+            ? "Пока ничего не заблокировано"
+            : $"Угроз: {WindowsNetworkProtectionStateService.FormatCounter(BlockedThreatsPlatform)} · рекламы: {WindowsNetworkProtectionStateService.FormatCounter(BlockedAdsPlatform)}";
 }
 
 public sealed class WindowsScanRoot

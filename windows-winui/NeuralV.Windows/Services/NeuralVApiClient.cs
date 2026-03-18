@@ -233,9 +233,7 @@ public sealed class NeuralVApiClient : IDisposable
             platform,
             toggles = new
             {
-                protection_enabled = networkEnabled,
-                ad_block_enabled = adBlockEnabled,
-                unsafe_sites_enabled = unsafeSitesEnabled
+                protection_enabled = networkEnabled
             }
         }, cancellationToken, current.AccessToken);
 
@@ -329,24 +327,30 @@ public sealed class NeuralVApiClient : IDisposable
         var totalCounters = root.GetPropertyOrDefault("counters").GetPropertyOrDefault("total");
         var platformCounters = root.GetPropertyOrDefault("counters").GetPropertyOrDefault("platform");
         var limits = root.GetPropertyOrDefault("limits");
-        return new NetworkProtectionState
+        var status = root.GetPropertyOrDefault("status");
+        var networkEnabled = toggles is not null
+            ? toggles.ReadBoolean("protection_enabled")
+            : (root.ReadBoolean("protection_enabled") || root.ReadBoolean("network_enabled"));
+
+        var parsed = new NetworkProtectionState
         {
+            Mode = status.ReadString("mode", root.ReadString("mode", "unified")),
             Platform = root.ReadString("platform", "windows"),
-            NetworkEnabled = toggles is not null
-                ? toggles.ReadBoolean("protection_enabled")
-                : (root.ReadBoolean("protection_enabled") || root.ReadBoolean("network_enabled")),
-            AdBlockEnabled = toggles is not null
-                ? toggles.ReadBoolean("ad_block_enabled")
-                : root.ReadBoolean("ad_block_enabled"),
-            UnsafeSitesEnabled = toggles is not null
-                ? toggles.ReadBoolean("unsafe_sites_enabled")
-                : root.ReadBoolean("unsafe_sites_enabled"),
+            NetworkEnabled = networkEnabled,
+            AdBlockEnabled = networkEnabled,
+            UnsafeSitesEnabled = networkEnabled,
             BlockedAdsTotal = totalCounters.ReadInt32("blocked_ads", root.ReadInt32("blocked_ads_total")),
             BlockedThreatsTotal = totalCounters.ReadInt32("blocked_threats", root.ReadInt32("blocked_threats_total")),
             BlockedAdsPlatform = platformCounters.ReadInt32("blocked_ads", root.ReadInt32("blocked_ads_platform")),
             BlockedThreatsPlatform = platformCounters.ReadInt32("blocked_threats", root.ReadInt32("blocked_threats_platform")),
-            DeveloperMode = root.ReadBoolean("developer_mode") || limits.ReadBoolean("developer_mode")
+            DeveloperMode = root.ReadBoolean("developer_mode") || limits.ReadBoolean("developer_mode"),
+            LocalEnforcementAvailable = status.ReadBoolean("local_enforcement_available"),
+            LocalEnforcementActive = status.ReadBoolean("local_enforcement_active"),
+            EffectiveEnabled = status.ReadBoolean("effective_enabled"),
+            StatusMessage = status.ReadString("message")
         };
+
+        return WindowsNetworkProtectionStateService.Normalize(parsed);
     }
 
     private async Task<(JsonElement? root, string? error)> GetJsonAsync(string relativePath, CancellationToken cancellationToken, string? bearerToken = null)

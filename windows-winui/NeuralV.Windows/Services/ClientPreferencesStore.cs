@@ -17,18 +17,19 @@ public static class ClientPreferencesStore
     {
         if (!File.Exists(PreferencesFilePath))
         {
-            return new ClientPreferences();
+            return WindowsNetworkProtectionStateService.Normalize(new ClientPreferences());
         }
 
         try
         {
             var payload = await File.ReadAllTextAsync(PreferencesFilePath, cancellationToken);
-            return JsonSerializer.Deserialize<ClientPreferences>(payload, JsonOptions) ?? new ClientPreferences();
+            var preferences = JsonSerializer.Deserialize<ClientPreferences>(payload, JsonOptions) ?? new ClientPreferences();
+            return WindowsNetworkProtectionStateService.Normalize(preferences);
         }
         catch (Exception ex)
         {
             WindowsLog.Error("ClientPreferencesStore.LoadAsync failed", ex);
-            return new ClientPreferences();
+            return WindowsNetworkProtectionStateService.Normalize(new ClientPreferences());
         }
     }
 
@@ -36,25 +37,27 @@ public static class ClientPreferencesStore
     {
         if (!File.Exists(PreferencesFilePath))
         {
-            return new ClientPreferences();
+            return WindowsNetworkProtectionStateService.Normalize(new ClientPreferences());
         }
 
         try
         {
             var payload = File.ReadAllText(PreferencesFilePath, Encoding.UTF8);
-            return JsonSerializer.Deserialize<ClientPreferences>(payload, JsonOptions) ?? new ClientPreferences();
+            var preferences = JsonSerializer.Deserialize<ClientPreferences>(payload, JsonOptions) ?? new ClientPreferences();
+            return WindowsNetworkProtectionStateService.Normalize(preferences);
         }
         catch (Exception ex)
         {
             WindowsLog.Error("ClientPreferencesStore.Load failed", ex);
-            return new ClientPreferences();
+            return WindowsNetworkProtectionStateService.Normalize(new ClientPreferences());
         }
     }
 
     public static async Task SaveAsync(ClientPreferences preferences, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(SessionStore.AppDirectory);
-        var payload = JsonSerializer.Serialize(preferences, JsonOptions);
+        var normalized = WindowsNetworkProtectionStateService.Normalize(preferences);
+        var payload = JsonSerializer.Serialize(normalized, JsonOptions);
         await File.WriteAllTextAsync(PreferencesFilePath, payload, Encoding.UTF8, cancellationToken);
     }
 }

@@ -31,22 +31,19 @@ public static class ClientPreferencesStateService
     public static Task<ClientPreferences> SetNetworkProtectionEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
         UpdateAsync(state =>
         {
-            state.NetworkProtectionEnabled = enabled;
-            return state;
+            return WindowsNetworkProtectionStateService.ApplyUnifiedToggle(state, enabled);
         }, cancellationToken);
 
     public static Task<ClientPreferences> SetAdBlockEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
         UpdateAsync(state =>
         {
-            state.AdBlockEnabled = enabled;
-            return state;
+            return WindowsNetworkProtectionStateService.ApplyUnifiedToggle(state, enabled);
         }, cancellationToken);
 
     public static Task<ClientPreferences> SetUnsafeSitesEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
         UpdateAsync(state =>
         {
-            state.UnsafeSitesEnabled = enabled;
-            return state;
+            return WindowsNetworkProtectionStateService.ApplyUnifiedToggle(state, enabled);
         }, cancellationToken);
 
     public static Task<ClientPreferences> SetAutoStartEnabledAsync(bool enabled, CancellationToken cancellationToken = default) =>
@@ -81,13 +78,12 @@ public static class ClientPreferencesStateService
     public static Task<ClientPreferences> ApplyRemoteNetworkStateAsync(NetworkProtectionState remoteState, CancellationToken cancellationToken = default) =>
         UpdateAsync(state =>
         {
-            state.NetworkProtectionEnabled = remoteState.NetworkEnabled;
-            state.AdBlockEnabled = remoteState.AdBlockEnabled;
-            state.UnsafeSitesEnabled = remoteState.UnsafeSitesEnabled;
-            state.BlockedThreats = Math.Max(remoteState.BlockedThreatsPlatform, remoteState.BlockedThreatsTotal);
-            state.BlockedAds = Math.Max(remoteState.BlockedAdsPlatform, remoteState.BlockedAdsTotal);
-            state.DeveloperModeEnabled = remoteState.DeveloperMode;
-            return state;
+            var normalizedRemoteState = WindowsNetworkProtectionStateService.Normalize(remoteState);
+            state = WindowsNetworkProtectionStateService.ApplyUnifiedToggle(state, normalizedRemoteState.NetworkEnabled);
+            state.BlockedThreats = Math.Max(normalizedRemoteState.BlockedThreatsPlatform, normalizedRemoteState.BlockedThreatsTotal);
+            state.BlockedAds = Math.Max(normalizedRemoteState.BlockedAdsPlatform, normalizedRemoteState.BlockedAdsTotal);
+            state.DeveloperModeEnabled = normalizedRemoteState.DeveloperMode;
+            return WindowsNetworkProtectionStateService.Normalize(state);
         }, cancellationToken);
 
     public static async Task<ClientPreferences> UpdateAsync(
@@ -98,7 +94,7 @@ public static class ClientPreferencesStateService
         try
         {
             var current = await ClientPreferencesStore.LoadAsync(cancellationToken);
-            var next = mutator(Clone(current));
+            var next = WindowsNetworkProtectionStateService.Normalize(mutator(Clone(current)));
             await ClientPreferencesStore.SaveAsync(next, cancellationToken);
             return next;
         }
@@ -110,7 +106,7 @@ public static class ClientPreferencesStateService
 
     private static ClientPreferences Clone(ClientPreferences source)
     {
-        return new ClientPreferences
+        return WindowsNetworkProtectionStateService.Normalize(new ClientPreferences
         {
             ThemeMode = source.ThemeMode,
             DynamicColorsEnabled = source.DynamicColorsEnabled,
@@ -122,6 +118,6 @@ public static class ClientPreferencesStateService
             AutoStartEnabled = source.AutoStartEnabled,
             BlockedThreats = source.BlockedThreats,
             BlockedAds = source.BlockedAds
-        };
+        });
     }
 }

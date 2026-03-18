@@ -11,6 +11,7 @@ public partial class App : Application
 {
     public static ThemePalette Palette { get; private set; } = ThemePalette.DefaultDark();
     public static ClientPreferences Preferences { get; private set; } = new();
+    public static WindowsWindowLifecycleService? WindowLifecycle { get; private set; }
     public static bool IsSmokeTest { get; private set; }
     private Window? _window;
 
@@ -86,6 +87,10 @@ public partial class App : Application
 
             _window.Activate();
             WindowsLog.Info("Main window activated");
+            if (_window is MainWindow)
+            {
+                TryAttachWindowLifecycle(_window);
+            }
         }
         catch (Exception ex)
         {
@@ -177,7 +182,32 @@ public partial class App : Application
 
     private static void OnProcessExit(object? sender, EventArgs e)
     {
+        WindowLifecycle?.Dispose();
         WindowsLog.Info($"Process exit code: {Environment.ExitCode}");
+    }
+
+    private static void TryAttachWindowLifecycle(Window window)
+    {
+        try
+        {
+            WindowLifecycle?.Dispose();
+            WindowLifecycle = new WindowsWindowLifecycleService();
+            WindowLifecycle.Attach(window, new WindowsWindowLifecycleOptions
+            {
+                Title = "NeuralV",
+                MinimumWidth = 1180,
+                MinimumHeight = 820,
+                ShouldMinimizeToTray = () => Preferences.MinimizeToTrayOnClose,
+                InitialTrayState = WindowsTrayProgressService.CreateIdle(),
+                TrayStateProvider = () => WindowsTrayProgressService.CreateIdle()
+            });
+            WindowLifecycle.RefreshTrayState();
+            WindowsLog.Info("Window lifecycle attached");
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Window lifecycle attach failed", ex);
+        }
     }
 
     private void ShowStartupFailureWindow(Exception exception)

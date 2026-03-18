@@ -190,6 +190,7 @@ public sealed partial class MainWindow : Window
         {
             WindowsLog.Info("Configuring window handle");
             TryConfigureWindowHandle();
+            HookWindowLifecycle();
             WindowsLog.Info("Applying ambient palette on load");
             ApplyAmbientPalette();
             WindowsLog.Info("Skipping floating shape animation startup for stability");
@@ -204,6 +205,10 @@ public sealed partial class MainWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        if (App.WindowLifecycle is not null)
+        {
+            App.WindowLifecycle.RestoreRequested -= OnRestoreRequested;
+        }
         _shapeTimer.Stop();
         _scanPollCts?.Cancel();
         _apiClient.Dispose();
@@ -267,6 +272,7 @@ public sealed partial class MainWindow : Window
             await LoadHistoryAsync();
             await LoadNetworkProtectionStateAsync();
             ApplySessionState();
+            HookWindowLifecycle();
             ShowScreen(_session is null ? AppScreen.Welcome : AppScreen.Home);
         }
         catch (Exception ex)
@@ -438,7 +444,10 @@ public sealed partial class MainWindow : Window
 
         var shell = new Grid
         {
-            Padding = new Thickness(24)
+            Padding = new Thickness(24, 20, 24, 24),
+            MaxWidth = 1180,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Stretch
         };
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -518,30 +527,46 @@ public sealed partial class MainWindow : Window
 
     private Grid BuildTopBar()
     {
-        var topBar = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+        var topBar = new Grid
+        {
+            Margin = new Thickness(0, 0, 0, 14),
+            MaxWidth = 1180,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
         topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        topBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var drawerButton = CreateIconButton("☰", OnToggleDrawerClick);
         topBar.Children.Add(drawerButton);
 
         var titleStack = new Grid
         {
-            Margin = new Thickness(16, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
         };
         Grid.SetColumn(titleStack, 1);
         HeaderTitleText = new TextBlock
         {
             Text = "NeuralV",
             Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 28,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            FontSize = 30,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextAlignment = TextAlignment.Center
         };
         titleStack.Children.Add(HeaderTitleText);
         HeaderSubtitleText = new TextBlock { Visibility = Visibility.Collapsed };
         AccountChipText = new TextBlock { Visibility = Visibility.Collapsed };
         topBar.Children.Add(titleStack);
+
+        var rightSpacer = new Border
+        {
+            Width = 52,
+            Height = 52,
+            Opacity = 0
+        };
+        Grid.SetColumn(rightSpacer, 2);
+        topBar.Children.Add(rightSpacer);
 
         return topBar;
     }
@@ -608,29 +633,27 @@ public sealed partial class MainWindow : Window
         var host = new Grid();
         host.Children.Add(BuildWelcomeShapeLayer());
 
-        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 32, new Thickness(28));
-        card.MaxWidth = 540;
-        card.HorizontalAlignment = HorizontalAlignment.Center;
-        card.VerticalAlignment = VerticalAlignment.Center;
-
-        var stack = new StackPanel { Spacing = 18 };
         var logoShell = new Border
         {
-            Width = 112,
-            Height = 112,
+            Width = 164,
+            Height = 164,
             Background = ThemeBrush("AppAccentSoftBrush"),
-            CornerRadius = new CornerRadius(56),
+            CornerRadius = new CornerRadius(82),
             HorizontalAlignment = HorizontalAlignment.Center,
-            Padding = new Thickness(14)
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(18)
         };
         logoShell.Child = CreateLogoElement();
-        stack.Children.Add(logoShell);
-        stack.Children.Add(CreateTitleText("NeuralV", 40, TextAlignment.Center));
+        host.Children.Add(logoShell);
 
         var actions = new StackPanel
         {
-            Margin = new Thickness(0, 8, 0, 0),
-            Spacing = 12
+            MaxWidth = 420,
+            Width = 420,
+            Spacing = 12,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, 36)
         };
         var loginButton = CreateFilledButton("Войти", OnShowLoginClick);
         loginButton.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -639,10 +662,7 @@ public sealed partial class MainWindow : Window
         var registerButton = CreateTonalButton("Зарегистрироваться", OnShowRegisterClick);
         registerButton.HorizontalAlignment = HorizontalAlignment.Stretch;
         actions.Children.Add(registerButton);
-        stack.Children.Add(actions);
-
-        card.Child = stack;
-        host.Children.Add(card);
+        host.Children.Add(actions);
         return host;
     }
 
@@ -742,7 +762,8 @@ public sealed partial class MainWindow : Window
     private FrameworkElement BuildCenteredStage(UIElement content)
     {
         var host = new Grid();
-        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 30, new Thickness(26));
+        host.Children.Add(BuildWelcomeShapeLayer());
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", new CornerRadius(30, 30, 24, 24), new Thickness(26));
         card.MaxWidth = 620;
         card.HorizontalAlignment = HorizontalAlignment.Center;
         card.VerticalAlignment = VerticalAlignment.Center;
@@ -755,18 +776,28 @@ public sealed partial class MainWindow : Window
     {
         var host = new Grid
         {
-            MaxWidth = 1140,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 4, 0, 0)
         };
+        var centeredHost = new Grid
+        {
+            MaxWidth = 1080,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top
+        };
+        centeredHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        centeredHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        host.Children.Add(centeredHost);
 
         var stack = new StackPanel
         {
             Spacing = 18,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Top
         };
-        host.Children.Add(stack);
+        Grid.SetRow(stack, 1);
+        centeredHost.Children.Add(stack);
 
         ActiveScanCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 24, new Thickness(18));
         ActiveScanCard.Visibility = Visibility.Collapsed;
@@ -783,13 +814,20 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(openScanButton, 1);
         activeGrid.Children.Add(openScanButton);
         ActiveScanCard.Child = activeGrid;
-        stack.Children.Add(ActiveScanCard);
+        Grid.SetRow(ActiveScanCard, 0);
+        centeredHost.Children.Add(ActiveScanCard);
 
-        var content = new StackPanel { Spacing = 18 };
+        var content = new Grid();
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         HomePrimaryContent = content;
         stack.Children.Add(content);
 
-        var modes = new Grid();
+        var modes = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
         modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
         modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -797,7 +835,7 @@ public sealed partial class MainWindow : Window
         modes.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
         modes.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var deepCard = CreateWideModePanel("Глубокая", "◎", "Серверная проверка системы, программ и связанных корней.", OnDeepScanClick);
+        var deepCard = CreateWideModePanel("Глубокая", "◈", OnDeepScanClick);
         Grid.SetColumnSpan(deepCard, 3);
         Grid.SetRow(deepCard, 0);
         modes.Children.Add(deepCard);
@@ -807,16 +845,19 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(quickCard, 2);
         modes.Children.Add(quickCard);
 
-        var selectiveCard = CreateGridModePanel("Выборочная", "◌", OnSelectiveScanClick, false);
+        var selectiveCard = CreateGridModePanel("Выборочная", "◎", OnSelectiveScanClick, false);
         Grid.SetColumn(selectiveCard, 2);
         Grid.SetRow(selectiveCard, 2);
         modes.Children.Add(selectiveCard);
+        Grid.SetRow(modes, 0);
         content.Children.Add(modes);
 
         var artifactCard = CreateSlimModePanel("Проверить программу", "▣", "Выбрать", OnProgramScanClick);
+        artifactCard.Margin = new Thickness(0, 18, 0, 0);
+        Grid.SetRow(artifactCard, 1);
         content.Children.Add(artifactCard);
 
-        HomeNetworkCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
+        HomeNetworkCard = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
         var networkGrid = new Grid();
         networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -835,6 +876,8 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(NetworkProtectionToggle, 1);
         networkGrid.Children.Add(NetworkProtectionToggle);
         HomeNetworkCard.Child = networkGrid;
+        HomeNetworkCard.Margin = new Thickness(0, 18, 0, 0);
+        Grid.SetRow(HomeNetworkCard, 2);
         content.Children.Add(HomeNetworkCard);
 
         return host;
@@ -842,39 +885,23 @@ public sealed partial class MainWindow : Window
 
     private FrameworkElement BuildHistoryView()
     {
-        var scroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        };
-
         var stack = new StackPanel
         {
-            Spacing = 14,
-            MaxWidth = 980,
-            HorizontalAlignment = HorizontalAlignment.Center
+            Spacing = 14
         };
         var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 26, new Thickness(18));
         HistoryItemsHost = new StackPanel { Spacing = 12 };
         card.Child = HistoryItemsHost;
         stack.Children.Add(card);
-        scroll.Content = stack;
-        return scroll;
+        return CreateCenteredScrollHost(stack, 980);
     }
 
     private FrameworkElement BuildSettingsView()
     {
-        var scroll = new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        };
-
         var stack = new StackPanel
         {
             Spacing = 16,
-            MaxWidth = 860,
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
         var accountCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
@@ -917,8 +944,7 @@ public sealed partial class MainWindow : Window
         logoutButton.HorizontalAlignment = HorizontalAlignment.Stretch;
         stack.Children.Add(logoutButton);
 
-        scroll.Content = stack;
-        return scroll;
+        return CreateCenteredScrollHost(stack, 860);
     }
 
     private Grid BuildScanOverlay()
@@ -1066,6 +1092,33 @@ public sealed partial class MainWindow : Window
         return overlay;
     }
 
+    private FrameworkElement CreateCenteredScrollHost(UIElement content, double maxWidth)
+    {
+        var root = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+
+        var scroll = new ScrollViewer
+        {
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+
+        var presenter = new Grid
+        {
+            MaxWidth = maxWidth,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top
+        };
+        presenter.Children.Add(content);
+        scroll.Content = presenter;
+        root.Children.Add(scroll);
+        return root;
+    }
+
     private void ApplyAmbientPalette()
     {
         BackdropGradient.Fill = new SolidColorBrush(ThemePalette.Blend(App.Palette.BackgroundAlt, App.Palette.Accent, 0.06));
@@ -1142,11 +1195,83 @@ public sealed partial class MainWindow : Window
         if (ScanOverlay is null)
         {
             WindowsLog.Info("Creating deferred scan overlay");
-            ScanOverlay = BuildScanOverlay();
+            ScanOverlay = BuildScanOverlaySafe();
             Canvas.SetZIndex(ScanOverlay, 40);
             _windowRoot.Children.Add(ScanOverlay);
             WindowsLog.Info("Deferred scan overlay attached");
         }
+    }
+
+    private Grid BuildScanOverlaySafe()
+    {
+        try
+        {
+            return BuildScanOverlay();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("BuildScanOverlay failed, switching to fallback overlay", ex);
+            return BuildFallbackScanOverlay();
+        }
+    }
+
+    private Grid BuildFallbackScanOverlay()
+    {
+        var overlay = new Grid
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            Visibility = Visibility.Collapsed
+        };
+
+        var frame = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineStrongBrush", 24, new Thickness(20));
+        frame.MaxWidth = 720;
+        frame.HorizontalAlignment = HorizontalAlignment.Center;
+        frame.VerticalAlignment = VerticalAlignment.Center;
+        overlay.Children.Add(frame);
+
+        var stack = new StackPanel { Spacing = 14 };
+        ScanModeText = CreateTitleText("Проверка", 24);
+        ScanStageText = CreateBodyText("AppMutedTextBrush");
+        ScanTargetText = CreateBodyText("AppMutedTextBrush");
+        ScanProgressText = CreateTitleText("0%", 34);
+        ScanCountsText = CreateBodyText("AppMutedTextBrush");
+        ScanProgressBar = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Height = 10
+        };
+        ScanTimelineHost = new StackPanel { Spacing = 10 };
+
+        var timelineScroll = new ScrollViewer
+        {
+            MaxHeight = 320,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = ScanTimelineHost
+        };
+
+        stack.Children.Add(ScanModeText);
+        stack.Children.Add(ScanStageText);
+        stack.Children.Add(ScanTargetText);
+        stack.Children.Add(ScanProgressText);
+        stack.Children.Add(ScanCountsText);
+        stack.Children.Add(ScanProgressBar);
+        stack.Children.Add(timelineScroll);
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12
+        };
+        var cancelButton = CreateFilledButton("Остановить", OnCancelScanClick);
+        var hideButton = CreateTonalButton("Скрыть", OnHideScanOverlayClick);
+        actions.Children.Add(cancelButton);
+        actions.Children.Add(hideButton);
+        stack.Children.Add(actions);
+
+        frame.Child = stack;
+        return overlay;
     }
 
     private void EnsureHistoryDetailOverlayReady()
@@ -1180,7 +1305,7 @@ public sealed partial class MainWindow : Window
 
         var chromeVisible = screen is AppScreen.Home or AppScreen.History or AppScreen.Settings;
         TopBar.Visibility = chromeVisible ? Visibility.Visible : Visibility.Collapsed;
-        if (screen == AppScreen.Welcome)
+        if (screen is AppScreen.Welcome or AppScreen.Login or AppScreen.Register or AppScreen.Code)
         {
             _shapeTimer.Start();
         }
@@ -1190,6 +1315,10 @@ public sealed partial class MainWindow : Window
         }
 
         SetDrawerState(false);
+        if (screen != AppScreen.History)
+        {
+            SetHistoryDetailState(false);
+        }
         UpdateHeader();
         ApplySessionState();
         UpdateHomeState();
@@ -1326,6 +1455,15 @@ public sealed partial class MainWindow : Window
         {
             NetworkProtectionToggle.IsOn = _networkState.NetworkEnabled;
         }
+        if (HomeNetworkCard is not null)
+        {
+            HomeNetworkCard.Background = _networkState.NetworkEnabled
+                ? ThemeBrush("AppAccentSoftGradientBrush")
+                : ThemeBrush("AppSurfaceBrush");
+            HomeNetworkCard.BorderBrush = _networkState.NetworkEnabled
+                ? ThemeBrush("AppOutlineStrongBrush")
+                : ThemeBrush("AppOutlineBrush");
+        }
         if (NetworkCountersText is not null)
         {
             NetworkCountersText.Text =
@@ -1346,14 +1484,14 @@ public sealed partial class MainWindow : Window
             DrawerPanel.Visibility = Visibility.Visible;
         }
 
-        AnimateElement(DrawerScrim, "Opacity", isOpen ? 1 : 0, 220, () =>
+        AnimateElement(DrawerScrim, "Opacity", isOpen ? 1 : 0, 220, new SineEase { EasingMode = EasingMode.EaseOut }, () =>
         {
             if (!isOpen)
             {
                 DrawerScrim.Visibility = Visibility.Collapsed;
             }
         });
-        AnimateElement(DrawerPanel, "Opacity", isOpen ? 1 : 0, 220, () =>
+        AnimateElement(DrawerPanel, "Opacity", isOpen ? 1 : 0, 220, new SineEase { EasingMode = EasingMode.EaseOut }, () =>
         {
             if (!isOpen)
             {
@@ -1363,7 +1501,7 @@ public sealed partial class MainWindow : Window
 
         if (DrawerPanel.RenderTransform is TranslateTransform translate)
         {
-            AnimateElement(translate, "X", isOpen ? 0 : -36, 220);
+            AnimateElement(translate, "X", isOpen ? 0 : -36, 240, new CubicEase { EasingMode = EasingMode.EaseOut });
         }
     }
 
@@ -1398,6 +1536,10 @@ public sealed partial class MainWindow : Window
         {
             SetDrawerState(false);
             SetHistoryDetailState(false);
+        }
+        else
+        {
+            App.WindowLifecycle?.RefreshTrayState();
         }
         UpdateHomeState();
     }
@@ -1464,6 +1606,7 @@ public sealed partial class MainWindow : Window
         var screen = _screen;
         var overlayOpen = _scanOverlayOpen;
         BuildLayout();
+        HookWindowLifecycle();
         ApplySessionState();
         ShowScreen(screen);
         if (_activeScan is not null)
@@ -1738,7 +1881,7 @@ public sealed partial class MainWindow : Window
             RenderScan(result);
             await HistoryStore.AppendAsync(result);
             await LoadHistoryAsync();
-            SetStatus(result.PrimarySummary);
+            SetStatus(null);
         }
         catch (Exception ex)
         {
@@ -1960,7 +2103,7 @@ public sealed partial class MainWindow : Window
             var result = await _apiClient.CancelDesktopScanAsync(_session);
             var message = result.success ? "Проверка остановлена." : result.error ?? "Не удалось отменить проверку.";
             WindowsLog.Info($"Cancel scan result: {message}");
-            SetStatus(message);
+            SetStatus(result.success ? null : message);
             if (_activeScan is not null)
             {
                 _activeScan = new DesktopScanState
@@ -2006,6 +2149,7 @@ public sealed partial class MainWindow : Window
 
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
+        SetHistoryDetailState(false);
         ShowScreen(AppScreen.Home);
     }
 
@@ -2018,11 +2162,14 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        SetScanOverlayState(false);
         ShowScreen(AppScreen.History);
     }
 
     private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
+        SetScanOverlayState(false);
+        SetHistoryDetailState(false);
         ShowScreen(AppScreen.Settings);
     }
 
@@ -2197,12 +2344,54 @@ public sealed partial class MainWindow : Window
         SessionStore.ClearSession();
         ResetAuthInputs();
         _networkState = BuildLocalNetworkFallback();
+        App.WindowLifecycle?.SetShouldMinimizeToTray(() => false);
         ApplySessionState();
         SetScanOverlayState(false);
         SetHistoryDetailState(false);
         App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.CreateIdle());
         ShowScreen(AppScreen.Welcome);
         SetStatus(null);
+    }
+
+    private void HookWindowLifecycle()
+    {
+        if (App.WindowLifecycle is null)
+        {
+            return;
+        }
+
+        App.WindowLifecycle.RestoreRequested -= OnRestoreRequested;
+        App.WindowLifecycle.RestoreRequested += OnRestoreRequested;
+        App.WindowLifecycle.SetMinimumSize(1180, 820);
+        App.WindowLifecycle.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose && _activeScan is not null && !_activeScan.IsFinished);
+        App.WindowLifecycle.SetTrayStateProvider(() => _activeScan is not null
+            ? WindowsTrayProgressService.FromScan(_activeScan)
+            : WindowsTrayProgressService.CreateIdle());
+        App.WindowLifecycle.RefreshTrayState();
+    }
+
+    private void OnRestoreRequested()
+    {
+        try
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_activeScan is not null && _scanOverlayOpen)
+                {
+                    ShowActiveScanOverlay();
+                    return;
+                }
+
+                if (_screen == AppScreen.Splash)
+                {
+                    ShowScreen(_session is null ? AppScreen.Welcome : AppScreen.Home);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Tray restore hook failed", ex);
+        }
     }
 
     private async void OnVersionTapClick(object sender, RoutedEventArgs e)
@@ -2235,26 +2424,24 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private Border CreateWideModePanel(string title, string glyph, string meta, RoutedEventHandler handler)
+    private Border CreateWideModePanel(string title, string glyph, RoutedEventHandler handler)
     {
-        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 30, new Thickness(20));
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", new CornerRadius(38, 38, 26, 26), new Thickness(20));
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var glyphShell = CreateGlyphShell(glyph, 64);
+        var glyphShell = CreateGlyphShell(glyph, 68, true);
         grid.Children.Add(glyphShell);
 
         var textStack = new StackPanel
         {
             Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 4
+            Spacing = 2
         };
         textStack.Children.Add(CreateSectionTitle(title, 26));
-        textStack.Children.Add(CreateBodyText("AppMutedTextBrush"));
-        ((TextBlock)textStack.Children[^1]).Text = meta;
         Grid.SetColumn(textStack, 1);
         grid.Children.Add(textStack);
 
@@ -2270,30 +2457,52 @@ public sealed partial class MainWindow : Window
         var card = CreateCardBorder(
             emphasized ? "AppAccentSoftGradientBrush" : "AppSurfaceBrush",
             emphasized ? "AppOutlineStrongBrush" : "AppOutlineBrush",
-            emphasized ? 36 : 28,
+            emphasized ? new CornerRadius(40, 24, 36, 24) : new CornerRadius(24, 40, 24, 36),
             new Thickness(18));
-        card.MinHeight = 184;
-        var stack = new StackPanel
+        card.MinHeight = emphasized ? 212 : 190;
+        if (emphasized)
         {
-            Spacing = 12,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        stack.Children.Add(CreateGlyphShell(glyph, emphasized ? 60 : 54));
-        stack.Children.Add(CreateTitleText(title, 24, TextAlignment.Center));
-        stack.Children.Add(CreateRoundActionButton("▶", handler, emphasized));
-        card.Child = stack;
+            var stack = new StackPanel
+            {
+                Spacing = 12,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            stack.Children.Add(CreateGlyphShell(glyph, 62, true));
+            stack.Children.Add(CreateTitleText(title, 24, TextAlignment.Center));
+            stack.Children.Add(CreateRoundActionButton("▶", handler, true));
+            card.Child = stack;
+            return card;
+        }
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var icon = CreateGlyphShell(glyph, 54, false);
+        icon.HorizontalAlignment = HorizontalAlignment.Left;
+        grid.Children.Add(icon);
+        var titleText = CreateTitleText(title, 22);
+        titleText.Margin = new Thickness(0, 14, 0, 0);
+        titleText.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetRow(titleText, 1);
+        grid.Children.Add(titleText);
+        var action = CreateRoundActionButton("▶", handler, false);
+        action.HorizontalAlignment = HorizontalAlignment.Right;
+        Grid.SetRow(action, 2);
+        grid.Children.Add(action);
+        card.Child = grid;
         return card;
     }
 
     private Border CreateSlimModePanel(string title, string glyph, string actionText, RoutedEventHandler handler)
     {
-        var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 24, new Thickness(18));
+        var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", new CornerRadius(22, 34, 22, 34), new Thickness(18));
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var icon = CreateGlyphShell(glyph, 52);
+        var icon = CreateGlyphShell(glyph, 52, false);
         grid.Children.Add(icon);
         var titleBlock = CreateSectionTitle(title, 22);
         titleBlock.VerticalAlignment = VerticalAlignment.Center;
@@ -2307,15 +2516,15 @@ public sealed partial class MainWindow : Window
         return card;
     }
 
-    private Border CreateGlyphShell(string glyph, double size)
+    private Border CreateGlyphShell(string glyph, double size, bool emphasized)
     {
         var shell = new Border
         {
             Width = size,
             Height = size,
             CornerRadius = new CornerRadius(size / 2),
-            Background = ThemeBrush("AppAccentSoftBrush"),
-            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            Background = emphasized ? ThemeBrush("AppAccentSoftGradientBrush") : ThemeBrush("AppAccentSoftBrush"),
+            BorderBrush = emphasized ? ThemeBrush("AppOutlineStrongBrush") : ThemeBrush("AppOutlineBrush"),
             BorderThickness = new Thickness(1),
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
@@ -2368,24 +2577,22 @@ public sealed partial class MainWindow : Window
         left.Children.Add(meta);
         grid.Children.Add(left);
 
+        var right = new StackPanel
+        {
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         var verdict = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 18, new Thickness(12, 8, 12, 8));
-        verdict.VerticalAlignment = VerticalAlignment.Center;
         verdict.Child = CreateBodyText("AppTextBrush");
         ((TextBlock)verdict.Child).Text = item.Verdict;
-        Grid.SetColumn(verdict, 1);
-        grid.Children.Add(verdict);
+        right.Children.Add(verdict);
+        right.Children.Add(CreateRoundActionButton("→", (_, _) => OpenHistoryRecord(item), false));
+        Grid.SetColumn(right, 1);
+        grid.Children.Add(right);
 
-        var button = new Button
-        {
-            Background = new SolidColorBrush(UiColor.FromArgb(0, 0, 0, 0)),
-            BorderThickness = new Thickness(0),
-            Padding = new Thickness(0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Content = grid
-        };
-        button.Click += (_, _) => OpenHistoryRecord(item);
-        card.Child = button;
+        card.Child = grid;
+        card.Tapped += (_, _) => OpenHistoryRecord(item);
         return card;
     }
 
@@ -2431,14 +2638,15 @@ public sealed partial class MainWindow : Window
         SetHistoryDetailState(true);
     }
 
-    private void AnimateElement(DependencyObject target, string propertyPath, double to, int durationMs, Action? completed = null)
+    private void AnimateElement(DependencyObject target, string propertyPath, double to, int durationMs, EasingFunctionBase? easing = null, Action? completed = null)
     {
         var storyboard = new Storyboard();
         var animation = new DoubleAnimation
         {
             To = to,
             Duration = TimeSpan.FromMilliseconds(durationMs),
-            EnableDependentAnimation = true
+            EnableDependentAnimation = true,
+            EasingFunction = easing
         };
         Storyboard.SetTarget(animation, target);
         Storyboard.SetTargetProperty(animation, propertyPath);
@@ -2570,12 +2778,17 @@ public sealed partial class MainWindow : Window
 
     private static Border CreateCardBorder(string backgroundKey, string borderKey, double radius, Thickness padding)
     {
+        return CreateCardBorder(backgroundKey, borderKey, new CornerRadius(radius), padding);
+    }
+
+    private static Border CreateCardBorder(string backgroundKey, string borderKey, CornerRadius radius, Thickness padding)
+    {
         return new Border
         {
             Background = ThemeBrush(backgroundKey),
             BorderBrush = ThemeBrush(borderKey),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(radius),
+            CornerRadius = radius,
             Padding = padding
         };
     }

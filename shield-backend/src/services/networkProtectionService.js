@@ -11,6 +11,11 @@ const DEFAULT_LIMITS = Object.freeze({
     enforced: false,
     limits_disabled: true
 });
+const DEFAULT_UNIFIED_TOGGLES = Object.freeze({
+    protection_enabled: true,
+    ad_block_enabled: true,
+    unsafe_sites_enabled: true
+});
 
 function createHttpError(status, message, code) {
     const error = new Error(message);
@@ -160,13 +165,79 @@ function createPlatformState() {
     };
 }
 
+function hasBoolean(value) {
+    return typeof value === 'boolean';
+}
+
+function normalizeUnifiedToggles(source = {}, fallbackEnabled = true) {
+    const protectionValue = source.protection_enabled ?? source.network_enabled;
+    const hasProtection = hasBoolean(protectionValue);
+    const hasAdBlock = hasBoolean(source.ad_block_enabled);
+    const hasUnsafeSites = hasBoolean(source.unsafe_sites_enabled);
+
+    let requestedEnabled;
+    if (hasProtection) {
+        requestedEnabled = protectionValue;
+    } else if (hasAdBlock || hasUnsafeSites) {
+        requestedEnabled = Boolean(
+            (hasAdBlock ? source.ad_block_enabled : false) ||
+            (hasUnsafeSites ? source.unsafe_sites_enabled : false)
+        );
+    } else {
+        requestedEnabled = Boolean(fallbackEnabled);
+    }
+
+    return {
+        protection_enabled: requestedEnabled,
+        ad_block_enabled: requestedEnabled,
+        unsafe_sites_enabled: requestedEnabled
+    };
+}
+
+function hasLegacyNeverConfiguredToggles(userState) {
+    if (!userState || typeof userState !== 'object') {
+        return false;
+    }
+
+    const toggles = userState.toggles || {};
+    const allFalseLike = [
+        toggles.protection_enabled,
+        userState.network_enabled,
+        toggles.ad_block_enabled,
+        userState.ad_block_enabled,
+        toggles.unsafe_sites_enabled,
+        userState.unsafe_sites_enabled
+    ].every((value) => value === false || value === undefined || value === null || value === '');
+
+    return allFalseLike && Number(userState.updated_at || 0) <= 0;
+}
+
+function formatHumanCounter(value) {
+    const safeValue = Math.max(0, Number(value || 0) || 0);
+    try {
+        return safeValue.toLocaleString('ru-RU');
+    } catch (_) {
+        return String(safeValue);
+    }
+}
+
+function buildStatus(toggles) {
+    const requestedEnabled = Boolean(toggles.protection_enabled);
+    return {
+        mode: 'unified',
+        requested_enabled: requestedEnabled,
+        effective_enabled: false,
+        local_enforcement_available: false,
+        local_enforcement_active: false,
+        message: requestedEnabled
+            ? 'Локальная фильтрация в этой сборке пока не активна'
+            : 'Защита в сети выключена'
+    };
+}
+
 function createUserState() {
     return {
-        toggles: {
-            protection_enabled: false,
-            ad_block_enabled: false,
-            unsafe_sites_enabled: false
-        },
+        toggles: { ...DEFAULT_UNIFIED_TOGGLES },
         counters: {
             blocked_ads_total: 0,
             blocked_threats_total: 0
@@ -188,16 +259,15 @@ function migrateLegacyUserState(userState) {
     }
 
     const sourcePlatforms = userState.platforms || userState.by_platform || {};
-
-    migrated.toggles.protection_enabled = Boolean(
-        userState.toggles?.protection_enabled ?? userState.network_enabled ?? false
-    );
-    migrated.toggles.ad_block_enabled = Boolean(
-        userState.toggles?.ad_block_enabled ?? userState.ad_block_enabled ?? false
-    );
-    migrated.toggles.unsafe_sites_enabled = Boolean(
-        userState.toggles?.unsafe_sites_enabled ?? userState.unsafe_sites_enabled ?? false
-    );
+    const legacyNeverConfigured = hasLegacyNeverConfiguredToggles(userState);
+    migrated.toggles = legacyNeverConfigured
+        ? { ...DEFAULT_UNIFIED_TOGGLES }
+        : normalizeUnifiedToggles({
+            protection_enabled: userState.toggles?.protection_enabled,
+            network_enabled: userState.network_enabled,
+            ad_block_enabled: userState.toggles?.ad_block_enabled ?? userState.ad_block_enabled,
+            unsafe_sites_enabled: userState.toggles?.unsafe_sites_enabled ?? userState.unsafe_sites_enabled
+        }, true);
     migrated.counters.blocked_ads_total = Math.max(0, Number(
         userState.counters?.blocked_ads_total ?? userState.blocked_ads_total ?? 0
     ) || 0);
@@ -233,6 +303,7 @@ function ensureUserState(store, userId) {
 
 function shapeState(userState, platform, developerMode) {
     const platformState = userState.platforms[platform] || createPlatformState();
+    const status = buildStatus(userState.toggles);
     return {
         platform,
         toggles: {
@@ -243,13 +314,24 @@ function shapeState(userState, platform, developerMode) {
         counters: {
             total: {
                 blocked_ads: Number(userState.counters.blocked_ads_total || 0),
-                blocked_threats: Number(userState.counters.blocked_threats_total || 0)
+                blocked_threats: Number(userState.counters.blocked_threats_total || 0),
+                blocked_ads_human: formatHumanCounter(userState.counters.blocked_ads_total || 0),
+                blocked_threats_human: formatHumanCounter(userState.counters.blocked_threats_total || 0)
             },
             platform: {
                 blocked_ads: Number(platformState.blocked_ads || 0),
-                blocked_threats: Number(platformState.blocked_threats || 0)
+                blocked_threats: Number(platformState.blocked_threats || 0),
+                blocked_ads_human: formatHumanCounter(platformState.blocked_ads || 0),
+                blocked_threats_human: formatHumanCounter(platformState.blocked_threats || 0)
             }
         },
+        capabilities: {
+            unified_toggle: true,
+            separate_category_toggles: false,
+            local_enforcement_available: false,
+            counters_only_until_local_filter_is_enabled: true
+        },
+        status,
         limits: {
             ...DEFAULT_LIMITS,
             developer_mode: Boolean(developerMode)
@@ -262,35 +344,24 @@ function shapeState(userState, platform, developerMode) {
 
 function extractToggles(payload = {}) {
     const toggles = payload.toggles && typeof payload.toggles === 'object' ? payload.toggles : payload;
-    const patch = {};
+    const providedKeys = [
+        'protection_enabled',
+        'network_enabled',
+        'ad_block_enabled',
+        'unsafe_sites_enabled'
+    ].filter((key) => toggles[key] !== undefined);
 
-    if (toggles.protection_enabled !== undefined || toggles.network_enabled !== undefined) {
-        const value = toggles.protection_enabled ?? toggles.network_enabled;
-        if (typeof value !== 'boolean') {
-            throw createHttpError(400, 'protection_enabled must be boolean', 'INVALID_TOGGLE');
-        }
-        patch.protection_enabled = value;
-    }
-
-    if (toggles.ad_block_enabled !== undefined) {
-        if (typeof toggles.ad_block_enabled !== 'boolean') {
-            throw createHttpError(400, 'ad_block_enabled must be boolean', 'INVALID_TOGGLE');
-        }
-        patch.ad_block_enabled = toggles.ad_block_enabled;
-    }
-
-    if (toggles.unsafe_sites_enabled !== undefined) {
-        if (typeof toggles.unsafe_sites_enabled !== 'boolean') {
-            throw createHttpError(400, 'unsafe_sites_enabled must be boolean', 'INVALID_TOGGLE');
-        }
-        patch.unsafe_sites_enabled = toggles.unsafe_sites_enabled;
-    }
-
-    if (Object.keys(patch).length === 0) {
+    if (providedKeys.length === 0) {
         throw createHttpError(400, 'at least one toggle must be provided', 'EMPTY_TOGGLE_PATCH');
     }
 
-    return patch;
+    for (const key of providedKeys) {
+        if (!hasBoolean(toggles[key])) {
+            throw createHttpError(400, `${key} must be boolean`, 'INVALID_TOGGLE');
+        }
+    }
+
+    return normalizeUnifiedToggles(toggles, true);
 }
 
 async function resolveContext(userId, platform) {

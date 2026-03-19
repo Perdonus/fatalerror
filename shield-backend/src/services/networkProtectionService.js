@@ -5,6 +5,7 @@ const https = require('https');
 const path = require('path');
 
 const pool = require('../db/pool');
+const { getUserDeveloperModeState } = require('./accountEntitlementsService');
 
 const STORE_PATH = path.resolve(__dirname, '../data/network-protection.json');
 const FEED_CACHE_DIR = path.resolve(__dirname, '../data/network-protection-feeds');
@@ -459,65 +460,9 @@ function normalizeFeedFormat(format) {
     return normalized;
 }
 
-function isUserInDevMode(user) {
-    if (!user) {
-        return false;
-    }
-    if (String(process.env.DEEP_SCAN_DEV_MODE || '').trim() === '1') {
-        return true;
-    }
-
-    const forcedIds = parseCsvSet(process.env.DEEP_SCAN_DEV_USER_IDS);
-    const forcedEmails = parseCsvSet(process.env.DEEP_SCAN_DEV_USER_EMAILS, (entry) => entry.toLowerCase());
-    if (forcedIds.has(String(user.id || '').trim())) {
-        return true;
-    }
-    if (forcedEmails.has(String(user.email || '').trim().toLowerCase())) {
-        return true;
-    }
-
-    return Number(user.is_dev_mode || user.is_developer_mode || 0) === 1;
-}
-
 async function getUserDevMode(userId) {
-    let rows;
-    try {
-        [rows] = await pool.query(
-            `SELECT id, email, is_dev_mode, is_developer_mode
-             FROM users
-             WHERE id = ?
-             LIMIT 1`,
-            [userId]
-        );
-    } catch (error) {
-        if (String(error?.code || '') === 'ER_BAD_FIELD_ERROR') {
-            try {
-                [rows] = await pool.query(
-                    `SELECT id, email, is_dev_mode
-                     FROM users
-                     WHERE id = ?
-                     LIMIT 1`,
-                    [userId]
-                );
-            } catch (fallbackError) {
-                if (String(fallbackError?.code || '') === 'ER_BAD_FIELD_ERROR') {
-                    [rows] = await pool.query(
-                        `SELECT id, email
-                         FROM users
-                         WHERE id = ?
-                         LIMIT 1`,
-                        [userId]
-                    );
-                } else {
-                    throw fallbackError;
-                }
-            }
-        } else {
-            throw error;
-        }
-    }
-
-    if (!Array.isArray(rows) || rows.length === 0) {
+    const state = await getUserDeveloperModeState(userId);
+    if (!state.exists) {
         return {
             exists: false,
             developerMode: false
@@ -526,7 +471,7 @@ async function getUserDevMode(userId) {
 
     return {
         exists: true,
-        developerMode: isUserInDevMode(rows[0])
+        developerMode: state.developerMode
     };
 }
 

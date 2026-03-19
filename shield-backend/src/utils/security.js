@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const argon2 = require('argon2');
+const { sanitizeAccountUser } = require('../services/accountEntitlementsService');
 
 const ACCESS_TOKEN_TTL_MINUTES = parseInt(process.env.ACCESS_TOKEN_TTL_MINUTES || '15', 10);
 const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '30', 10);
@@ -55,13 +56,7 @@ function signAccessToken(user, sessionId, now = nowMs()) {
 }
 
 function sanitizeUser(user) {
-    return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        is_premium: !!user.is_premium,
-        premium_expires_at: user.premium_expires_at
-    };
+    return sanitizeAccountUser(user);
 }
 
 module.exports = {

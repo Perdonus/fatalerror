@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_premium TINYINT(1) DEFAULT 0,
     premium_expires_at BIGINT DEFAULT NULL,
     is_dev_mode TINYINT(1) DEFAULT 0,
+    is_developer_mode TINYINT(1) DEFAULT 0,
+    developer_mode_activated_at BIGINT DEFAULT NULL,
     last_login_at BIGINT DEFAULT NULL
 );
 

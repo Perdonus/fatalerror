@@ -19,6 +19,15 @@ const {
     clearFailures
 } = require('../utils/loginAttempts');
 const { sendMail, isMailConfigured, queueMailTask } = require('../utils/mail');
+const { getUserDeepScanLimits } = require('../services/deepScanService');
+const {
+    fetchUserById,
+    fetchUserByEmail,
+    fetchSessionAccount,
+    activateDeveloperMode,
+    deactivateDeveloperMode,
+    hasConfiguredDeveloperKeys
+} = require('../services/accountEntitlementsService');
 
 const AUTH_CODE_TTL_MINUTES = parseInt(process.env.AUTH_CODE_TTL_MINUTES || '15', 10);
 const PASSWORD_RESET_TTL_MINUTES = parseInt(process.env.PASSWORD_RESET_TTL_MINUTES || '30', 10);
@@ -138,6 +147,36 @@ function parsePayload(jsonValue) {
     }
 }
 
+async function selectUserByEmail(db, email, { withPassword = false } = {}) {
+    return fetchUserByEmail(email, {
+        db,
+        includePasswordHash: withPassword
+    });
+}
+
+async function selectUserById(db, userId, { includeCreatedAt = false } = {}) {
+    return fetchUserById(userId, {
+        db,
+        includeCreatedAt
+    });
+}
+
+async function selectRefreshSession(db, sessionId) {
+    const session = await fetchSessionAccount(sessionId, db);
+    if (!session) {
+        return null;
+    }
+    return {
+        ...session.user,
+        id: session.id,
+        user_id: session.user_id,
+        device_id: session.device_id,
+        refresh_token_hash: session.refresh_token_hash,
+        refresh_expires_at: session.refresh_expires_at,
+        revoked_at: session.revoked_at
+    };
+}
+
 async function createSession(db, user, req, deviceId) {
     const id = uuidv4();
     const refreshToken = createRefreshToken();
@@ -175,6 +214,33 @@ function buildAuthResponse(user, session) {
         access_token_expires_at: access.expiresAt,
         refresh_token_expires_at: session.refreshExpiresAt,
         user: sanitizeUser(user)
+    };
+}
+
+async function buildDeveloperModePayload(userId, user = null) {
+    const resolvedUser = user || await fetchUserById(userId);
+    if (!resolvedUser) {
+        return null;
+    }
+
+    let limits = null;
+    try {
+        const deepScanLimits = await getUserDeepScanLimits(userId);
+        limits = deepScanLimits?.error ? null : deepScanLimits;
+    } catch (error) {
+        console.error('Developer mode limits fetch error:', error);
+    }
+
+    return {
+        user: sanitizeUser(resolvedUser),
+        developer_mode: {
+            enabled: !!resolvedUser.is_developer_mode,
+            source: resolvedUser.developer_mode_source || 'none',
+            activated_at: resolvedUser.developer_mode_activated_at,
+            scope: 'account'
+        },
+        activation_available: hasConfiguredDeveloperKeys(),
+        limits
     };
 }
 
@@ -482,7 +548,8 @@ router.post('/register/verify', async (req, res) => {
             name: String(payload.name).trim(),
             email: challenge.email,
             is_premium: false,
-            premium_expires_at: null
+            premium_expires_at: null,
+            is_developer_mode: false
         };
         const now = nowMs();
         await connection.query(
@@ -525,17 +592,12 @@ router.post('/login/start', async (req, res) => {
             });
         }
 
-        const [rows] = await pool.query(
-            'SELECT id, name, email, password_hash, is_premium, premium_expires_at FROM users WHERE email = ?',
-            [normalizedEmail]
-        );
+        const user = await selectUserByEmail(pool, normalizedEmail, { withPassword: true });
 
-        if (rows.length === 0) {
+        if (!user) {
             await registerFailure(normalizedEmail, ipAddress);
             return res.status(401).json({ error: 'Invalid email or password' });
         }
-
-        const user = rows[0];
         const valid = await verifyPassword(user.password_hash, password);
         if (!valid) {
             await registerFailure(normalizedEmail, ipAddress);
@@ -609,15 +671,10 @@ router.post('/login/verify', async (req, res) => {
         return;
     }
 
-    const [rows] = await pool.query(
-        'SELECT id, name, email, is_premium, premium_expires_at FROM users WHERE id = ?',
-        [challenge.user_id]
-    );
-    if (rows.length === 0) {
+    const user = await selectUserById(pool, challenge.user_id);
+    if (!user) {
         return res.status(404).json({ error: 'User not found' });
     }
-
-    const user = rows[0];
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -886,7 +943,14 @@ router.post('/register', async (req, res) => {
             [id, name.trim(), normalizedEmail, hash, now, now]
         );
 
-        const user = { id, name: name.trim(), email: normalizedEmail, is_premium: false, premium_expires_at: null };
+        const user = {
+            id,
+            name: name.trim(),
+            email: normalizedEmail,
+            is_premium: false,
+            premium_expires_at: null,
+            is_developer_mode: false
+        };
         const session = await createSession(pool, user, req, deviceId);
 
         res.status(201).json(buildAuthResponse(user, session));
@@ -915,17 +979,12 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        const [rows] = await pool.query(
-            'SELECT id, name, email, password_hash, is_premium, premium_expires_at FROM users WHERE email = ?',
-            [normalizedEmail]
-        );
+        const user = await selectUserByEmail(pool, normalizedEmail, { withPassword: true });
 
-        if (rows.length === 0) {
+        if (!user) {
             await registerFailure(normalizedEmail, ipAddress);
             return res.status(401).json({ error: 'Invalid email or password' });
         }
-
-        const user = rows[0];
         const valid = await verifyPassword(user.password_hash, password);
         if (!valid) {
             await registerFailure(normalizedEmail, ipAddress);
@@ -963,29 +1022,11 @@ router.post('/refresh', async (req, res) => {
             return res.status(400).json({ error: 'refresh_token and session_id required' });
         }
 
-        const [rows] = await pool.query(
-            `SELECT
-                s.id,
-                s.user_id,
-                s.device_id,
-                s.refresh_token_hash,
-                s.refresh_expires_at,
-                s.revoked_at,
-                u.name,
-                u.email,
-                u.is_premium,
-                u.premium_expires_at
-             FROM auth_sessions s
-             JOIN users u ON u.id = s.user_id
-             WHERE s.id = ?`,
-            [session_id]
-        );
+        const session = await selectRefreshSession(pool, session_id);
 
-        if (rows.length === 0) {
+        if (!session) {
             return res.status(401).json({ error: 'Session not found' });
         }
-
-        const session = rows[0];
         if (session.revoked_at) {
             return res.status(401).json({ error: 'Session revoked' });
         }
@@ -1027,7 +1068,8 @@ router.post('/refresh', async (req, res) => {
             name: session.name,
             email: session.email,
             is_premium: session.is_premium,
-            premium_expires_at: session.premium_expires_at
+            premium_expires_at: session.premium_expires_at,
+            is_developer_mode: session.is_developer_mode
         }, {
             id: session.id,
             refreshToken: nextRefreshToken,
@@ -1053,13 +1095,10 @@ router.post('/logout', auth, async (req, res) => {
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
     try {
-        const [rows] = await pool.query(
-            'SELECT id, name, email, is_premium, premium_expires_at, created_at FROM users WHERE id = ?',
-            [req.userId]
-        );
-        if (rows.length === 0)
+        const user = await selectUserById(pool, req.userId, { includeCreatedAt: true });
+        if (!user)
             return res.status(404).json({ error: 'User not found' });
-        res.json({ success: true, user: sanitizeUser(rows[0]) });
+        res.json({ success: true, user: sanitizeUser(user) });
     } catch (e) {
         res.status(500).json({ error: 'Server error' });
     }
@@ -1079,6 +1118,94 @@ router.put('/me', auth, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+
+async function handleDeveloperModeState(req, res) {
+    try {
+        const payload = await buildDeveloperModePayload(req.userId);
+        if (!payload) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        return res.json({ success: true, ...payload });
+    } catch (e) {
+        console.error('Developer state error:', e);
+        return res.status(500).json({ error: 'Server error' });
+    }
+}
+
+async function handleDeveloperModeActivate(req, res) {
+    try {
+        const key = String(req.body?.key || '').trim();
+        if (!key) {
+            return res.status(400).json({ error: 'Developer key required' });
+        }
+
+        const activation = await activateDeveloperMode(req.userId, key, pool);
+        if (!activation.success) {
+            if (activation.code === 'DEVELOPER_KEY_NOT_CONFIGURED') {
+                return res.status(503).json({ error: 'Developer mode is not configured', code: activation.code });
+            }
+            if (activation.code === 'INVALID_DEVELOPER_KEY') {
+                return res.status(403).json({ error: 'Invalid developer key', code: activation.code });
+            }
+            if (activation.code === 'USER_NOT_FOUND') {
+                return res.status(404).json({ error: 'User not found', code: activation.code });
+            }
+            return res.status(503).json({ error: 'Developer mode is not configured' });
+        }
+
+        const payload = await buildDeveloperModePayload(req.userId, activation.user);
+        if (!payload) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Developer mode enabled',
+            ...payload
+        });
+    } catch (e) {
+        console.error('Developer activate error:', e);
+        return res.status(500).json({ error: 'Server error' });
+    }
+}
+
+async function handleDeveloperModeDeactivate(req, res) {
+    try {
+        const deactivation = await deactivateDeveloperMode(req.userId, pool);
+        if (!deactivation.success) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const payload = await buildDeveloperModePayload(req.userId, deactivation.user);
+        if (!payload) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Developer mode disabled',
+            ...payload
+        });
+    } catch (e) {
+        console.error('Developer deactivate error:', e);
+        return res.status(500).json({ error: 'Server error' });
+    }
+}
+
+// GET /api/auth/developer-mode
+router.get('/developer-mode', auth, handleDeveloperModeState);
+// Legacy alias
+router.get('/developer/state', auth, handleDeveloperModeState);
+
+// POST /api/auth/developer-mode/activate
+router.post('/developer-mode/activate', auth, handleDeveloperModeActivate);
+// Legacy alias
+router.post('/developer/activate', auth, handleDeveloperModeActivate);
+
+// POST /api/auth/developer-mode/deactivate
+router.post('/developer-mode/deactivate', auth, handleDeveloperModeDeactivate);
+// Legacy alias
+router.post('/developer/deactivate', auth, handleDeveloperModeDeactivate);
 
 // DELETE /api/auth/me
 router.delete('/me', auth, async (req, res) => {

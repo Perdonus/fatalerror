@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const pool = require('../db/pool');
 const { nowMs } = require('../utils/security');
+const { getUserDeveloperModeState } = require('./accountEntitlementsService');
 const {
     normalizeDeepScanPayload,
     validateDeepScanPayload,
@@ -786,59 +787,23 @@ function getUtcDayWindow(now = nowMs()) {
     };
 }
 
-function parseCsvSet(value, normalizer = (entry) => entry) {
-    return new Set(
-        String(value || '')
-            .split(',')
-            .map((entry) => normalizer(String(entry || '').trim()))
-            .filter(Boolean)
-    );
-}
-
-function isUserInDevMode(user) {
-    if (!user) {
-        return false;
+function formatRemainingWait(ms) {
+    const safeMs = Math.max(Number(ms || 0), 0);
+    const totalMinutes = Math.ceil(safeMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours <= 0) {
+        return `${minutes} мин`;
     }
-    if (String(process.env.DEEP_SCAN_DEV_MODE || '').trim() === '1') {
-        return true;
+    if (minutes <= 0) {
+        return `${hours} ч`;
     }
-
-    const forcedIds = parseCsvSet(process.env.DEEP_SCAN_DEV_USER_IDS);
-    const forcedEmails = parseCsvSet(process.env.DEEP_SCAN_DEV_USER_EMAILS, (entry) => entry.toLowerCase());
-    if (forcedIds.has(String(user.id || '').trim())) {
-        return true;
-    }
-    if (forcedEmails.has(String(user.email || '').trim().toLowerCase())) {
-        return true;
-    }
-
-    return Number(user.is_dev_mode || 0) === 1;
+    return `${hours} ч ${minutes} мин`;
 }
 
 async function getUserDevMode(userId, db = pool) {
-    let rows;
-    try {
-        [rows] = await db.query(
-            `SELECT id, email, is_dev_mode
-             FROM users
-             WHERE id = ?
-             LIMIT 1`,
-            [userId]
-        );
-    } catch (error) {
-        if (String(error?.code || '') === 'ER_BAD_FIELD_ERROR') {
-            [rows] = await db.query(
-                `SELECT id, email
-                 FROM users
-                 WHERE id = ?
-                 LIMIT 1`,
-                [userId]
-            );
-        } else {
-            throw error;
-        }
-    }
-    if (rows.length === 0) {
+    const state = await getUserDeveloperModeState(userId, db);
+    if (!state.exists) {
         return {
             exists: false,
             devMode: false
@@ -846,7 +811,8 @@ async function getUserDevMode(userId, db = pool) {
     }
     return {
         exists: true,
-        devMode: isUserInDevMode(rows[0])
+        devMode: state.developerMode,
+        source: state.source || 'none'
     };
 }
 
@@ -918,11 +884,12 @@ async function getUserDeepScanLimits(userId) {
     const modes = Object.fromEntries(
         Object.keys(SCAN_MODE_LIMITS).map((mode) => {
             const used = usageMap.get(mode) || 0;
+            const limit = SCAN_MODE_LIMITS[mode] ?? null;
             return [mode, {
-                limit: null,
+                limit,
                 used,
-                remaining: null,
-                enforced: false
+                remaining: devMode || limit === null ? null : Math.max(limit - used, 0),
+                enforced: !devMode && limit !== null
             }];
         })
     );
@@ -930,7 +897,8 @@ async function getUserDeepScanLimits(userId) {
     return {
         user_id: userId,
         dev_mode: devMode,
-        limits_disabled: true,
+        is_developer_mode: devMode,
+        limits_disabled: devMode,
         timezone: 'UTC',
         day_key: window.dayKey,
         day_start_at: window.startAt,
@@ -1344,7 +1312,31 @@ async function createDeepScanJob(userId, payload) {
             return { error: 'User not found', code: 'USER_NOT_FOUND', status_code: 404 };
         }
 
-        await incrementDailyUsage(connection, userId, normalized.scanMode, window.dayKey, now);
+        const limit = SCAN_MODE_LIMITS[normalized.scanMode] ?? null;
+        if (userMode.devMode || limit === null) {
+            await incrementDailyUsage(connection, userId, normalized.scanMode, window.dayKey, now);
+        } else {
+            const allowed = await consumeDailyUsageWithLimit(connection, userId, normalized.scanMode, window.dayKey, limit, now);
+            if (!allowed) {
+                const retryAfterMs = Math.max(window.endAt - now, 0);
+                await connection.rollback();
+                return {
+                    error: 'Дневной лимит проверок исчерпан.',
+                    code: 'DAILY_LIMIT_REACHED',
+                    status_code: 429,
+                    retry_after_ms: retryAfterMs,
+                    retry_after_text: formatRemainingWait(retryAfterMs),
+                    limits: {
+                        dev_mode: false,
+                        is_developer_mode: false,
+                        limit,
+                        scan_mode: normalized.scanMode,
+                        day_key: window.dayKey,
+                        day_end_at: window.endAt
+                    }
+                };
+            }
+        }
 
         await connection.query(
             `INSERT INTO deep_scan_jobs

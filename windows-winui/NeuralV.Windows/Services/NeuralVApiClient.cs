@@ -19,7 +19,7 @@ public sealed class NeuralVApiClient : IDisposable
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri("https://sosiskibot.ru/basedata/"),
-            Timeout = TimeSpan.FromSeconds(45)
+            Timeout = TimeSpan.FromSeconds(90)
         };
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
@@ -107,6 +107,21 @@ public sealed class NeuralVApiClient : IDisposable
         return response.error is not null
             ? (null, response.error)
             : (ParseSession(response.root, current.DeviceId), null);
+    }
+
+    public async Task<(bool ok, string? message, string? error)> RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var response = await PostJsonAsync("api/auth/password-reset/request", new
+        {
+            email
+        }, cancellationToken);
+
+        if (response.error is not null)
+        {
+            return (false, null, response.error);
+        }
+
+        return (true, response.root.ReadString("message"), null);
     }
 
     public async Task<bool> LogoutAsync(SessionData current, CancellationToken cancellationToken = default)
@@ -390,8 +405,19 @@ public sealed class NeuralVApiClient : IDisposable
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         }
 
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        return await ParseResponseAsync(response, cancellationToken);
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            return await ParseResponseAsync(response, cancellationToken);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException("Сервер слишком долго отвечает. Попробуй ещё раз.", ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException("Не удалось связаться с сервером NeuralV.", ex);
+        }
     }
 
     private static async Task<(JsonElement? root, string? error)> ParseResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)

@@ -858,6 +858,9 @@ public sealed partial class MainWindow : Window
         cardStack.Children.Add(CreateFieldLabel("Пароль"));
         LoginPasswordBox = CreatePasswordBox();
         cardStack.Children.Add(LoginPasswordBox);
+        var resetButton = CreateTonalButton("Сбросить пароль", OnRequestPasswordResetClick);
+        resetButton.HorizontalAlignment = HorizontalAlignment.Stretch;
+        cardStack.Children.Add(resetButton);
         cardStack.Children.Add(CreateActionRow(
             CreateTonalButton("Назад", OnBackToWelcomeClick),
             CreateFilledButton("Продолжить", OnStartLoginClick)));
@@ -2255,10 +2258,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            _challenge = ticket;
-            CodeHintText.Text = $"Код подтверждения отправлен на {ticket.Email}.";
-            SetStatus(null);
-            ShowScreen(AppScreen.Code);
+            OpenCodeChallenge(ticket, $"Код подтверждения отправлен на {ticket.Email}.");
         }
         catch (Exception ex)
         {
@@ -2294,14 +2294,46 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            _challenge = ticket;
-            CodeHintText.Text = $"Код подтверждения отправлен на {ticket.Email}.";
-            SetStatus(null);
-            ShowScreen(AppScreen.Code);
+            OpenCodeChallenge(ticket, $"Код подтверждения отправлен на {ticket.Email}.");
         }
         catch (Exception ex)
         {
             WindowsLog.Error("OnStartRegisterClick failed", ex);
+            SetStatus(ex.Message);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private void OpenCodeChallenge(ChallengeTicket ticket, string hint)
+    {
+        _challenge = ticket;
+        EnsureScreenReady(AppScreen.Code);
+        SafeSetText(CodeHintText, hint);
+        SetStatus(null);
+        ShowScreen(AppScreen.Code);
+    }
+
+    private async void OnRequestPasswordResetClick(object sender, RoutedEventArgs e)
+    {
+        var email = LoginEmailBox?.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            SetStatus("Сначала введи e-mail для сброса пароля.");
+            return;
+        }
+
+        SetBusy(true, "Отправляем письмо для сброса");
+        try
+        {
+            var result = await _apiClient.RequestPasswordResetAsync(email);
+            SetStatus(result.error ?? result.message ?? "Проверь почту: письмо для сброса уже отправлено.");
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnRequestPasswordResetClick failed", ex);
             SetStatus(ex.Message);
         }
         finally
@@ -3408,7 +3440,8 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(1),
             Padding = new Thickness(16, 14, 16, 14),
             MinHeight = 56,
-            CornerRadius = new CornerRadius(18)
+            CornerRadius = new CornerRadius(18),
+            VerticalContentAlignment = VerticalAlignment.Center
         };
     }
 
@@ -3422,7 +3455,9 @@ public sealed partial class MainWindow : Window
             BorderThickness = new Thickness(1),
             Padding = new Thickness(16, 14, 16, 14),
             MinHeight = 56,
-            CornerRadius = new CornerRadius(18)
+            CornerRadius = new CornerRadius(18),
+            PasswordRevealMode = PasswordRevealMode.Visible,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
     }
 

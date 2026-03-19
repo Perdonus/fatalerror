@@ -98,7 +98,17 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
         options ??= new WindowsWindowLifecycleOptions();
         _title = string.IsNullOrWhiteSpace(options.Title) ? "NeuralV" : options.Title.Trim();
-        EnsureTrayWindow();
+        try
+        {
+            EnsureTrayWindow();
+        }
+        catch (Exception ex)
+        {
+            _trayWindow = IntPtr.Zero;
+            _trayWindowClassRegistered = false;
+            _trayWindowClassName = null;
+            WindowsLog.Error("Tray helper window init failed, falling back to main HWND", ex);
+        }
         _minimumWidth = Math.Max(640, options.MinimumWidth);
         _minimumHeight = Math.Max(520, options.MinimumHeight);
         _shouldMinimizeToTray = options.ShouldMinimizeToTray;
@@ -116,6 +126,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     }
 
     public bool IsHiddenToTray => _hiddenToTray;
+    public bool IsAttached => _attached;
 
     public void SetMinimumSize(int width, int height)
     {

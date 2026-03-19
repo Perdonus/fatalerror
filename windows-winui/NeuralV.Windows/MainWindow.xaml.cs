@@ -3365,8 +3365,9 @@ public sealed partial class MainWindow : Window
 
     private void HookWindowLifecycle()
     {
-        if (App.WindowLifecycle is null)
+        if (App.WindowLifecycle is null || !App.WindowLifecycle.IsAttached)
         {
+            WindowsLog.Info("Window lifecycle bindings skipped: service is unavailable");
             return;
         }
 

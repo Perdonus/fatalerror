@@ -23,6 +23,14 @@ namespace NeuralV.Windows;
 
 public sealed partial class MainWindow : Window
 {
+    private enum ScanEntryChoice
+    {
+        File,
+        Folder
+    }
+
+    private readonly record struct ScanEntryTarget(string TargetName, string TargetPath, string ArtifactKind);
+
     private sealed class FloatingShape
     {
         public Border Element { get; init; } = default!;
@@ -118,6 +126,8 @@ public sealed partial class MainWindow : Window
     private Border ActiveScanCard = default!;
     private TextBlock ActiveScanCardTitleText = default!;
     private TextBlock ActiveScanCardMetaText = default!;
+    private Border HomeScanResultsCard = default!;
+    private StackPanel HomeScanResultsHost = default!;
     private FrameworkElement HomePrimaryContent = default!;
     private Border HomeNetworkCard = default!;
     private ToggleSwitch NetworkProtectionToggle = default!;
@@ -130,6 +140,7 @@ public sealed partial class MainWindow : Window
     private TextBlock ScanProgressText = default!;
     private TextBlock ScanCountsText = default!;
     private TextBlock ScanTargetText = default!;
+    private ProgressRing ScanProgressRing = default!;
     private ProgressBar ScanProgressBar = default!;
     private StackPanel ScanTimelineHost = default!;
 
@@ -371,6 +382,8 @@ public sealed partial class MainWindow : Window
         {
             _historyItems.Add("История появится после первой завершённой проверки.");
         }
+
+        UpdateHomeState();
     }
 
     private NetworkProtectionState BuildLocalNetworkFallback()
@@ -957,6 +970,13 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(ActiveScanCard, 0);
         desktopHost.Children.Add(ActiveScanCard);
 
+        HomeScanResultsCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 28, new Thickness(20));
+        HomeScanResultsCard.Visibility = Visibility.Collapsed;
+        HomeScanResultsHost = new StackPanel { Spacing = 14 };
+        HomeScanResultsCard.Child = HomeScanResultsHost;
+        Grid.SetRow(HomeScanResultsCard, 0);
+        desktopHost.Children.Add(HomeScanResultsCard);
+
         var dashboard = new Grid
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -1474,71 +1494,17 @@ public sealed partial class MainWindow : Window
     private Grid BuildFallbackScanOverlay()
     {
         WindowsLog.Info("BuildFallbackScanOverlay: begin");
-        var overlay = new Grid
-        {
-            Background = ThemeBrush("AppOverlayScrimBrush"),
-            Visibility = Visibility.Collapsed
-        };
-
-        var frame = new Border
-        {
-            Background = ThemeBrush("AppSurfaceStrongBrush"),
-            BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(24),
-            Padding = new Thickness(20),
-            MaxWidth = 760,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        frame.MaxWidth = 720;
-        overlay.Children.Add(frame);
-        WindowsLog.Info("BuildFallbackScanOverlay: frame ready");
-
-        var stack = new StackPanel { Spacing = 14 };
-        ScanModeText = CreateTitleText("Проверка", 24);
-        ScanStageText = CreateBodyText("AppMutedTextBrush");
-        ScanTargetText = CreateBodyText("AppMutedTextBrush");
-        ScanProgressText = CreateTitleText("0%", 34);
-        ScanCountsText = CreateBodyText("AppMutedTextBrush");
-        WindowsLog.Info("BuildFallbackScanOverlay: labels ready");
-        ScanProgressBar = null!;
-        ScanTimelineHost = new StackPanel { Spacing = 10 };
-        WindowsLog.Info("BuildFallbackScanOverlay: progress/timeline ready");
-
-        var timelineScroll = new ScrollViewer
-        {
-            MaxHeight = 320,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = ScanTimelineHost
-        };
-        WindowsLog.Info("BuildFallbackScanOverlay: scroll ready");
-
-        stack.Children.Add(ScanModeText);
-        stack.Children.Add(ScanStageText);
-        stack.Children.Add(ScanTargetText);
-        stack.Children.Add(ScanProgressText);
-        stack.Children.Add(ScanCountsText);
-        stack.Children.Add(timelineScroll);
-
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 12
-        };
-        var cancelButton = CreateSafeOverlayButton("Остановить", OnCancelScanClick, true);
-        var hideButton = CreateSafeOverlayButton("Скрыть", OnHideScanOverlayClick, false);
-        actions.Children.Add(cancelButton);
-        actions.Children.Add(hideButton);
-        stack.Children.Add(actions);
-
-        frame.Child = stack;
+        var overlay = BuildCompactScanOverlay(760, 44, 260);
         WindowsLog.Info("BuildFallbackScanOverlay: complete");
         return overlay;
     }
 
     private Grid BuildMinimalScanOverlay()
+    {
+        return BuildCompactScanOverlay(680, 38, 224);
+    }
+
+    private Grid BuildCompactScanOverlay(double maxWidth, double progressTextSize, double ringSize)
     {
         var overlay = new Grid
         {
@@ -1551,28 +1517,42 @@ public sealed partial class MainWindow : Window
             Background = ThemeBrush("AppSurfaceStrongBrush"),
             BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(24),
-            Padding = new Thickness(20),
-            MaxWidth = 680,
+            CornerRadius = new CornerRadius(30),
+            Padding = new Thickness(24),
+            MaxWidth = maxWidth,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
+        overlay.Children.Add(frame);
 
-        var stack = new StackPanel { Spacing = 12 };
-        ScanModeText = CreateTitleText("Проверка", 24);
-        ScanStageText = CreateBodyText("AppMutedTextBrush");
-        ScanTargetText = CreateBodyText("AppMutedTextBrush");
-        ScanProgressText = CreateTitleText("0%", 32);
-        ScanCountsText = CreateBodyText("AppMutedTextBrush");
-        ScanProgressBar = null!;
-        ScanTimelineHost = new StackPanel { Spacing = 10 };
-
-        var timelineScroll = new ScrollViewer
+        var layout = new Grid
         {
-            MaxHeight = 300,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = ScanTimelineHost
+            ColumnSpacing = 36,
+            RowSpacing = 24
+        };
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var leftStack = new StackPanel
+        {
+            Spacing = 24,
+            MaxWidth = 340,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ScanModeText = CreateTitleText("Идёт проверка...", 30);
+        leftStack.Children.Add(ScanModeText);
+
+        ScanStageText = CreateBodyText("AppMutedTextBrush");
+        ScanStageText.Visibility = Visibility.Collapsed;
+        ScanTargetText = CreateBodyText("AppMutedTextBrush");
+        ScanTargetText.Visibility = Visibility.Collapsed;
+        ScanCountsText = CreateBodyText("AppMutedTextBrush");
+        ScanCountsText.Visibility = Visibility.Collapsed;
+        ScanProgressBar = null!;
+        ScanTimelineHost = new StackPanel
+        {
+            Spacing = 10,
+            Visibility = Visibility.Collapsed
         };
 
         var actions = new StackPanel
@@ -1580,18 +1560,65 @@ public sealed partial class MainWindow : Window
             Orientation = Orientation.Horizontal,
             Spacing = 12
         };
-        actions.Children.Add(CreateSafeOverlayButton("Остановить", OnCancelScanClick, true));
-        actions.Children.Add(CreateSafeOverlayButton("Скрыть", OnHideScanOverlayClick, false));
+        var cancelButton = CreateSafeOverlayButton("Остановить", OnCancelScanClick, true);
+        cancelButton.MinWidth = 150;
+        var hideButton = CreateSafeOverlayButton("Скрыть", OnHideScanOverlayClick, false);
+        hideButton.MinWidth = 150;
+        actions.Children.Add(cancelButton);
+        actions.Children.Add(hideButton);
+        leftStack.Children.Add(actions);
+        layout.Children.Add(leftStack);
 
-        stack.Children.Add(ScanModeText);
-        stack.Children.Add(ScanStageText);
-        stack.Children.Add(ScanTargetText);
-        stack.Children.Add(ScanProgressText);
-        stack.Children.Add(ScanCountsText);
-        stack.Children.Add(timelineScroll);
-        stack.Children.Add(actions);
-        frame.Child = stack;
-        overlay.Children.Add(frame);
+        var ringHost = new Grid
+        {
+            Width = ringSize,
+            Height = ringSize,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ringHost.Children.Add(new Border
+        {
+            Margin = new Thickness(18),
+            CornerRadius = new CornerRadius((ringSize - 36) / 2),
+            Background = ThemeBrush("AppAccentSoftGradientBrush"),
+            Opacity = 0.52
+        });
+        ringHost.Children.Add(new Border
+        {
+            Margin = new Thickness(28),
+            CornerRadius = new CornerRadius((ringSize - 56) / 2),
+            Background = ThemeBrush("AppSurfaceRaisedBrush"),
+            BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
+            BorderThickness = new Thickness(1)
+        });
+        ScanProgressRing = new ProgressRing
+        {
+            Width = ringSize - 8,
+            Height = ringSize - 8,
+            IsActive = true,
+            Foreground = ThemeBrush("AppPrimaryContainerBrush"),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ringHost.Children.Add(ScanProgressRing);
+        var progressCore = new Border
+        {
+            Width = ringSize * 0.56,
+            Height = ringSize * 0.56,
+            CornerRadius = new CornerRadius(ringSize * 0.28),
+            Background = ThemeBrush("AppSurfaceStrongBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1)
+        };
+        ScanProgressText = CreateTitleText("0%", progressTextSize, TextAlignment.Center);
+        ScanProgressText.HorizontalAlignment = HorizontalAlignment.Center;
+        ScanProgressText.VerticalAlignment = VerticalAlignment.Center;
+        progressCore.Child = ScanProgressText;
+        ringHost.Children.Add(progressCore);
+        Grid.SetColumn(ringHost, 1);
+        layout.Children.Add(ringHost);
+
+        frame.Child = layout;
         return overlay;
     }
 
@@ -1741,7 +1768,12 @@ public sealed partial class MainWindow : Window
         }
 
         var running = _activeScan is not null && !_activeScan.IsFinished;
+        var resultScan = running ? null : ResolveHomeResultScan();
         ActiveScanCard.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        if (HomeScanResultsCard is not null)
+        {
+            HomeScanResultsCard.Visibility = !running && resultScan is not null ? Visibility.Visible : Visibility.Collapsed;
+        }
         if (HomePrimaryContent is not null)
         {
             HomePrimaryContent.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
@@ -1749,20 +1781,114 @@ public sealed partial class MainWindow : Window
         if (running && _activeScan is not null)
         {
             var progress = WindowsTrayProgressService.EstimateProgressPercent(_activeScan);
-            ActiveScanCardTitleText.Text = _activeScan.Mode switch
-            {
-                "FULL" => "Глубокая проверка продолжается",
-                "SELECTIVE" => "Выборочная проверка продолжается",
-                "ARTIFACT" => "Проверка программы продолжается",
-                _ => "Проверка продолжается"
-            };
+            ActiveScanCardTitleText.Text = ResolveRunningScanTitle(_activeScan.EffectiveMode);
             ActiveScanCardMetaText.Text = $"{progress}% · {(_activeScan.Message ?? _activeScan.Status)}";
         }
+        RenderHomeScanResults(resultScan);
 
         App.WindowLifecycle?.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
         App.WindowLifecycle?.RefreshTrayState();
         UpdateNetworkUi();
     }
+
+    private DesktopScanState? ResolveHomeResultScan()
+    {
+        if (_activeScan is { IsFinished: true } finishedScan)
+        {
+            if (finishedScan.Findings.Count > 0)
+            {
+                return finishedScan;
+            }
+        }
+
+        if (_historyRecords.Count == 0)
+        {
+            return null;
+        }
+
+        var latest = _historyRecords[0];
+        if (latest.Findings.Count == 0)
+        {
+            return null;
+        }
+
+        return new DesktopScanState
+        {
+            Id = latest.Id,
+            Mode = latest.Mode,
+            ClientMode = latest.Mode,
+            Status = "COMPLETED",
+            Verdict = latest.Verdict,
+            Message = latest.Message,
+            SurfacedFindings = latest.Findings.Count,
+            CompletedAt = latest.SavedAt.ToUnixTimeMilliseconds(),
+            Findings = latest.Findings.Select(item => new DesktopScanFinding
+            {
+                Id = $"{latest.Id}-{item.Title}",
+                Title = item.Title,
+                Verdict = item.Verdict,
+                Summary = item.Summary
+            }).ToArray()
+        };
+    }
+
+    private void RenderHomeScanResults(DesktopScanState? scan)
+    {
+        if (HomeScanResultsCard is null || HomeScanResultsHost is null)
+        {
+            return;
+        }
+
+        HomeScanResultsHost.Children.Clear();
+        if (scan is null)
+        {
+            return;
+        }
+
+        foreach (var finding in scan.Findings.Take(6))
+        {
+            HomeScanResultsHost.Children.Add(CreateHomeThreatCard(finding));
+        }
+    }
+
+    private Border CreateHomeThreatCard(DesktopScanFinding finding)
+    {
+        var card = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 22, new Thickness(18));
+        var grid = new Grid
+        {
+            ColumnSpacing = 16
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var text = new StackPanel { Spacing = 6 };
+        text.Children.Add(CreateSectionTitle(finding.Title, 22));
+        if (!string.IsNullOrWhiteSpace(finding.Summary))
+        {
+            var summary = CreateBodyText("AppMutedTextBrush");
+            summary.Text = finding.Summary;
+            text.Children.Add(summary);
+        }
+        grid.Children.Add(text);
+
+        var badge = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 18, new Thickness(12, 8, 12, 8));
+        badge.Child = CreateBodyText("AppTextBrush");
+        ((TextBlock)badge.Child).Text = string.IsNullOrWhiteSpace(finding.Verdict) ? "signal" : finding.Verdict;
+        Grid.SetColumn(badge, 1);
+        grid.Children.Add(badge);
+
+        card.Child = grid;
+        return card;
+    }
+
+    private static string ResolveRunningScanTitle(string mode) => mode switch
+    {
+        "FULL" => "Глубокая проверка продолжается",
+        "SELECTIVE" => "Выборочная проверка продолжается",
+        "ARTIFACT" => "Проверка программы продолжается",
+        "QUICK" => "Быстрая проверка продолжается",
+        _ => "Проверка продолжается"
+    };
 
     private void UpdateHistoryState()
     {
@@ -2595,7 +2721,6 @@ public sealed partial class MainWindow : Window
 
     private async Task RunLocalQuickScanAsync()
     {
-        SetBusy(true, "Готовим быструю локальную проверку");
         try
         {
             var initial = new DesktopScanState
@@ -2603,20 +2728,18 @@ public sealed partial class MainWindow : Window
                 Id = Guid.NewGuid().ToString("N"),
                 Platform = "windows",
                 Mode = "QUICK",
+                ClientMode = "QUICK",
                 Status = "RUNNING",
                 Verdict = "Локальная быстрая проверка",
-                Message = "Проверяем загрузки, рабочий стол, temp и автозапуск.",
+                Message = "Идёт проверка...",
                 StartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                Timeline = new[]
-                {
-                    "Собираем локальные зоны риска.",
-                    "Ищем недавние исполняемые файлы, скрипты и установщики."
-                }
+                Timeline = Array.Empty<string>()
             };
             _activeScan = initial;
             ShowActiveScanOverlay();
 
             var result = await Task.Run(ExecuteLocalQuickScan);
+            result.ClientMode = "QUICK";
             _activeScan = result;
             RenderScan(result);
             await HistoryStore.AppendAsync(result);
@@ -2628,10 +2751,6 @@ public sealed partial class MainWindow : Window
             WindowsLog.Error("RunLocalQuickScanAsync failed", ex);
             SetStatus(ex.Message);
         }
-        finally
-        {
-            SetBusy(false);
-        }
     }
 
     private DesktopScanState ExecuteLocalQuickScan()
@@ -2641,26 +2760,103 @@ public sealed partial class MainWindow : Window
 
     private async void OnDeepScanClick(object sender, RoutedEventArgs e)
     {
-        await StartServerScanAsync("FULL", "FILESYSTEM", Environment.MachineName, Environment.SystemDirectory);
+        await StartServerScanAsync("FULL", "FULL", "filesystem", Environment.MachineName, Environment.SystemDirectory);
     }
 
     private async void OnSelectiveScanClick(object sender, RoutedEventArgs e)
     {
-        await StartServerScanAsync("SELECTIVE", "FILESYSTEM", Environment.MachineName, Environment.SystemDirectory);
-    }
-
-    private async void OnProgramScanClick(object sender, RoutedEventArgs e)
-    {
-        var target = await PickProgramTargetAsync();
+        var target = await PickScanEntryAsync(
+            "Выборочная проверка",
+            "Выбери файл или папку. Проверка пойдёт по выбранной точке входа без загрузки desktop artifact.");
         if (target is null)
         {
             return;
         }
 
-        await StartServerScanAsync("ARTIFACT", "ARTIFACT", target.Value.TargetName, target.Value.TargetPath);
+        await StartServerScanAsync("SELECTIVE", "ON_DEMAND", target.Value.ArtifactKind, target.Value.TargetName, target.Value.TargetPath);
     }
 
-    private async Task<(string TargetName, string TargetPath)?> PickProgramTargetAsync()
+    private async void OnProgramScanClick(object sender, RoutedEventArgs e)
+    {
+        var target = await PickScanEntryAsync(
+            "Проверка программы",
+            "Выбери исполняемый файл или папку установки программы.");
+        if (target is null)
+        {
+            return;
+        }
+
+        await StartServerScanAsync("ARTIFACT", "ON_DEMAND", target.Value.ArtifactKind, target.Value.TargetName, target.Value.TargetPath);
+    }
+
+    private async Task<ScanEntryTarget?> PickScanEntryAsync(string title, string description)
+    {
+        try
+        {
+            var choice = await ShowScanEntryChoiceDialogAsync(title, description);
+            return choice switch
+            {
+                ScanEntryChoice.File => await PickFileTargetAsync(),
+                ScanEntryChoice.Folder => await PickFolderTargetAsync(),
+                _ => null
+            };
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("PickScanEntryAsync failed", ex);
+            SetStatus(ex.Message);
+            return null;
+        }
+    }
+
+    private async Task<ScanEntryChoice?> ShowScanEntryChoiceDialogAsync(string title, string description)
+    {
+        if (_windowRoot.XamlRoot is null)
+        {
+            return ScanEntryChoice.Folder;
+        }
+
+        var body = CreateBodyText("AppMutedTextBrush");
+        body.Text = description;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _windowRoot.XamlRoot,
+            Title = title,
+            Content = body,
+            PrimaryButtonText = "Файл",
+            SecondaryButtonText = "Папка",
+            CloseButtonText = "Отмена",
+            DefaultButton = ContentDialogButton.Primary
+        };
+
+        return (await dialog.ShowAsync()) switch
+        {
+            ContentDialogResult.Primary => ScanEntryChoice.File,
+            ContentDialogResult.Secondary => ScanEntryChoice.Folder,
+            _ => null
+        };
+    }
+
+    private async Task<ScanEntryTarget?> PickFileTargetAsync()
+    {
+        try
+        {
+            var picker = new FileOpenPicker();
+            InitializeWithWindow.Initialize(picker, _windowHandle);
+            picker.FileTypeFilter.Add("*");
+            var file = await picker.PickSingleFileAsync();
+            return file is null ? null : new ScanEntryTarget(file.Name, file.Path, "file");
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("PickFileTargetAsync failed", ex);
+            SetStatus(ex.Message);
+            return null;
+        }
+    }
+
+    private async Task<ScanEntryTarget?> PickFolderTargetAsync()
     {
         try
         {
@@ -2668,22 +2864,17 @@ public sealed partial class MainWindow : Window
             InitializeWithWindow.Initialize(picker, _windowHandle);
             picker.FileTypeFilter.Add("*");
             var folder = await picker.PickSingleFolderAsync();
-            if (folder is null)
-            {
-                return null;
-            }
-
-            return (folder.Name, folder.Path);
+            return folder is null ? null : new ScanEntryTarget(folder.Name, folder.Path, "filesystem");
         }
         catch (Exception ex)
         {
-            WindowsLog.Error("PickProgramTargetAsync failed", ex);
+            WindowsLog.Error("PickFolderTargetAsync failed", ex);
             SetStatus(ex.Message);
             return null;
         }
     }
 
-    private async Task StartServerScanAsync(string mode, string artifactKind, string targetName, string targetPath)
+    private async Task StartServerScanAsync(string clientMode, string serverMode, string artifactKind, string targetName, string targetPath)
     {
         if (_session is null)
         {
@@ -2692,36 +2883,68 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        SetBusy(true, "Создаём серверную проверку");
-        WindowsLog.Info($"Start scan requested: {mode} / {artifactKind} / {targetPath}");
+        WindowsLog.Info($"Start scan requested: client={clientMode} server={serverMode} / {artifactKind} / {targetPath}");
+        _scanPollCts?.Cancel();
+        SetStatus(null);
+        _activeScan = CreatePendingScanState(clientMode, serverMode);
+        ShowActiveScanOverlay();
         try
         {
-            var plan = artifactKind == "ARTIFACT"
-                ? WindowsScanPlanService.BuildProgramOrFilePlan(mode, artifactKind, targetPath, targetName, DesktopCoverageMode.SmartCoverage)
-                : WindowsScanPlanService.BuildSmartCoveragePlan(mode, artifactKind, targetName, targetPath);
+            var plan = string.Equals(clientMode, "FULL", StringComparison.OrdinalIgnoreCase)
+                ? WindowsScanPlanService.BuildSmartCoveragePlan(serverMode, artifactKind, targetName, targetPath)
+                : WindowsScanPlanService.BuildProgramOrFilePlan(serverMode, artifactKind, targetPath, targetName, DesktopCoverageMode.SmartCoverage);
             var result = await _apiClient.StartDesktopScanAsync(_session, plan);
             if (result.scan is null)
             {
                 WindowsLog.Error($"Desktop scan creation failed: {result.error}");
+                _activeScan = null;
+                SetScanOverlayState(false);
+                UpdateHomeState();
                 SetStatus(result.error ?? "Не удалось создать desktop-задачу.");
                 return;
             }
 
             _scanPollCts?.Cancel();
             _scanPollCts = new CancellationTokenSource();
-            _activeScan = result.scan;
+            var scan = ApplyClientScanMode(result.scan, clientMode);
+            _activeScan = scan;
             ShowActiveScanOverlay();
-            _ = PollScanAsync(result.scan.Id, _scanPollCts.Token);
+            _ = PollScanAsync(scan.Id, _scanPollCts.Token);
         }
         catch (Exception ex)
         {
             WindowsLog.Error("StartServerScanAsync failed", ex);
+            _activeScan = null;
+            SetScanOverlayState(false);
+            UpdateHomeState();
             SetStatus(ex.Message);
         }
-        finally
+    }
+
+    private static DesktopScanState CreatePendingScanState(string clientMode, string serverMode)
+    {
+        return new DesktopScanState
         {
-            SetBusy(false);
+            Id = Guid.NewGuid().ToString("N"),
+            Platform = "windows",
+            Mode = serverMode,
+            ClientMode = clientMode,
+            Status = "RUNNING",
+            Verdict = "UNKNOWN",
+            Message = "Идёт проверка...",
+            StartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Timeline = Array.Empty<string>()
+        };
+    }
+
+    private static DesktopScanState ApplyClientScanMode(DesktopScanState scan, string? clientMode)
+    {
+        if (!string.IsNullOrWhiteSpace(clientMode))
+        {
+            scan.ClientMode = clientMode;
         }
+
+        return scan;
     }
 
     private async Task PollScanAsync(string scanId, CancellationToken cancellationToken)
@@ -2739,17 +2962,18 @@ public sealed partial class MainWindow : Window
                     continue;
                 }
 
-                _activeScan = result.scan;
-                RenderScan(result.scan);
-                if (result.scan.IsFinished)
+                var scan = ApplyClientScanMode(result.scan, _activeScan?.ClientMode);
+                _activeScan = scan;
+                RenderScan(scan);
+                if (scan.IsFinished)
                 {
-                    if (result.scan.IsSuccessful)
+                    if (scan.IsSuccessful)
                     {
-                        await HistoryStore.AppendAsync(result.scan, cancellationToken);
+                        await HistoryStore.AppendAsync(scan, cancellationToken);
                         await LoadHistoryAsync(cancellationToken);
                     }
                     SetStatus(null);
-                    WindowsLog.Info($"Desktop scan finished: {result.scan.Status} / {result.scan.Verdict}");
+                    WindowsLog.Info($"Desktop scan finished: {scan.Status} / {scan.Verdict}");
                     return;
                 }
             }
@@ -2783,23 +3007,32 @@ public sealed partial class MainWindow : Window
             EnsureScanOverlayReady();
             WindowsLog.Info("RenderScan: overlay ready");
             var progress = WindowsTrayProgressService.EstimateProgressPercent(scan);
-            ScanModeText.Text = scan.Mode switch
+            ScanModeText.Text = scan.IsFinished
+                ? scan.Status switch
+                {
+                    "COMPLETED" => "Проверка завершена",
+                    "CANCELLED" => "Проверка остановлена",
+                    "FAILED" => "Проверка завершилась с ошибкой",
+                    _ => "Проверка завершена"
+                }
+                : "Идёт проверка...";
+            if (ScanStageText is not null)
             {
-                "FULL" => "Глубокая проверка",
-                "SELECTIVE" => "Выборочная проверка",
-                "ARTIFACT" => "Проверка программы",
-                "QUICK" => "Быстрая локальная проверка",
-                _ => "Проверка"
-            };
-            ScanStageText.Text = string.IsNullOrWhiteSpace(scan.Message) ? $"Статус: {scan.Status}" : scan.Message;
+                ScanStageText.Text = string.IsNullOrWhiteSpace(scan.Message) ? scan.PrimarySummary : scan.Message;
+            }
             if (ScanTargetText is not null)
             {
-                ScanTargetText.Text = scan.Platform.Equals("windows", StringComparison.OrdinalIgnoreCase)
-                    ? $"Статус: {WindowsTrayProgressService.ResolveStatusLabel(scan.Status)}"
-                    : scan.Platform;
+                ScanTargetText.Text = WindowsTrayProgressService.ResolveModeLabel(scan.EffectiveMode);
             }
             ScanProgressText.Text = $"{progress}%";
-            ScanCountsText.Text = $"Этапов в ленте: {scan.Timeline.Count} · находок: {scan.SurfacedFindings}";
+            if (ScanCountsText is not null)
+            {
+                ScanCountsText.Text = $"Находок: {scan.SurfacedFindings}";
+            }
+            if (ScanProgressRing is not null)
+            {
+                ScanProgressRing.IsActive = !scan.IsFinished;
+            }
             if (ScanProgressBar is not null)
             {
                 ScanProgressBar.Value = progress;
@@ -2819,12 +3052,8 @@ public sealed partial class MainWindow : Window
             if (ScanTimelineHost is not null)
             {
                 ScanTimelineHost.Children.Clear();
-                foreach (var line in _scanTimeline)
-                {
-                    ScanTimelineHost.Children.Add(CreateSafeTimelineLine(line));
-                }
             }
-            WindowsLog.Info($"RenderScan: timeline rendered count={_scanTimeline.Count}");
+            WindowsLog.Info($"RenderScan: hidden timeline count={_scanTimeline.Count}");
 
             UpdateHomeState();
             App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.FromScan(scan));
@@ -2862,6 +3091,7 @@ public sealed partial class MainWindow : Window
                     Id = _activeScan.Id,
                     Platform = _activeScan.Platform,
                     Mode = _activeScan.Mode,
+                    ClientMode = _activeScan.ClientMode,
                     Status = "CANCELLED",
                     Verdict = _activeScan.Verdict,
                     Message = message,

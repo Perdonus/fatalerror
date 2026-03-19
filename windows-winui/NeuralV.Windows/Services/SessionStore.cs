@@ -11,6 +11,12 @@ public static class SessionStore
         WriteIndented = true
     };
 
+    private static readonly string[] LegacySessionFileNames =
+    [
+        "session.json",
+        ".session"
+    ];
+
     public static string AppDirectory
     {
         get
@@ -21,7 +27,25 @@ public static class SessionStore
         }
     }
 
-    public static string SessionFilePath => Path.Combine(AppDirectory, "session.json");
+    public static string SessionDirectory
+    {
+        get
+        {
+            try
+            {
+                var installRoot = InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
+                var binPath = InstallLayout.BinDirectory(installRoot);
+                Directory.CreateDirectory(binPath);
+                return binPath;
+            }
+            catch
+            {
+                return AppDirectory;
+            }
+        }
+    }
+
+    public static string SessionFilePath => Path.Combine(SessionDirectory, ".session");
     public static string HistoryFilePath => Path.Combine(AppDirectory, "history.json");
     public static string DeviceIdFilePath => Path.Combine(AppDirectory, "device.id");
 
@@ -43,35 +67,81 @@ public static class SessionStore
 
     public static async Task SaveSessionAsync(SessionData session, CancellationToken cancellationToken = default)
     {
-        Directory.CreateDirectory(AppDirectory);
+        Directory.CreateDirectory(SessionDirectory);
         var payload = JsonSerializer.Serialize(session, JsonOptions);
-        await File.WriteAllTextAsync(SessionFilePath, payload, Encoding.UTF8, cancellationToken);
+        var tempPath = SessionFilePath + ".tmp";
+        await File.WriteAllTextAsync(tempPath, payload, Encoding.UTF8, cancellationToken);
+        File.Move(tempPath, SessionFilePath, true);
+        DeleteLegacySessionCopies();
     }
 
     public static async Task<SessionData?> LoadSessionAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(SessionFilePath))
+        foreach (var candidate in EnumerateSessionCandidates())
         {
-            return null;
+            try
+            {
+                if (!File.Exists(candidate))
+                {
+                    continue;
+                }
+
+                var payload = await File.ReadAllTextAsync(candidate, cancellationToken);
+                var session = JsonSerializer.Deserialize<SessionData>(payload, JsonOptions);
+                if (session is not { IsValid: true })
+                {
+                    continue;
+                }
+
+                if (!string.Equals(candidate, SessionFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    await SaveSessionAsync(session, cancellationToken);
+                }
+
+                return session;
+            }
+            catch
+            {
+            }
         }
 
-        try
-        {
-            var payload = await File.ReadAllTextAsync(SessionFilePath, cancellationToken);
-            var session = JsonSerializer.Deserialize<SessionData>(payload, JsonOptions);
-            return session is { IsValid: true } ? session : null;
-        }
-        catch
-        {
-            return null;
-        }
+        return null;
     }
 
     public static void ClearSession()
     {
-        if (File.Exists(SessionFilePath))
+        foreach (var candidate in EnumerateSessionCandidates())
         {
-            File.Delete(SessionFilePath);
+            if (File.Exists(candidate))
+            {
+                File.Delete(candidate);
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateSessionCandidates()
+    {
+        yield return SessionFilePath;
+
+        foreach (var fileName in LegacySessionFileNames)
+        {
+            var path = Path.Combine(AppDirectory, fileName);
+            if (!string.Equals(path, SessionFilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return path;
+            }
+        }
+    }
+
+    private static void DeleteLegacySessionCopies()
+    {
+        foreach (var fileName in LegacySessionFileNames)
+        {
+            var path = Path.Combine(AppDirectory, fileName);
+            if (!string.Equals(path, SessionFilePath, StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+            {
+                File.Delete(path);
+            }
         }
     }
 }

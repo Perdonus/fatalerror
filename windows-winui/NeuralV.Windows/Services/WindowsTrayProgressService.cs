@@ -22,6 +22,7 @@ public static class WindowsTrayProgressService
             return CreateIdle();
         }
 
+        var mode = scan.EffectiveMode;
         var progress = EstimateProgressPercent(scan);
         var visualState = ResolveVisualState(scan.Status);
         var title = scan.IsFinished
@@ -32,14 +33,14 @@ public static class WindowsTrayProgressService
             : scan.PrimarySummary;
         var tooltip = scan.IsFinished
             ? $"NeuralV · {subtitle}"
-            : $"NeuralV · {ResolveModeLabel(scan.Mode)} · {progress}%";
+            : $"NeuralV · {ResolveModeLabel(mode)} · {progress}%";
 
         return new TrayProgressState
         {
             IsVisible = !scan.IsFinished,
             IsIndeterminate = scan.Status is "QUEUED" or "PREPARING",
             ScanId = scan.Id,
-            Mode = scan.Mode,
+            Mode = mode,
             Status = scan.Status,
             ProgressPercent = progress,
             Title = title,
@@ -77,6 +78,7 @@ public static class WindowsTrayProgressService
         "deep" or "FULL" => "Глубокая",
         "selective" or "SELECTIVE" => "Выборочная",
         "app" or "ARTIFACT" => "Проверка программы",
+        "on_demand" or "ON_DEMAND" => "Проверка",
         _ => "Проверка"
     };
 

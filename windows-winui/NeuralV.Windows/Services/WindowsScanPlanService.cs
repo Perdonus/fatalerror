@@ -333,15 +333,16 @@ public static class WindowsScanPlanService
         DesktopCoverageMode coverageMode,
         IReadOnlyList<WindowsScanRoot> coverageRoots)
     {
+        var normalizedArtifactKind = NormalizeArtifactKind(artifactKind);
         var normalizedTargetPath = targetPath ?? string.Empty;
         var normalizedTargetName = !string.IsNullOrWhiteSpace(targetName)
             ? targetName
-            : ResolveTargetName(normalizedTargetPath, artifactKind);
+            : ResolveTargetName(normalizedTargetPath, normalizedArtifactKind);
 
         return new WindowsScanPlan
         {
             Mode = string.IsNullOrWhiteSpace(mode) ? "deep" : mode,
-            ArtifactKind = string.IsNullOrWhiteSpace(artifactKind) ? "filesystem" : artifactKind,
+            ArtifactKind = normalizedArtifactKind,
             TargetName = normalizedTargetName,
             TargetPath = normalizedTargetPath,
             CoverageMode = coverageMode,
@@ -729,6 +730,8 @@ public static class WindowsScanPlanService
             return;
         }
 
+        var normalizedArtifactKind = NormalizeArtifactKind(artifactKind);
+
         if (Directory.Exists(targetPath))
         {
             roots.Add(new WindowsScanRoot
@@ -745,7 +748,7 @@ public static class WindowsScanPlanService
         {
             roots.Add(new WindowsScanRoot
             {
-                Kind = artifactKind == "file" ? WindowsScanRootKind.TargetFile : WindowsScanRootKind.TargetDirectory,
+                Kind = normalizedArtifactKind == "file" ? WindowsScanRootKind.TargetFile : WindowsScanRootKind.TargetDirectory,
                 Path = targetPath,
                 Label = "Выбранный файл программы",
                 Exists = true
@@ -757,7 +760,7 @@ public static class WindowsScanPlanService
     {
         if (string.IsNullOrWhiteSpace(targetPath))
         {
-            return artifactKind == "filesystem" ? Environment.MachineName : "Выбранный объект";
+            return NormalizeArtifactKind(artifactKind) == "filesystem" ? Environment.MachineName : "Выбранный объект";
         }
 
         if (Directory.Exists(targetPath))
@@ -771,6 +774,12 @@ public static class WindowsScanPlanService
         }
 
         return Path.GetFileName(targetPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+    }
+
+    private static string NormalizeArtifactKind(string? artifactKind)
+    {
+        var normalized = (artifactKind ?? string.Empty).Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? "filesystem" : normalized;
     }
 
     private static string? ResolveBaseDirectory(string targetPath)

@@ -261,6 +261,7 @@ public sealed class DesktopScanState
     public string Id { get; init; } = string.Empty;
     public string Platform { get; init; } = string.Empty;
     public string Mode { get; init; } = string.Empty;
+    public string ClientMode { get; set; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public string Verdict { get; init; } = string.Empty;
     public string Message { get; init; } = string.Empty;
@@ -271,6 +272,8 @@ public sealed class DesktopScanState
     public long CompletedAt { get; init; }
     public IReadOnlyList<string> Timeline { get; init; } = Array.Empty<string>();
     public IReadOnlyList<DesktopScanFinding> Findings { get; init; } = Array.Empty<DesktopScanFinding>();
+    [JsonIgnore]
+    public string EffectiveMode => string.IsNullOrWhiteSpace(ClientMode) ? Mode : ClientMode;
     public bool IsFinished => Status is "COMPLETED" or "FAILED" or "CANCELLED";
     public bool IsSuccessful => Status == "COMPLETED";
     public string PrimarySummary => string.IsNullOrWhiteSpace(Message) ? Verdict : Message;

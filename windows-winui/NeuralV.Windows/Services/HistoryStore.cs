@@ -36,7 +36,7 @@ public static class HistoryStore
         current.Insert(0, new StoredScanRecord
         {
             Id = scan.Id,
-            Mode = scan.Mode,
+            Mode = scan.EffectiveMode,
             Verdict = scan.Verdict,
             Message = scan.Message,
             SavedAt = DateTimeOffset.UtcNow,

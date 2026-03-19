@@ -123,7 +123,7 @@ public sealed partial class MainWindow : Window
     private ToggleSwitch NetworkProtectionToggle = default!;
     private ToggleSwitch AdBlockToggle = default!;
     private ToggleSwitch UnsafeSitesToggle = default!;
-    private TextBlock NetworkCountersText = default!;
+    private TextBlock NetworkStatusText = default!;
 
     private TextBlock ScanModeText = default!;
     private TextBlock ScanStageText = default!;
@@ -625,17 +625,16 @@ public sealed partial class MainWindow : Window
 
         var frame = new Grid
         {
-            MaxWidth = 1380,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 8, 0)
+            Margin = new Thickness(22, 0, 22, 0)
         };
-        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
         frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+        frame.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
         topBar.Children.Add(frame);
 
-        var drawerButton = CreateIconButton("☰", OnToggleDrawerClick);
+        var drawerButton = CreateSymbolIconButton("\uE700", OnToggleDrawerClick);
         drawerButton.HorizontalAlignment = HorizontalAlignment.Left;
         drawerButton.VerticalAlignment = VerticalAlignment.Center;
         frame.Children.Add(drawerButton);
@@ -661,8 +660,8 @@ public sealed partial class MainWindow : Window
 
         var rightSpacer = new Border
         {
-            Width = 76,
-            Height = 56,
+            Width = 64,
+            Height = 52,
             Opacity = 0
         };
         Grid.SetColumn(rightSpacer, 2);
@@ -929,15 +928,16 @@ public sealed partial class MainWindow : Window
 
     private FrameworkElement BuildHomeView()
     {
-        var centeredHost = new Grid
+        var desktopHost = new Grid
         {
-            MaxWidth = 1360,
+            MaxWidth = 1440,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(6, 4, 6, 20)
+            Margin = new Thickness(10, 8, 10, 20),
+            RowSpacing = 18
         };
-        centeredHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        centeredHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        desktopHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        desktopHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         ActiveScanCard = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", 28, new Thickness(20));
         ActiveScanCard.Visibility = Visibility.Collapsed;
@@ -955,102 +955,102 @@ public sealed partial class MainWindow : Window
         activeGrid.Children.Add(openScanButton);
         ActiveScanCard.Child = activeGrid;
         Grid.SetRow(ActiveScanCard, 0);
-        centeredHost.Children.Add(ActiveScanCard);
+        desktopHost.Children.Add(ActiveScanCard);
 
-        var content = new Grid
-        {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Top,
-            ColumnSpacing = 24
-        };
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(348) });
-        Grid.SetRow(content, 1);
-        HomePrimaryContent = content;
-        centeredHost.Children.Add(content);
-
-        var modeCluster = new Grid
+        var dashboard = new Grid
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Top,
             ColumnSpacing = 18,
             RowSpacing = 18
         };
-        modeCluster.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.12, GridUnitType.Star) });
-        modeCluster.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.88, GridUnitType.Star) });
-        modeCluster.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        modeCluster.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        Grid.SetColumn(modeCluster, 0);
-        content.Children.Add(modeCluster);
+        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.18, GridUnitType.Star) });
+        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.86, GridUnitType.Star) });
+        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.96, GridUnitType.Star) });
+        dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(dashboard, 1);
+        HomePrimaryContent = dashboard;
+        desktopHost.Children.Add(dashboard);
 
-        var deepCard = CreateWideModePanel("Глубокая", "◈", OnDeepScanClick);
-        deepCard.MinHeight = 404;
+        var deepCard = CreateWideModePanel("Глубокая", "\uEA18", OnDeepScanClick);
+        deepCard.MinHeight = 520;
         Grid.SetColumn(deepCard, 0);
         Grid.SetRow(deepCard, 0);
         Grid.SetRowSpan(deepCard, 2);
-        modeCluster.Children.Add(deepCard);
+        dashboard.Children.Add(deepCard);
 
-        var quickCard = CreateAccentModePanel("Быстрая", "⚡", OnQuickScanClick);
-        quickCard.MinHeight = 194;
+        var quickCard = CreateAccentModePanel("Быстрая", "\uE721", OnQuickScanClick);
+        quickCard.MinHeight = 232;
         Grid.SetColumn(quickCard, 1);
         Grid.SetRow(quickCard, 0);
-        modeCluster.Children.Add(quickCard);
+        dashboard.Children.Add(quickCard);
 
-        var lowerGrid = new Grid
-        {
-            ColumnSpacing = 18
-        };
-        lowerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        lowerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(lowerGrid, 1);
-        Grid.SetRow(lowerGrid, 1);
-        modeCluster.Children.Add(lowerGrid);
+        var selectiveCard = CreateOffsetModePanel("Выборочная / программа", "\uE8E5", OnSelectiveScanClick);
+        selectiveCard.MinHeight = 270;
+        Grid.SetColumn(selectiveCard, 1);
+        Grid.SetRow(selectiveCard, 1);
+        dashboard.Children.Add(selectiveCard);
 
-        var selectiveCard = CreateOffsetModePanel("Выборочная", "◎", OnSelectiveScanClick);
-        selectiveCard.MinHeight = 192;
-        Grid.SetColumn(selectiveCard, 0);
-        lowerGrid.Children.Add(selectiveCard);
-
-        var artifactCard = CreateCompactModePanel("Проверить программу", "▣", OnProgramScanClick);
-        artifactCard.MinHeight = 192;
-        Grid.SetColumn(artifactCard, 1);
-        lowerGrid.Children.Add(artifactCard);
-
-        var sideRail = new StackPanel
-        {
-            Spacing = 18,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Top
-        };
-        Grid.SetColumn(sideRail, 1);
-        content.Children.Add(sideRail);
-
-        HomeNetworkCard = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", new CornerRadius(32, 24, 28, 26), new Thickness(22));
+        HomeNetworkCard = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", new CornerRadius(32, 26, 28, 30), new Thickness(24));
         HomeNetworkCard.HorizontalAlignment = HorizontalAlignment.Stretch;
-        HomeNetworkCard.VerticalAlignment = VerticalAlignment.Top;
-        HomeNetworkCard.MinHeight = 232;
-        var networkGrid = new Grid();
-        networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        HomeNetworkCard.VerticalAlignment = VerticalAlignment.Stretch;
+        HomeNetworkCard.MinHeight = 520;
+
+        var networkGrid = new Grid
+        {
+            RowSpacing = 16
+        };
+        networkGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        networkGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        networkGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        networkGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var networkHeader = new Grid();
+        networkHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        networkHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        networkHeader.Children.Add(CreateGlyphShell("\uEC7A", 66, true));
+        var infoButton = CreateSmallSymbolButton("\uE946", OnOpenNetworkInfoClick);
+        Grid.SetColumn(infoButton, 1);
+        networkHeader.Children.Add(infoButton);
+        networkGrid.Children.Add(networkHeader);
+
         var networkText = new StackPanel { Spacing = 8 };
-        networkText.Children.Add(CreateSectionTitle("Защита в сети", 24));
-        NetworkCountersText = CreateBodyText("AppMutedTextBrush");
-        NetworkCountersText.TextWrapping = TextWrapping.Wrap;
-        networkText.Children.Add(NetworkCountersText);
+        networkText.Children.Add(CreateSectionTitle("Защита в сети", 28));
+        NetworkStatusText = CreateBodyText("AppMutedTextBrush");
+        NetworkStatusText.MaxWidth = 260;
+        networkText.Children.Add(NetworkStatusText);
+        Grid.SetRow(networkText, 1);
         networkGrid.Children.Add(networkText);
+
+        var networkControlCard = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 22, new Thickness(18, 16, 18, 16));
+        networkControlCard.VerticalAlignment = VerticalAlignment.Bottom;
+        var networkControlGrid = new Grid();
+        networkControlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        networkControlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var networkControlText = new StackPanel();
+        networkControlText.Children.Add(CreateSectionTitle("Щит", 20));
+        networkControlGrid.Children.Add(networkControlText);
         NetworkProtectionToggle = new ToggleSwitch
         {
             Header = string.Empty,
             HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            MinWidth = 88
         };
         NetworkProtectionToggle.Toggled += OnNetworkProtectionToggled;
         Grid.SetColumn(NetworkProtectionToggle, 1);
-        networkGrid.Children.Add(NetworkProtectionToggle);
+        networkControlGrid.Children.Add(NetworkProtectionToggle);
+        networkControlCard.Child = networkControlGrid;
+        Grid.SetRow(networkControlCard, 3);
+        networkGrid.Children.Add(networkControlCard);
         HomeNetworkCard.Child = networkGrid;
-        sideRail.Children.Add(HomeNetworkCard);
+        Grid.SetColumn(HomeNetworkCard, 2);
+        Grid.SetRow(HomeNetworkCard, 0);
+        Grid.SetRowSpan(HomeNetworkCard, 2);
+        dashboard.Children.Add(HomeNetworkCard);
 
-        return CreatePageShell(centeredHost, 1400, false);
+        return CreatePageShell(desktopHost, 1460, false);
     }
 
     private FrameworkElement BuildHistoryView()
@@ -1825,15 +1825,53 @@ public sealed partial class MainWindow : Window
                 ? ThemeBrush("AppOutlineStrongBrush")
                 : ThemeBrush("AppOutlineBrush");
         }
-        if (NetworkCountersText is not null)
+        if (NetworkStatusText is not null)
         {
-            NetworkCountersText.Text =
-                $"{(_networkState.NetworkEnabled ? "Защита в сети включена" : "Защита в сети отключена")}\n" +
-                $"Заблокировано угроз: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedThreatsPlatform)}\n" +
-                $"Заблокировано рекламы: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedAdsPlatform)}";
+            NetworkStatusText.Text = _networkState.NetworkEnabled
+                ? "Щит сети включён"
+                : "Щит сети отключён";
         }
 
         _networkUiSync = false;
+    }
+
+    private async void OnOpenNetworkInfoClick(object sender, RoutedEventArgs e)
+    {
+        if (_windowRoot.XamlRoot is null)
+        {
+            return;
+        }
+
+        var details = new StackPanel
+        {
+            Spacing = 10
+        };
+
+        details.Children.Add(CreateBodyText("AppTextBrush"));
+        ((TextBlock)details.Children[^1]).Text = _networkState.NetworkEnabled ? "Защита в сети активна." : "Защита в сети выключена.";
+        details.Children.Add(CreateBodyText("AppMutedTextBrush"));
+        ((TextBlock)details.Children[^1]).Text = $"Угрозы: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedThreatsPlatform)}";
+        details.Children.Add(CreateBodyText("AppMutedTextBrush"));
+        ((TextBlock)details.Children[^1]).Text = $"Реклама: {WindowsNetworkProtectionStateService.FormatCounter(_networkState.BlockedAdsPlatform)}";
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _windowRoot.XamlRoot,
+            Title = "Сеть",
+            Content = details,
+            CloseButtonText = "Закрыть",
+            DefaultButton = ContentDialogButton.Close
+        };
+
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("OnOpenNetworkInfoClick failed", ex);
+            SetStatus(ex.Message);
+        }
     }
 
     private void SetDrawerState(bool isOpen)
@@ -3184,27 +3222,39 @@ public sealed partial class MainWindow : Window
 
     private Border CreateWideModePanel(string title, string glyph, RoutedEventHandler handler)
     {
-        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", new CornerRadius(38, 38, 26, 26), new Thickness(20));
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var card = CreateCardBorder("AppSurfaceStrongGradientBrush", "AppOutlineStrongBrush", new CornerRadius(38, 38, 28, 28), new Thickness(24));
+        var grid = new Grid
+        {
+            RowSpacing = 18
+        };
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var glyphShell = CreateGlyphShell(glyph, 68, true);
-        grid.Children.Add(glyphShell);
+        var header = new Grid
+        {
+            ColumnSpacing = 16
+        };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.Children.Add(CreateGlyphShell(glyph, 72, true));
 
         var textStack = new StackPanel
         {
-            Margin = new Thickness(16, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 2
+            Spacing = 6
         };
-        textStack.Children.Add(CreateSectionTitle(title, 26));
+        textStack.Children.Add(CreateSectionTitle(title, 30));
+        var subtitle = CreateBodyText("AppMutedTextBrush");
+        subtitle.Text = "Полный охват";
+        textStack.Children.Add(subtitle);
         Grid.SetColumn(textStack, 1);
-        grid.Children.Add(textStack);
+        header.Children.Add(textStack);
+        grid.Children.Add(header);
 
-        var action = CreateRoundActionButton("▶", handler, true);
-        Grid.SetColumn(action, 2);
+        var action = CreateModeActionButton("Запустить", handler, true);
+        action.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Grid.SetRow(action, 2);
         grid.Children.Add(action);
         card.Child = grid;
         return card;
@@ -3255,55 +3305,62 @@ public sealed partial class MainWindow : Window
 
     private Border CreateAccentModePanel(string title, string glyph, RoutedEventHandler handler)
     {
-        var card = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", new CornerRadius(28, 44, 28, 36), new Thickness(20));
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var card = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", new CornerRadius(30, 44, 30, 38), new Thickness(22));
+        var stack = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 18
+        };
+        var icon = CreateGlyphShell(glyph, 64, true);
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        stack.Children.Add(icon);
 
-        var icon = CreateGlyphShell(glyph, 62, true);
-        icon.HorizontalAlignment = HorizontalAlignment.Left;
-        grid.Children.Add(icon);
+        var titleText = CreateTitleText(title, 26, TextAlignment.Center);
+        titleText.HorizontalAlignment = HorizontalAlignment.Center;
+        stack.Children.Add(titleText);
 
-        var titleText = CreateTitleText(title, 24);
-        titleText.Margin = new Thickness(0, 18, 0, 0);
-        titleText.VerticalAlignment = VerticalAlignment.Center;
-        Grid.SetRow(titleText, 1);
-        grid.Children.Add(titleText);
+        var action = CreateModeActionButton("Старт", handler, true);
+        action.HorizontalAlignment = HorizontalAlignment.Center;
+        action.MinWidth = 188;
+        stack.Children.Add(action);
 
-        var action = CreateRoundActionButton("▶", handler, true);
-        action.HorizontalAlignment = HorizontalAlignment.Right;
-        Grid.SetRow(action, 2);
-        grid.Children.Add(action);
-
-        card.Child = grid;
+        card.Child = stack;
         return card;
     }
 
     private Border CreateOffsetModePanel(string title, string glyph, RoutedEventHandler handler)
     {
-        var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", new CornerRadius(24, 36, 32, 24), new Thickness(18));
-        var grid = new Grid();
+        var card = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", new CornerRadius(26, 38, 34, 26), new Thickness(22));
+        var grid = new Grid
+        {
+            RowSpacing = 18
+        };
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var action = CreateRoundActionButton("▶", handler, false);
-        Grid.SetColumn(action, 1);
-        grid.Children.Add(action);
-
-        var titleText = CreateSectionTitle(title, 22);
-        titleText.Margin = new Thickness(0, 8, 0, 0);
-        Grid.SetRow(titleText, 1);
-        grid.Children.Add(titleText);
-
-        var icon = CreateGlyphShell(glyph, 52, false);
-        icon.HorizontalAlignment = HorizontalAlignment.Right;
-        icon.VerticalAlignment = VerticalAlignment.Bottom;
-        Grid.SetColumn(icon, 1);
-        Grid.SetRow(icon, 1);
+        var icon = CreateGlyphShell(glyph, 60, false);
+        icon.HorizontalAlignment = HorizontalAlignment.Left;
         grid.Children.Add(icon);
+
+        var textStack = new StackPanel
+        {
+            Spacing = 8
+        };
+        var titleText = CreateSectionTitle(title, 23);
+        titleText.Margin = new Thickness(0, 4, 0, 0);
+        textStack.Children.Add(titleText);
+        var subtitle = CreateBodyText("AppMutedTextBrush");
+        subtitle.Text = "Файл, папка или программа";
+        textStack.Children.Add(subtitle);
+        Grid.SetRow(textStack, 1);
+        grid.Children.Add(textStack);
+
+        var action = CreateModeSplitButton("Выбрать", handler, OnProgramScanClick);
+        action.HorizontalAlignment = HorizontalAlignment.Right;
+        Grid.SetRow(action, 2);
+        grid.Children.Add(action);
 
         card.Child = grid;
         return card;
@@ -3367,17 +3424,52 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        shell.Child = new TextBlock
-        {
-            Text = glyph,
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = size * 0.45,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextAlignment = TextAlignment.Center
-        };
+        shell.Child = CreateMdl2Icon(glyph, size * 0.42, "AppTextBrush");
         return shell;
+    }
+
+    private Button CreateModeActionButton(string text, RoutedEventHandler handler, bool emphasized)
+    {
+        var button = emphasized ? CreateFilledButton(text, handler) : CreateTonalButton(text, handler);
+        button.MinHeight = emphasized ? 72 : 64;
+        button.MinWidth = 172;
+        button.Padding = new Thickness(24, 16, 24, 16);
+        button.CornerRadius = new CornerRadius(24);
+        button.FontSize = 18;
+        button.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+        button.HorizontalContentAlignment = HorizontalAlignment.Center;
+        return button;
+    }
+
+    private SplitButton CreateModeSplitButton(string text, RoutedEventHandler primaryHandler, RoutedEventHandler secondaryHandler)
+    {
+        var splitButton = new SplitButton
+        {
+            Content = text,
+            Background = ThemeBrush("AppPrimaryContainerBrush"),
+            Foreground = ThemeBrush("AppOnAccentBrush"),
+            BorderBrush = ThemeBrush("AppPrimaryContainerBrush"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(24, 16, 24, 16),
+            MinHeight = 72,
+            MinWidth = 206,
+            CornerRadius = new CornerRadius(24),
+            FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        splitButton.Click += primaryHandler;
+
+        var flyout = new MenuFlyout();
+        var programItem = new MenuFlyoutItem
+        {
+            Text = "Программа"
+        };
+        programItem.Click += secondaryHandler;
+        flyout.Items.Add(programItem);
+        splitButton.Flyout = flyout;
+        return splitButton;
     }
 
     private Button CreateRoundActionButton(string glyph, RoutedEventHandler handler, bool emphasized)
@@ -3622,6 +3714,43 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
+    private Button CreateSymbolIconButton(string glyph, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = CreateMdl2Icon(glyph, 18, "AppTextBrush"),
+            Width = 52,
+            Height = 52,
+            Background = ThemeBrush("AppSurfaceBrush"),
+            Foreground = ThemeBrush("AppTextBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(18),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private Button CreateSmallSymbolButton(string glyph, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = CreateMdl2Icon(glyph, 14, "AppTextBrush"),
+            Width = 36,
+            Height = 36,
+            Background = ThemeBrush("AppSurfaceStrongBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        button.Click += handler;
+        return button;
+    }
+
     private static Border CreateCardBorder(string backgroundKey, string borderKey, double radius, Thickness padding)
     {
         return CreateCardBorder(backgroundKey, borderKey, new CornerRadius(radius), padding);
@@ -3781,6 +3910,20 @@ public sealed partial class MainWindow : Window
         }
 
         return new SolidColorBrush(UiColor.FromArgb(255, 255, 255, 255));
+    }
+
+    private static FontIcon CreateMdl2Icon(string glyph, double size, string brushKey)
+    {
+        return new FontIcon
+        {
+            Glyph = glyph,
+            FontFamily = new FontFamily("Segoe MDL2 Assets"),
+            FontSize = size,
+            Foreground = ThemeBrush(brushKey),
+            IsTextScaleFactorEnabled = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
     }
 
     private FrameworkElement BuildVersionBadge()

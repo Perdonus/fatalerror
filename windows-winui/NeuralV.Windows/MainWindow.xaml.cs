@@ -984,9 +984,9 @@ public sealed partial class MainWindow : Window
             ColumnSpacing = 18,
             RowSpacing = 18
         };
-        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.18, GridUnitType.Star) });
-        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.86, GridUnitType.Star) });
-        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.96, GridUnitType.Star) });
+        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.22, GridUnitType.Star) });
+        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.9, GridUnitType.Star) });
+        dashboard.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.92, GridUnitType.Star) });
         dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(dashboard, 1);
@@ -994,34 +994,33 @@ public sealed partial class MainWindow : Window
         desktopHost.Children.Add(dashboard);
 
         var deepCard = CreateWideModePanel("Глубокая", "\uEA18", OnDeepScanClick);
-        deepCard.MinHeight = 520;
+        deepCard.MinHeight = 506;
         Grid.SetColumn(deepCard, 0);
         Grid.SetRow(deepCard, 0);
         Grid.SetRowSpan(deepCard, 2);
         dashboard.Children.Add(deepCard);
 
         var quickCard = CreateAccentModePanel("Быстрая", "\uE721", OnQuickScanClick);
-        quickCard.MinHeight = 232;
+        quickCard.MinHeight = 242;
         Grid.SetColumn(quickCard, 1);
         Grid.SetRow(quickCard, 0);
         dashboard.Children.Add(quickCard);
 
-        var selectiveCard = CreateOffsetModePanel("Выборочная / программа", "\uE8E5", OnSelectiveScanClick);
-        selectiveCard.MinHeight = 270;
+        var selectiveCard = CreateOffsetModePanel("Выборочная", "\uE8D5", OnSelectiveScanClick);
+        selectiveCard.MinHeight = 246;
         Grid.SetColumn(selectiveCard, 1);
         Grid.SetRow(selectiveCard, 1);
         dashboard.Children.Add(selectiveCard);
 
         HomeNetworkCard = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", new CornerRadius(32, 26, 28, 30), new Thickness(24));
         HomeNetworkCard.HorizontalAlignment = HorizontalAlignment.Stretch;
-        HomeNetworkCard.VerticalAlignment = VerticalAlignment.Stretch;
-        HomeNetworkCard.MinHeight = 520;
+        HomeNetworkCard.VerticalAlignment = VerticalAlignment.Top;
+        HomeNetworkCard.MinHeight = 242;
 
         var networkGrid = new Grid
         {
             RowSpacing = 16
         };
-        networkGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         networkGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         networkGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         networkGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1038,7 +1037,7 @@ public sealed partial class MainWindow : Window
         var networkText = new StackPanel { Spacing = 8 };
         networkText.Children.Add(CreateSectionTitle("Защита в сети", 28));
         NetworkStatusText = CreateBodyText("AppMutedTextBrush");
-        NetworkStatusText.MaxWidth = 260;
+        NetworkStatusText.Visibility = Visibility.Collapsed;
         networkText.Children.Add(NetworkStatusText);
         Grid.SetRow(networkText, 1);
         networkGrid.Children.Add(networkText);
@@ -1049,7 +1048,7 @@ public sealed partial class MainWindow : Window
         networkControlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         networkControlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var networkControlText = new StackPanel();
-        networkControlText.Children.Add(CreateSectionTitle("Щит", 20));
+        networkControlText.Children.Add(CreateSectionTitle("Включить", 20));
         networkControlGrid.Children.Add(networkControlText);
         NetworkProtectionToggle = new ToggleSwitch
         {
@@ -1067,7 +1066,6 @@ public sealed partial class MainWindow : Window
         HomeNetworkCard.Child = networkGrid;
         Grid.SetColumn(HomeNetworkCard, 2);
         Grid.SetRow(HomeNetworkCard, 0);
-        Grid.SetRowSpan(HomeNetworkCard, 2);
         dashboard.Children.Add(HomeNetworkCard);
 
         return CreatePageShell(desktopHost, 1460, false);
@@ -2776,17 +2774,26 @@ public sealed partial class MainWindow : Window
         await StartServerScanAsync("SELECTIVE", "ON_DEMAND", target.Value.ArtifactKind, target.Value.TargetName, target.Value.TargetPath);
     }
 
-    private async void OnProgramScanClick(object sender, RoutedEventArgs e)
+    private async void OnSelectFileScanClick(object sender, RoutedEventArgs e)
     {
-        var target = await PickScanEntryAsync(
-            "Проверка программы",
-            "Выбери исполняемый файл или папку установки программы.");
+        var target = await PickFileTargetAsync();
         if (target is null)
         {
             return;
         }
 
-        await StartServerScanAsync("ARTIFACT", "ON_DEMAND", target.Value.ArtifactKind, target.Value.TargetName, target.Value.TargetPath);
+        await StartServerScanAsync("SELECTIVE", "ON_DEMAND", target.Value.ArtifactKind, target.Value.TargetName, target.Value.TargetPath);
+    }
+
+    private async void OnSelectFolderScanClick(object sender, RoutedEventArgs e)
+    {
+        var target = await PickFolderTargetAsync();
+        if (target is null)
+        {
+            return;
+        }
+
+        await StartServerScanAsync("SELECTIVE", "ON_DEMAND", target.Value.ArtifactKind, target.Value.TargetName, target.Value.TargetPath);
     }
 
     private async Task<ScanEntryTarget?> PickScanEntryAsync(string title, string description)
@@ -3472,12 +3479,9 @@ public sealed partial class MainWindow : Window
         var textStack = new StackPanel
         {
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 6
+            Spacing = 2
         };
         textStack.Children.Add(CreateSectionTitle(title, 30));
-        var subtitle = CreateBodyText("AppMutedTextBrush");
-        subtitle.Text = "Полный охват";
-        textStack.Children.Add(subtitle);
         Grid.SetColumn(textStack, 1);
         header.Children.Add(textStack);
         grid.Children.Add(header);
@@ -3536,26 +3540,27 @@ public sealed partial class MainWindow : Window
     private Border CreateAccentModePanel(string title, string glyph, RoutedEventHandler handler)
     {
         var card = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", new CornerRadius(30, 44, 30, 38), new Thickness(22));
-        var stack = new StackPanel
+        var grid = new Grid
         {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 18
+            RowSpacing = 18,
+            VerticalAlignment = VerticalAlignment.Stretch
         };
-        var icon = CreateGlyphShell(glyph, 64, true);
-        icon.HorizontalAlignment = HorizontalAlignment.Center;
-        stack.Children.Add(icon);
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var titleText = CreateTitleText(title, 26, TextAlignment.Center);
+        var titleText = CreateTitleText(title, 28, TextAlignment.Center);
         titleText.HorizontalAlignment = HorizontalAlignment.Center;
-        stack.Children.Add(titleText);
+        titleText.VerticalAlignment = VerticalAlignment.Center;
+        grid.Children.Add(titleText);
 
         var action = CreateModeActionButton("Старт", handler, true);
         action.HorizontalAlignment = HorizontalAlignment.Center;
-        action.MinWidth = 188;
-        stack.Children.Add(action);
+        action.MinWidth = 212;
+        Grid.SetRow(action, 1);
+        grid.Children.Add(action);
 
-        card.Child = stack;
+        card.Child = grid;
         return card;
     }
 
@@ -3576,18 +3581,15 @@ public sealed partial class MainWindow : Window
 
         var textStack = new StackPanel
         {
-            Spacing = 8
+            Spacing = 2
         };
         var titleText = CreateSectionTitle(title, 23);
         titleText.Margin = new Thickness(0, 4, 0, 0);
         textStack.Children.Add(titleText);
-        var subtitle = CreateBodyText("AppMutedTextBrush");
-        subtitle.Text = "Файл, папка или программа";
-        textStack.Children.Add(subtitle);
         Grid.SetRow(textStack, 1);
         grid.Children.Add(textStack);
 
-        var action = CreateModeSplitButton("Выбрать", handler, OnProgramScanClick);
+        var action = CreateModeSplitButton("Выбрать", handler, OnSelectFileScanClick, OnSelectFolderScanClick);
         action.HorizontalAlignment = HorizontalAlignment.Right;
         Grid.SetRow(action, 2);
         grid.Children.Add(action);
@@ -3671,7 +3673,7 @@ public sealed partial class MainWindow : Window
         return button;
     }
 
-    private SplitButton CreateModeSplitButton(string text, RoutedEventHandler primaryHandler, RoutedEventHandler secondaryHandler)
+    private SplitButton CreateModeSplitButton(string text, RoutedEventHandler primaryHandler, RoutedEventHandler fileHandler, RoutedEventHandler folderHandler)
     {
         var splitButton = new SplitButton
         {
@@ -3692,12 +3694,18 @@ public sealed partial class MainWindow : Window
         splitButton.Click += primaryHandler;
 
         var flyout = new MenuFlyout();
-        var programItem = new MenuFlyoutItem
+        var fileItem = new MenuFlyoutItem
         {
-            Text = "Программа"
+            Text = "Файл"
         };
-        programItem.Click += secondaryHandler;
-        flyout.Items.Add(programItem);
+        fileItem.Click += fileHandler;
+        flyout.Items.Add(fileItem);
+        var folderItem = new MenuFlyoutItem
+        {
+            Text = "Папка"
+        };
+        folderItem.Click += folderHandler;
+        flyout.Items.Add(folderItem);
         splitButton.Flyout = flyout;
         return splitButton;
     }

@@ -87,6 +87,7 @@ public partial class App : Application
 
             _window.Activate();
             WindowsLog.Info("Main window activated");
+            WindowsLog.Info("Window lifecycle is deferred until the main window finishes initialization");
         }
         catch (Exception ex)
         {

@@ -200,13 +200,13 @@ public sealed partial class MainWindow : Window
         {
             WindowsLog.Info("Configuring window handle");
             TryConfigureWindowHandle();
-            WindowsLog.Info("Ensuring window lifecycle on load");
-            App.EnsureWindowLifecycle(this);
-            HookWindowLifecycle();
             WindowsLog.Info("Applying ambient palette on load");
             ApplyAmbientPalette();
             WindowsLog.Info("Preparing interactive auth background");
             await InitializeAsync();
+            WindowsLog.Info("Ensuring window lifecycle after initialization");
+            App.EnsureWindowLifecycle(this);
+            HookWindowLifecycle();
         }
         catch (Exception ex)
         {
@@ -2707,6 +2707,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        WindowsLog.Info("Configuring window lifecycle bindings");
         App.WindowLifecycle.RestoreRequested -= OnRestoreRequested;
         App.WindowLifecycle.RestoreRequested += OnRestoreRequested;
         App.WindowLifecycle.SetMinimumSize(1180, 820);
@@ -2715,6 +2716,7 @@ public sealed partial class MainWindow : Window
             ? WindowsTrayProgressService.FromScan(_activeScan)
             : WindowsTrayProgressService.CreateIdle());
         App.WindowLifecycle.RefreshTrayState();
+        WindowsLog.Info("Window lifecycle bindings ready");
     }
 
     private void OnRestoreRequested()

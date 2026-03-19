@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using NeuralV.Windows.Services;
 
 WindowsLog.StartSession("windows-launcher");
@@ -14,6 +15,12 @@ try
     WindowsLog.Info($"Resolved install root: {installRoot}");
     WindowsLog.Info($"Public updater path: {updaterPath}");
     WindowsLog.Info($"GUI core path: {guiPath}");
+
+    if (TryActivateExistingInstance(guiPath))
+    {
+        WindowsLog.Info("Existing GUI instance detected, activated, and launch skipped");
+        return;
+    }
 
     if (File.Exists(updaterPath))
     {
@@ -76,3 +83,62 @@ catch (Exception ex)
     WindowsLog.Error("Launcher failed", ex);
     Environment.ExitCode = 1;
 }
+
+static bool TryActivateExistingInstance(string guiPath)
+{
+    try
+    {
+        var processName = Path.GetFileNameWithoutExtension(guiPath);
+        if (string.IsNullOrWhiteSpace(processName))
+        {
+            return false;
+        }
+
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            if (process.Id == Environment.ProcessId)
+            {
+                continue;
+            }
+
+            try
+            {
+                var existingPath = process.MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(existingPath)
+                    && !string.Equals(Path.GetFullPath(existingPath), Path.GetFullPath(guiPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+            }
+            catch
+            {
+            }
+
+            var hwnd = process.MainWindowHandle;
+            if (hwnd == IntPtr.Zero)
+            {
+                continue;
+            }
+
+            ShowWindow(hwnd, SwRestore);
+            ShowWindow(hwnd, SwShow);
+            SetForegroundWindow(hwnd);
+            return true;
+        }
+    }
+    catch (Exception ex)
+    {
+        WindowsLog.Error("TryActivateExistingInstance failed", ex);
+    }
+
+    return false;
+}
+
+const uint SwRestore = 9;
+const uint SwShow = 5;
+
+[DllImport("user32.dll", SetLastError = true)]
+static extern bool ShowWindow(IntPtr hwnd, uint command);
+
+[DllImport("user32.dll", SetLastError = true)]
+static extern bool SetForegroundWindow(IntPtr hwnd);

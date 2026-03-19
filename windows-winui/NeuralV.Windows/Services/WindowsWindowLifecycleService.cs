@@ -17,6 +17,13 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     private const uint WmLButtonUp = 0x0202;
     private const uint WmLButtonDblClk = 0x0203;
     private const uint WmRButtonUp = 0x0205;
+    private const uint MfString = 0x00000000;
+    private const uint TpmLeftAlign = 0x0000;
+    private const uint TpmBottomAlign = 0x0020;
+    private const uint TpmRightButton = 0x0002;
+    private const uint TpmReturnCommand = 0x0100;
+    private const uint TrayCommandOpen = 0x101;
+    private const uint TrayCommandExit = 0x102;
 
     private const uint NimAdd = 0x00000000;
     private const uint NimModify = 0x00000001;
@@ -43,8 +50,8 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     private bool _trayVisible;
     private bool _hiddenToTray;
     private bool _allowNextClose;
-    private int _minimumWidth = 1180;
-    private int _minimumHeight = 820;
+    private int _minimumWidth = 920;
+    private int _minimumHeight = 640;
     private string _title = "NeuralV";
     private Func<bool>? _shouldMinimizeToTray;
     private Func<TrayProgressState>? _trayStateProvider;
@@ -53,6 +60,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
     public event Action? RestoreRequested;
     public event Action? HiddenToTray;
+    public event Action? ExitRequested;
 
     public WindowsWindowLifecycleService()
     {
@@ -308,9 +316,14 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             if (message == TrayCallbackMessage)
             {
                 var callback = unchecked((uint)lParam.ToInt64());
-                if (callback is WmLButtonUp or WmLButtonDblClk or WmRButtonUp)
+                if (callback is WmLButtonUp or WmLButtonDblClk)
                 {
                     RestoreFromTray();
+                    return IntPtr.Zero;
+                }
+                if (callback == WmRButtonUp)
+                {
+                    ShowTrayContextMenu();
                     return IntPtr.Zero;
                 }
             }
@@ -360,6 +373,56 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         {
             WindowsLog.Error("Tray close predicate failed", ex);
             return false;
+        }
+    }
+
+    private void ShowTrayContextMenu()
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        IntPtr menu = IntPtr.Zero;
+        try
+        {
+            menu = CreatePopupMenu();
+            if (menu == IntPtr.Zero)
+            {
+                return;
+            }
+
+            AppendMenu(menu, MfString, TrayCommandOpen, "Открыть");
+            AppendMenu(menu, MfString, TrayCommandExit, "Выйти");
+            SetForegroundWindow(_hwnd);
+            GetCursorPos(out var point);
+            var command = TrackPopupMenuEx(
+                menu,
+                TpmLeftAlign | TpmBottomAlign | TpmRightButton | TpmReturnCommand,
+                point.x,
+                point.y,
+                _hwnd,
+                IntPtr.Zero);
+
+            if (command == TrayCommandOpen)
+            {
+                RestoreFromTray();
+            }
+            else if (command == TrayCommandExit)
+            {
+                ExitRequested?.Invoke();
+            }
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Tray context menu failed", ex);
+        }
+        finally
+        {
+            if (menu != IntPtr.Zero)
+            {
+                DestroyMenu(menu);
+            }
         }
     }
 
@@ -421,6 +484,18 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterWindowMessage(string text);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr CreatePopupMenu();
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool AppendMenu(IntPtr menu, uint flags, uint itemId, string text);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr hwnd, IntPtr rect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyMenu(IntPtr menu);
+
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr newProc);
 
@@ -435,6 +510,9 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetCursorPos(out POINT point);
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
@@ -458,8 +536,8 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
 public sealed class WindowsWindowLifecycleOptions
 {
-    public int MinimumWidth { get; init; } = 1180;
-    public int MinimumHeight { get; init; } = 820;
+    public int MinimumWidth { get; init; } = 920;
+    public int MinimumHeight { get; init; } = 640;
     public string Title { get; init; } = "NeuralV";
     public Func<bool>? ShouldMinimizeToTray { get; init; }
     public Func<TrayProgressState>? TrayStateProvider { get; init; }

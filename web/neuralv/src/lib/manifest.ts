@@ -29,6 +29,91 @@ export type ReleaseManifest = {
   artifacts: ReleaseArtifact[];
 };
 
+function cleanText(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(/\s+/g, ' ');
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof value === 'number') {
+    return String(value);
+  }
+
+  return null;
+}
+
+function pushRequirement(lines: string[], value: unknown, label?: string) {
+  const text = cleanText(value);
+  if (!text) {
+    return;
+  }
+
+  lines.push(label ? `${label}: ${text}` : text);
+}
+
+function readRequirementObject(value: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const knownFields: Array<[string, string]> = [
+    ['os', 'Система'],
+    ['platform', 'Система'],
+    ['minimumOs', 'Минимум'],
+    ['minimum_os', 'Минимум'],
+    ['minOs', 'Минимум'],
+    ['min_os', 'Минимум'],
+    ['minimumAndroid', 'Android'],
+    ['minimum_android', 'Android'],
+    ['minSdk', 'Android'],
+    ['min_sdk', 'Android'],
+    ['minimumWindows', 'Windows'],
+    ['minimum_windows', 'Windows'],
+    ['minimumLinux', 'Linux'],
+    ['minimum_linux', 'Linux'],
+    ['architecture', 'Архитектура'],
+    ['architectures', 'Архитектура'],
+    ['runtime', 'Runtime'],
+    ['desktopEnvironment', 'Desktop'],
+    ['desktop_environment', 'Desktop'],
+    ['ram', 'RAM'],
+    ['storage', 'Диск']
+  ];
+
+  for (const [field, label] of knownFields) {
+    const raw = value[field];
+    if (Array.isArray(raw)) {
+      const parts = raw
+        .map((item) => cleanText(item))
+        .filter((item): item is string => Boolean(item));
+      if (parts.length > 0) {
+        lines.push(`${label}: ${parts.join(', ')}`);
+      }
+      continue;
+    }
+
+    pushRequirement(lines, raw, label);
+  }
+
+  return lines;
+}
+
+function readRequirementCandidate(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((entry) => readRequirementCandidate(entry))
+      .filter((entry, index, list) => list.indexOf(entry) === index);
+  }
+
+  const text = cleanText(value);
+  if (text) {
+    return [text];
+  }
+
+  if (value && typeof value === 'object') {
+    return readRequirementObject(value as Record<string, unknown>);
+  }
+
+  return [];
+}
+
 function stableArtifactDownloadUrl(
   platform: string,
   metadata: ArtifactMetadata | undefined,
@@ -175,6 +260,71 @@ export async function fetchReleaseManifest(signal?: AbortSignal, platform?: stri
 
 export function getArtifact(manifest: ReleaseManifest, platform: ReleaseArtifact['platform']): ReleaseArtifact | undefined {
   return manifest.artifacts.find((artifact) => artifact.platform === platform);
+}
+
+export function getArtifactVersion(manifest: ReleaseManifest, platform: ReleaseArtifact['platform']): string | null {
+  const artifact = getArtifact(manifest, platform);
+  const direct = cleanText(artifact?.version);
+  if (direct) {
+    return direct;
+  }
+
+  if (manifest.platform === platform) {
+    return cleanText(manifest.version);
+  }
+
+  return null;
+}
+
+export function getArtifactSystemRequirements(
+  artifact?: ReleaseArtifact,
+  manifest?: ReleaseManifest
+): string[] {
+  const metadata = artifact?.metadata && typeof artifact.metadata === 'object'
+    ? (artifact.metadata as Record<string, unknown>)
+    : undefined;
+
+  const candidates: unknown[] = [
+    metadata?.systemRequirements,
+    metadata?.system_requirements,
+    metadata?.requirements,
+    metadata?.minimumRequirements,
+    metadata?.minimum_requirements,
+    metadata?.supportedSystems,
+    metadata?.supported_systems,
+    metadata?.minimumOs,
+    metadata?.minimum_os,
+    metadata?.minOs,
+    metadata?.min_os,
+    metadata?.minimumAndroid,
+    metadata?.minimum_android,
+    metadata?.minSdk,
+    metadata?.min_sdk,
+    metadata?.minimumWindows,
+    metadata?.minimum_windows,
+    metadata?.minimumLinux,
+    metadata?.minimum_linux,
+    metadata?.architecture,
+    metadata?.architectures,
+    metadata?.runtime,
+    metadata?.desktopEnvironment,
+    metadata?.desktop_environment
+  ];
+
+  if (manifest?.platform && manifest.platform === artifact?.platform) {
+    candidates.push(
+      (manifest as unknown as Record<string, unknown>).systemRequirements,
+      (manifest as unknown as Record<string, unknown>).system_requirements,
+      (manifest as unknown as Record<string, unknown>).requirements
+    );
+  }
+
+  const lines = candidates
+    .flatMap((candidate) => readRequirementCandidate(candidate))
+    .map((entry) => entry.trim())
+    .filter((entry): entry is string => entry.length > 0);
+
+  return lines.filter((entry, index, list) => list.indexOf(entry) === index);
 }
 
 export function isArtifactReady(artifact?: ReleaseArtifact): boolean {

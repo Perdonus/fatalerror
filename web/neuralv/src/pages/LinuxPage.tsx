@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
-import { getArtifact } from '../lib/manifest';
+import { getArtifact, getArtifactSystemRequirements, getArtifactVersion } from '../lib/manifest';
 import { getPackage, getPackageVariant, PackageVariant } from '../lib/packages';
 import { usePackageRegistry } from '../hooks/usePackageRegistry';
 
@@ -81,12 +81,13 @@ export function LinuxPage() {
   const neuralvPackage = useMemo(() => getPackage(catalog, '@lvls/neuralv'), [catalog]);
   const linuxVariant = useMemo(() => getPackageVariant(neuralvPackage, 'linux'), [neuralvPackage]);
   const linuxArtifact = useMemo(() => getArtifact(linuxManifestState.manifest, 'linux'), [linuxManifestState.manifest]);
-
-  const linuxVersion =
-    linuxArtifact?.version ||
-    (linuxManifestState.manifest.platform === 'linux' ? (linuxManifestState.manifest.version || '') : '') ||
-    linuxVariant?.version ||
-    'pending';
+  const shellManifestState = useReleaseManifest('shell');
+  const shellArtifact = useMemo(() => getArtifact(shellManifestState.manifest, 'shell'), [shellManifestState.manifest]);
+  const linuxVersion = getArtifactVersion(linuxManifestState.manifest, 'linux') || linuxVariant?.version || 'pending';
+  const requirements = [
+    ...getArtifactSystemRequirements(linuxArtifact, linuxManifestState.manifest),
+    ...getArtifactSystemRequirements(shellArtifact, shellManifestState.manifest)
+  ].filter((entry, index, list) => list.indexOf(entry) === index);
 
   const [directKey, setDirectKey] = useState<DirectPackageKey>('ubuntu');
   const selectedOption = directOptions.find((item) => item.key === directKey) ?? directOptions[0];
@@ -110,11 +111,11 @@ export function LinuxPage() {
       <section className="hero-card platform-hero platform-hero-simple linux-hero">
         <div className="hero-copy">
           <h1>NeuralV для Linux</h1>
-          <p>Один пакет для Linux: GUI и CLI ставятся вместе. Основной путь установки идёт через NV.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#linux-install">Установить</a>
           </div>
           <span className="hero-support-text">Версия Linux: {linuxVersion}</span>
+          <span className="hero-support-text">Требования: {requirements[0] || 'пока нет в manifest.'}</span>
         </div>
       </section>
 
@@ -123,7 +124,6 @@ export function LinuxPage() {
           <div className="install-card-head simple-head">
             <div className="install-card-copy">
               <h3>Через NV</h3>
-              <p className="install-intro">Главный способ установки: NV ставит весь NeuralV сразу, вместе с GUI и CLI.</p>
             </div>
           </div>
 
@@ -138,7 +138,6 @@ export function LinuxPage() {
           <div className="install-card-head simple-head">
             <div className="install-card-copy">
               <h3>Прямые пакеты</h3>
-              <p className="install-intro">Если NV не нужен, можно скачать пакет напрямую. Это вторичный путь, и CLI в него тоже входит.</p>
             </div>
           </div>
 

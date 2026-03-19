@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getArtifact } from '../lib/manifest';
+import { getArtifact, getArtifactSystemRequirements, getArtifactVersion } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
 type WindowsInstallMode = 'setup' | 'portable' | 'powershell' | 'cmd';
@@ -19,10 +19,6 @@ const WINDOWS_HIGHLIGHTS = [
   {
     title: 'Один аккаунт',
     text: 'Вход, история и проверки работают через тот же аккаунт NeuralV, что и на других версиях.'
-  },
-  {
-    title: 'Setup, portable и NV',
-    text: 'Можно скачать готовую сборку или поставить NeuralV через NV одной командной цепочкой.'
   }
 ] as const;
 
@@ -59,28 +55,28 @@ function getWindowsInstallContent(
         buttonLabel: 'Скачать setup',
         downloadUrl: options.setupUrl,
         command: '',
-        description: 'Обычная установка с ярлыками и готовым запуском.'
+        description: ''
       };
     case 'portable':
       return {
         buttonLabel: 'Скачать portable',
         downloadUrl: options.portableUrl,
         command: '',
-        description: 'Версия без установки: скачай, распакуй и запусти.'
+        description: ''
       };
     case 'powershell':
       return {
         buttonLabel: '',
         downloadUrl: undefined,
         command: getPowershellCommand(),
-        description: 'PowerShell сам поставит NV, проверит его и установит NeuralV.'
+        description: ''
       };
     default:
       return {
         buttonLabel: '',
         downloadUrl: undefined,
         command: getCmdCommand(),
-        description: 'CMD делает тот же flow через NV: установка, PATH, проверка и запуск установки NeuralV.'
+        description: ''
       };
   }
 }
@@ -88,8 +84,8 @@ function getWindowsInstallContent(
 export function WindowsPage() {
   const manifestState = useReleaseManifest('windows');
   const manifestArtifact = useMemo(() => getArtifact(manifestState.manifest, 'windows'), [manifestState.manifest]);
-
-  const version = manifestArtifact?.version || (manifestState.manifest.platform === 'windows' ? (manifestState.manifest.version || '') : '') || 'pending';
+  const version = getArtifactVersion(manifestState.manifest, 'windows') || 'pending';
+  const requirements = getArtifactSystemRequirements(manifestArtifact, manifestState.manifest);
   const portableUrl = manifestArtifact?.downloadUrl || manifestState.manifest.portableUrl || manifestState.manifest.downloadUrl;
   const setupUrl = manifestState.manifest.setupUrl || portableUrl;
   const setupReady = Boolean(setupUrl);
@@ -115,13 +111,13 @@ export function WindowsPage() {
       <section className="hero-card platform-hero platform-hero-simple">
         <div className="hero-copy">
           <h1>NeuralV для Windows</h1>
-          <p>Новый нативный клиент для ПК: setup, portable или установка через NV в PowerShell и CMD.</p>
           <div className="hero-actions">
             <a className="nv-button" href="#windows-install">
               Установить
             </a>
           </div>
           <span className="hero-support-text">Версия Windows: {version}</span>
+          <span className="hero-support-text">Требования: {requirements[0] || 'пока нет в manifest.'}</span>
         </div>
       </section>
 
@@ -141,7 +137,7 @@ export function WindowsPage() {
           <div className="install-card-head simple-head">
             <div className="install-card-copy">
               <h3>Установка</h3>
-              <p className="install-intro">{active.description}</p>
+              {active.description ? <p className="install-intro">{active.description}</p> : null}
             </div>
           </div>
 

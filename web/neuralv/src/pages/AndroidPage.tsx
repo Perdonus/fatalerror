@@ -1,4 +1,4 @@
-import { getArtifact, isArtifactReady } from '../lib/manifest';
+import { getArtifact, getArtifactSystemRequirements, getArtifactVersion, isArtifactReady } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 
 const installSteps = [
@@ -8,9 +8,11 @@ const installSteps = [
 ];
 
 export function AndroidPage() {
-  const manifestState = useReleaseManifest();
+  const manifestState = useReleaseManifest('android');
   const artifact = getArtifact(manifestState.manifest, 'android');
   const ready = isArtifactReady(artifact);
+  const version = getArtifactVersion(manifestState.manifest, 'android') || 'pending';
+  const requirements = getArtifactSystemRequirements(artifact, manifestState.manifest);
 
   return (
     <div className="page-stack">
@@ -39,10 +41,10 @@ export function AndroidPage() {
 
         <div className="hero-panel compact-panel">
           <article className="mini-stat">
-            <strong>Android 10+</strong>
+            <span className="mini-stat-label">Версия</span>
+            <strong>{version}</strong>
             <span className="hero-support-text">
-              Телефоны и планшеты. Один APK, история проверок и общий вход с другими версиями
-              NeuralV.
+              Системные требования: {requirements.length > 0 ? requirements.join(' · ') : 'пока не опубликованы в manifest.'}
             </span>
           </article>
         </div>

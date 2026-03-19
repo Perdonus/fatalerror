@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -43,7 +44,7 @@ public sealed partial class MainWindow : Window
     private readonly ObservableCollection<string> _scanTimeline = new();
     private readonly List<StoredScanRecord> _historyRecords = new();
     private readonly List<FloatingShape> _floatingShapes = new();
-    private readonly DispatcherTimer _shapeTimer = new();
+    private readonly Stopwatch _shapeStopwatch = Stopwatch.StartNew();
     private readonly Random _random = new();
 
     private SessionData? _session;
@@ -59,11 +60,13 @@ public sealed partial class MainWindow : Window
     private bool _preferenceUiSync;
     private bool _scanOverlayFallbackPreferred = true;
     private bool _layoutBuilt;
+    private bool _shapeAnimationRunning;
     private AppScreen _screen = AppScreen.Splash;
     private IntPtr _windowHandle;
     private AppWindow? _appWindow;
     private Canvas? _welcomeShapeCanvas;
     private Point? _welcomePointer;
+    private TimeSpan _lastShapeRenderTimestamp;
 
     private UiRectangle BackdropGradient = default!;
     private UiRectangle FabricLayerA = default!;
@@ -78,6 +81,8 @@ public sealed partial class MainWindow : Window
     private Border BusyOverlay = default!;
     private Border StatusBanner = default!;
     private Grid ScreenHost = default!;
+    private Grid ShellRoot = default!;
+    private TextBlock FooterVersionText = default!;
     private Grid TopBar = default!;
     private Grid AuthBackdropLayer = default!;
     private Grid ScanOverlay = default!;
@@ -149,11 +154,9 @@ public sealed partial class MainWindow : Window
         {
             _deviceId = EnsureDeviceIdSafe();
             Content = _windowRoot;
+            Title = "NeuralV";
             _windowRoot.Loaded += OnRootLoaded;
             Closed += OnClosed;
-
-            _shapeTimer.Interval = TimeSpan.FromMilliseconds(16);
-            _shapeTimer.Tick += OnShapeTick;
 
             BuildBootstrapLayout();
         }
@@ -263,8 +266,9 @@ public sealed partial class MainWindow : Window
         if (App.WindowLifecycle is not null)
         {
             App.WindowLifecycle.RestoreRequested -= OnRestoreRequested;
+            App.WindowLifecycle.ExitRequested -= OnTrayExitRequested;
         }
-        _shapeTimer.Stop();
+        StopShapeAnimation();
         _scanPollCts?.Cancel();
         _apiClient.Dispose();
     }
@@ -281,6 +285,16 @@ public sealed partial class MainWindow : Window
 
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(_windowHandle);
             _appWindow = AppWindow.GetFromWindowId(windowId);
+            Title = "NeuralV";
+            if (_appWindow is not null)
+            {
+                _appWindow.Title = "NeuralV";
+                var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "NeuralV.ico");
+                if (File.Exists(iconPath))
+                {
+                    _appWindow.SetIcon(iconPath);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -432,8 +446,8 @@ public sealed partial class MainWindow : Window
         _welcomePointer = null;
         _welcomeShapeCanvas = null;
         _layoutBuilt = true;
-        _windowRoot.MinWidth = 1180;
-        _windowRoot.MinHeight = 820;
+        _windowRoot.MinWidth = 920;
+        _windowRoot.MinHeight = 640;
 
         WindowsLog.Info("BuildLayout: ambient layer");
         var ambientLayer = new Grid();
@@ -503,20 +517,21 @@ public sealed partial class MainWindow : Window
         _windowRoot.Children.Add(ambientLayer);
 
         WindowsLog.Info("BuildLayout: shell");
-        var shell = new Grid
+        ShellRoot = new Grid
         {
-            Padding = new Thickness(32, 22, 32, 28),
+            Padding = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch
         };
-        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _windowRoot.Children.Add(shell);
+        ShellRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        ShellRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        ShellRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Canvas.SetZIndex(ShellRoot, 20);
+        _windowRoot.Children.Add(ShellRoot);
 
         WindowsLog.Info("BuildLayout: top bar");
         TopBar = BuildTopBar();
-        shell.Children.Add(TopBar);
+        ShellRoot.Children.Add(TopBar);
 
         WindowsLog.Info("BuildLayout: status banner");
         StatusBanner = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14, 10, 14, 10));
@@ -525,12 +540,12 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(StatusBanner, 1);
         StatusBannerText = CreateBodyText("AppTextBrush");
         StatusBanner.Child = StatusBannerText;
-        shell.Children.Add(StatusBanner);
+        ShellRoot.Children.Add(StatusBanner);
 
         WindowsLog.Info("BuildLayout: screen host");
         ScreenHost = new Grid();
         Grid.SetRow(ScreenHost, 2);
-        shell.Children.Add(ScreenHost);
+        ShellRoot.Children.Add(ScreenHost);
 
         WindowsLog.Info("BuildLayout: splash");
         SplashView = BuildSplashViewSafe();
@@ -586,6 +601,12 @@ public sealed partial class MainWindow : Window
         busyCard.Child = BusyText;
         BusyOverlay.Child = busyCard;
         _windowRoot.Children.Add(BusyOverlay);
+
+        WindowsLog.Info("BuildLayout: version badge");
+        var versionBadge = BuildVersionBadge();
+        Canvas.SetZIndex(versionBadge, 30);
+        _windowRoot.Children.Add(versionBadge);
+        UpdateVersionBadge();
 
         WindowsLog.Info("BuildLayout: ambient palette");
         ApplyAmbientPalette();
@@ -728,27 +749,15 @@ public sealed partial class MainWindow : Window
         {
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 22,
+            Spacing = 18,
             MaxWidth = 420
         };
         host.Children.Add(centerStack);
 
-        var logoShell = new Border
-        {
-            Width = 164,
-            Height = 164,
-            Background = ThemeBrush("AppAccentSoftBrush"),
-            CornerRadius = new CornerRadius(82),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Padding = new Thickness(18)
-        };
-        logoShell.Child = CreateLogoElement();
-        centerStack.Children.Add(logoShell);
-
         var actions = new StackPanel
         {
-            MaxWidth = 420,
-            Width = 420,
+            MaxWidth = 360,
+            Width = 360,
             Spacing = 12,
             HorizontalAlignment = HorizontalAlignment.Center
         };
@@ -767,11 +776,9 @@ public sealed partial class MainWindow : Window
     {
         var host = new Grid
         {
-            IsHitTestVisible = true,
+            IsHitTestVisible = false,
             Background = new SolidColorBrush(UiColor.FromArgb(1, 0, 0, 0))
         };
-        host.PointerMoved += OnAuthBackdropPointerMoved;
-        host.PointerExited += OnAuthBackdropPointerExited;
         host.SizeChanged += OnAuthBackdropSizeChanged;
 
         _welcomeShapeCanvas = new Canvas
@@ -795,7 +802,7 @@ public sealed partial class MainWindow : Window
         WindowsLog.Info("Creating deferred auth backdrop layer");
         AuthBackdropLayer = BuildAuthBackdropLayer();
         AuthBackdropLayer.Visibility = Visibility.Collapsed;
-        Canvas.SetZIndex(AuthBackdropLayer, 5);
+        Canvas.SetZIndex(AuthBackdropLayer, 4);
         _windowRoot.Children.Add(AuthBackdropLayer);
         WindowsLog.Info("Deferred auth backdrop layer attached");
     }
@@ -807,7 +814,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        for (var index = 0; index < 14; index++)
+        for (var index = 0; index < 12; index++)
         {
             var shape = CreateFloatingShape(index % 6);
             _floatingShapes.Add(shape);
@@ -819,10 +826,10 @@ public sealed partial class MainWindow : Window
     {
         var shape = new Border
         {
-            Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.28),
-            BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.08)),
+            Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.42, 0.72),
+            BorderBrush = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.16)),
             BorderThickness = new Thickness(1),
-            Opacity = 0.82,
+            Opacity = 1,
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = new RotateTransform { Angle = variant * 12 }
         };
@@ -832,13 +839,12 @@ public sealed partial class MainWindow : Window
             Element = shape,
             Variant = variant,
             Angle = variant * 12,
-            AngularVelocity = (_random.NextDouble() - 0.5) * 1.4,
-            VelocityX = (_random.NextDouble() - 0.5) * 2.6,
-            VelocityY = (_random.NextDouble() - 0.5) * 2.6
+            AngularVelocity = (_random.NextDouble() - 0.5) * 2.8,
+            VelocityX = (_random.NextDouble() - 0.5) * 7.4,
+            VelocityY = (_random.NextDouble() - 0.5) * 7.4
         };
 
         ApplyShapeVariant(model, variant);
-        shape.Tapped += OnWelcomeShapeTapped;
         return model;
     }
 
@@ -1053,11 +1059,7 @@ public sealed partial class MainWindow : Window
         var accountStack = new StackPanel { Spacing = 12 };
         SettingsAccountText = CreateBodyText("AppMutedTextBrush");
         accountStack.Children.Add(SettingsAccountText);
-        var versionButton = CreateTonalButton(string.Empty, OnVersionTapClick);
-        versionButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        SettingsVersionText = CreateBodyText("AppTextBrush");
-        versionButton.Content = SettingsVersionText;
-        accountStack.Children.Add(versionButton);
+        SettingsVersionText = null!;
         SettingsDeveloperText = CreateBodyText("AppMutedTextBrush");
         accountStack.Children.Add(SettingsDeveloperText);
         accountCard.Child = accountStack;
@@ -1496,13 +1498,19 @@ public sealed partial class MainWindow : Window
         {
             AuthBackdropLayer.Visibility = authBackdropVisible ? Visibility.Visible : Visibility.Collapsed;
         }
+        if (ShellRoot is not null)
+        {
+            ShellRoot.Padding = chromeVisible
+                ? new Thickness(28, 18, 28, 22)
+                : new Thickness(0);
+        }
         if (screen is AppScreen.Welcome or AppScreen.Login or AppScreen.Register or AppScreen.Code)
         {
-            _shapeTimer.Start();
+            StartShapeAnimation();
         }
         else
         {
-            _shapeTimer.Stop();
+            StopShapeAnimation();
         }
 
         SetDrawerState(false);
@@ -1534,6 +1542,8 @@ public sealed partial class MainWindow : Window
         var displayName = hasSession
             ? (!string.IsNullOrWhiteSpace(_session!.User.Name) ? _session.User.Name : _session.User.Email)
             : "Гостевой режим";
+
+        UpdateVersionBadge();
 
         if (AccountChipText is not null)
         {
@@ -1857,7 +1867,57 @@ public sealed partial class MainWindow : Window
         SetStatus(null);
     }
 
+    private void StartShapeAnimation()
+    {
+        if (_shapeAnimationRunning)
+        {
+            return;
+        }
+
+        _lastShapeRenderTimestamp = TimeSpan.Zero;
+        CompositionTarget.Rendering += OnShapeRendering;
+        _shapeAnimationRunning = true;
+    }
+
+    private void StopShapeAnimation()
+    {
+        if (!_shapeAnimationRunning)
+        {
+            return;
+        }
+
+        CompositionTarget.Rendering -= OnShapeRendering;
+        _shapeAnimationRunning = false;
+        _lastShapeRenderTimestamp = TimeSpan.Zero;
+    }
+
+    private void OnShapeRendering(object? sender, object e)
+    {
+        var now = _shapeStopwatch.Elapsed;
+        if (_lastShapeRenderTimestamp == TimeSpan.Zero)
+        {
+            _lastShapeRenderTimestamp = now;
+            AdvanceFloatingShapes(1d);
+            return;
+        }
+
+        var deltaMs = (now - _lastShapeRenderTimestamp).TotalMilliseconds;
+        _lastShapeRenderTimestamp = now;
+        if (deltaMs <= 0)
+        {
+            return;
+        }
+
+        var frameScale = Math.Clamp(deltaMs / 16.666d, 0.85d, 2.4d);
+        AdvanceFloatingShapes(frameScale);
+    }
+
     private void OnShapeTick(object? sender, object e)
+    {
+        AdvanceFloatingShapes(1d);
+    }
+
+    private void AdvanceFloatingShapes(double frameScale)
     {
         if (_welcomeShapeCanvas is null)
         {
@@ -1883,8 +1943,8 @@ public sealed partial class MainWindow : Window
                 rotate.Angle = shape.Angle;
             }
 
-            var left = Canvas.GetLeft(shape.Element) + shape.VelocityX;
-            var top = Canvas.GetTop(shape.Element) + shape.VelocityY;
+            var left = Canvas.GetLeft(shape.Element) + (shape.VelocityX * frameScale);
+            var top = Canvas.GetTop(shape.Element) + (shape.VelocityY * frameScale);
 
             if (left <= 0 || left + shape.Width >= boundsWidth)
             {
@@ -1897,8 +1957,9 @@ public sealed partial class MainWindow : Window
                 top = Math.Clamp(top, 0, Math.Max(0, boundsHeight - shape.Height));
             }
 
-            shape.VelocityX = Math.Clamp(shape.VelocityX * 0.998, -4.4, 4.4);
-            shape.VelocityY = Math.Clamp(shape.VelocityY * 0.998, -4.4, 4.4);
+            var damping = Math.Pow(0.9992, frameScale);
+            shape.VelocityX = Math.Clamp(shape.VelocityX * damping, -9.6, 9.6);
+            shape.VelocityY = Math.Clamp(shape.VelocityY * damping, -9.6, 9.6);
 
             Canvas.SetLeft(shape.Element, left);
             Canvas.SetTop(shape.Element, top);
@@ -1941,37 +2002,37 @@ public sealed partial class MainWindow : Window
                 model.Width = 122;
                 model.Height = 122;
                 shape.CornerRadius = new CornerRadius(61);
-                shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.08, 0.32);
+                shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentSecondary, 0.44, 0.76);
                 break;
             case 1:
                 model.Width = 170;
                 model.Height = 92;
                 shape.CornerRadius = new CornerRadius(40);
-                shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary, 0.08, 0.26);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.AccentTertiary, 0.46, 0.78);
                 break;
             case 2:
                 model.Width = 108;
                 model.Height = 144;
                 shape.CornerRadius = new CornerRadius(36);
-                shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.08, 0.28);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.Accent, 0.44, 0.74);
                 break;
             case 3:
                 model.Width = 138;
                 model.Height = 138;
                 shape.CornerRadius = new CornerRadius(28);
-                shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentTertiary, 0.08, 0.24);
+                shape.Background = BuildWeaveBrush(App.Palette.Accent, App.Palette.AccentTertiary, 0.42, 0.72);
                 break;
             case 4:
                 model.Width = 180;
                 model.Height = 84;
                 shape.CornerRadius = new CornerRadius(22);
-                shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.Accent, 0.08, 0.30);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentSecondary, App.Palette.Accent, 0.46, 0.76);
                 break;
             default:
                 model.Width = 96;
                 model.Height = 160;
                 shape.CornerRadius = new CornerRadius(42);
-                shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.AccentSecondary, 0.08, 0.26);
+                shape.Background = BuildWeaveBrush(App.Palette.AccentTertiary, App.Palette.AccentSecondary, 0.44, 0.74);
                 break;
         }
 
@@ -2019,8 +2080,8 @@ public sealed partial class MainWindow : Window
         shape.Positioned = true;
         if (!keepVelocity)
         {
-            shape.VelocityX = (_random.NextDouble() - 0.5) * 3.2;
-            shape.VelocityY = (_random.NextDouble() - 0.5) * 3.2;
+            shape.VelocityX = (_random.NextDouble() - 0.5) * 8.2;
+            shape.VelocityY = (_random.NextDouble() - 0.5) * 8.2;
         }
     }
 
@@ -2037,14 +2098,14 @@ public sealed partial class MainWindow : Window
         var deltaX = centerX - pointer.X;
         var deltaY = centerY - pointer.Y;
         var distance = Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
-        if (distance < 0.001 || distance > 220)
+        if (distance < 0.001 || distance > 320)
         {
             return;
         }
 
-        var force = (220 - distance) / 220d;
-        shape.VelocityX += (deltaX / distance) * force * 0.9;
-        shape.VelocityY += (deltaY / distance) * force * 0.9;
+        var force = (320 - distance) / 320d;
+        shape.VelocityX += (deltaX / distance) * force * 1.9;
+        shape.VelocityY += (deltaY / distance) * force * 1.9;
     }
 
     private void ResolveFloatingShapeCollisions(double boundsWidth, double boundsHeight)
@@ -2081,10 +2142,10 @@ public sealed partial class MainWindow : Window
                 Canvas.SetLeft(other.Element, Math.Clamp(otherLeft, 0, Math.Max(0, boundsWidth - other.Width)));
                 Canvas.SetTop(other.Element, Math.Clamp(otherTop, 0, Math.Max(0, boundsHeight - other.Height)));
 
-                current.VelocityX -= normalX * 0.42;
-                current.VelocityY -= normalY * 0.42;
-                other.VelocityX += normalX * 0.42;
-                other.VelocityY += normalY * 0.42;
+                current.VelocityX -= normalX * 0.96;
+                current.VelocityY -= normalY * 0.96;
+                other.VelocityX += normalX * 0.96;
+                other.VelocityY += normalY * 0.96;
             }
         }
     }
@@ -2828,13 +2889,27 @@ public sealed partial class MainWindow : Window
         WindowsLog.Info("Configuring window lifecycle bindings");
         App.WindowLifecycle.RestoreRequested -= OnRestoreRequested;
         App.WindowLifecycle.RestoreRequested += OnRestoreRequested;
-        App.WindowLifecycle.SetMinimumSize(1180, 820);
+        App.WindowLifecycle.ExitRequested -= OnTrayExitRequested;
+        App.WindowLifecycle.ExitRequested += OnTrayExitRequested;
+        App.WindowLifecycle.SetMinimumSize(920, 640);
         App.WindowLifecycle.SetShouldMinimizeToTray(() => _preferences.MinimizeToTrayOnClose);
         App.WindowLifecycle.SetTrayStateProvider(() => _activeScan is not null
             ? WindowsTrayProgressService.FromScan(_activeScan)
             : WindowsTrayProgressService.CreateIdle());
         App.WindowLifecycle.RefreshTrayState();
         WindowsLog.Info("Window lifecycle bindings ready");
+    }
+
+    private void OnTrayExitRequested()
+    {
+        try
+        {
+            DispatcherQueue.TryEnqueue(() => App.WindowLifecycle?.RequestRealClose());
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("Tray exit request failed", ex);
+        }
     }
 
     private void OnRestoreRequested()
@@ -3372,16 +3447,92 @@ public sealed partial class MainWindow : Window
         return new SolidColorBrush(UiColor.FromArgb(255, 255, 255, 255));
     }
 
+    private FrameworkElement BuildVersionBadge()
+    {
+        var button = new Button
+        {
+            Background = new SolidColorBrush(UiColor.FromArgb(1, 0, 0, 0)),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(12, 8, 12, 8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(14, 0, 0, 10)
+        };
+        button.Click += OnVersionTapClick;
+        FooterVersionText = new TextBlock
+        {
+            Foreground = new SolidColorBrush(ThemePalette.WithAlpha(App.Palette.Text, 0.42)),
+            FontSize = 12,
+            TextWrapping = TextWrapping.NoWrap
+        };
+        button.Content = FooterVersionText;
+        return button;
+    }
+
+    private void UpdateVersionBadge()
+    {
+        if (FooterVersionText is null)
+        {
+            return;
+        }
+
+        FooterVersionText.Text = $"v{_currentVersion}{ResolveInstallEditionSuffix()}";
+    }
+
+    private string ResolveInstallEditionSuffix()
+    {
+        try
+        {
+            var installRoot = InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
+            var nvMetadataPath = Path.Combine(installRoot, "nv-package.json");
+            if (!File.Exists(nvMetadataPath))
+            {
+                return string.Empty;
+            }
+
+            using var stream = File.OpenRead(nvMetadataPath);
+            using var doc = JsonDocument.Parse(stream);
+            if (doc.RootElement.TryGetProperty("install_source", out var source)
+                && string.Equals(source.GetString(), "nv", StringComparison.OrdinalIgnoreCase))
+            {
+                return " · NV edition";
+            }
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("ResolveInstallEditionSuffix failed", ex);
+        }
+
+        return string.Empty;
+    }
+
     private static UIElement CreateLogoElement()
     {
-        return new TextBlock
+        var image = new Image
         {
-            Text = "NV",
-            Foreground = ThemeBrush("AppTextBrush"),
-            FontSize = 24,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Width = 88,
+            Height = 88,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            Stretch = Stretch.Uniform
         };
+
+        try
+        {
+            image.Source = new BitmapImage(new Uri("ms-appx:///Assets/NeuralV.png"));
+            return image;
+        }
+        catch
+        {
+            return new TextBlock
+            {
+                Text = "NV",
+                Foreground = ThemeBrush("AppTextBrush"),
+                FontSize = 24,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+        }
     }
 }

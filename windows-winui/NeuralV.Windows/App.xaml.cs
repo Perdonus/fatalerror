@@ -197,8 +197,8 @@ public partial class App : Application
             WindowLifecycle.Attach(window, new WindowsWindowLifecycleOptions
             {
                 Title = "NeuralV",
-                MinimumWidth = 1180,
-                MinimumHeight = 820,
+                MinimumWidth = 920,
+                MinimumHeight = 640,
                 ShouldMinimizeToTray = () => Preferences.MinimizeToTrayOnClose,
                 InitialTrayState = WindowsTrayProgressService.CreateIdle(),
                 TrayStateProvider = () => WindowsTrayProgressService.CreateIdle()

@@ -197,7 +197,7 @@ public sealed partial class MainWindow : Window
         WindowsLog.Info("Main window root loaded");
         try
         {
-            _windowRoot.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x10, 0x12, 0x18));
+            _windowRoot.Background = new SolidColorBrush(UiColor.FromArgb(0xFF, 0x10, 0x12, 0x18));
             _windowRoot.PointerMoved += OnAuthBackdropPointerMoved;
             _windowRoot.PointerExited += OnAuthBackdropPointerExited;
             WindowsLog.Info("Building full layout after bootstrap");
@@ -241,7 +241,7 @@ public sealed partial class MainWindow : Window
 
         var boot = new Grid
         {
-            Background = new SolidColorBrush(Color.FromArgb(0xFF, 0x10, 0x12, 0x18))
+            Background = new SolidColorBrush(UiColor.FromArgb(0xFF, 0x10, 0x12, 0x18))
         };
         _windowRoot.Children.Add(boot);
         _layoutBuilt = false;

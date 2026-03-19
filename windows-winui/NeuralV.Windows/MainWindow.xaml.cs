@@ -3691,7 +3691,7 @@ public sealed partial class MainWindow : Window
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
         };
-        splitButton.Click += primaryHandler;
+        splitButton.Click += (sender, _) => primaryHandler(sender, new RoutedEventArgs());
 
         var flyout = new MenuFlyout();
         var fileItem = new MenuFlyoutItem

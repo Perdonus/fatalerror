@@ -58,6 +58,7 @@ public sealed partial class MainWindow : Window
     private bool _networkUiSync;
     private bool _preferenceUiSync;
     private bool _scanOverlayFallbackPreferred = true;
+    private bool _layoutBuilt;
     private AppScreen _screen = AppScreen.Splash;
     private IntPtr _windowHandle;
     private AppWindow? _appWindow;
@@ -157,7 +158,7 @@ public sealed partial class MainWindow : Window
             _shapeTimer.Interval = TimeSpan.FromMilliseconds(16);
             _shapeTimer.Tick += OnShapeTick;
 
-            BuildLayout();
+            BuildBootstrapLayout();
         }
         catch (Exception ex)
         {
@@ -168,6 +169,7 @@ public sealed partial class MainWindow : Window
 
     public void RunSmokeValidation()
     {
+        EnsureFullLayoutBuilt();
         TryConfigureWindowHandle();
         ApplyAmbientPalette();
         ShowScreen(AppScreen.Welcome);
@@ -198,6 +200,8 @@ public sealed partial class MainWindow : Window
         WindowsLog.Info("Main window root loaded");
         try
         {
+            WindowsLog.Info("Building full layout after bootstrap");
+            EnsureFullLayoutBuilt();
             WindowsLog.Info("Configuring window handle");
             TryConfigureWindowHandle();
             WindowsLog.Info("Applying ambient palette on load");
@@ -213,6 +217,50 @@ public sealed partial class MainWindow : Window
             WindowsLog.Error("OnRootLoaded failed", ex);
             SetStatus("Не удалось завершить старт интерфейса. Подробности в log.txt.");
         }
+    }
+
+    private void BuildBootstrapLayout()
+    {
+        _windowRoot.Children.Clear();
+
+        var boot = new Grid();
+        var shell = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 10
+        };
+        shell.Children.Add(new TextBlock
+        {
+            Text = "NeuralV",
+            Foreground = ThemeBrush("AppTextBrush"),
+            FontSize = 28,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center
+        });
+        shell.Children.Add(new TextBlock
+        {
+            Text = "Запуск",
+            Foreground = ThemeBrush("AppMutedTextBrush"),
+            FontSize = 14,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center
+        });
+        boot.Children.Add(shell);
+        _windowRoot.Children.Add(boot);
+        _layoutBuilt = false;
+    }
+
+    private void EnsureFullLayoutBuilt()
+    {
+        if (_layoutBuilt)
+        {
+            return;
+        }
+
+        BuildLayout();
+        _layoutBuilt = true;
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
@@ -387,6 +435,7 @@ public sealed partial class MainWindow : Window
         _floatingShapes.Clear();
         _welcomePointer = null;
         _welcomeShapeCanvas = null;
+        _layoutBuilt = true;
         _windowRoot.MinWidth = 1180;
         _windowRoot.MinHeight = 820;
 
@@ -1727,6 +1776,7 @@ public sealed partial class MainWindow : Window
     {
         var screen = _screen;
         var overlayOpen = _scanOverlayOpen;
+        _layoutBuilt = false;
         BuildLayout();
         HookWindowLifecycle();
         ApplySessionState();

@@ -19,8 +19,10 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     private const uint WmApp = 0x8000;
     private const uint WmUser = 0x0400;
     private const uint TrayCallbackMessage = WmApp + 0x44;
+    private const uint WmLButtonDown = 0x0201;
     private const uint WmLButtonUp = 0x0202;
     private const uint WmLButtonDblClk = 0x0203;
+    private const uint WmRButtonDown = 0x0204;
     private const uint WmRButtonUp = 0x0205;
     private const uint NinSelect = WmUser;
     private const uint NinKeySelect = WmUser + 1;
@@ -52,14 +54,17 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
     private Window? _window;
     private IntPtr _hwnd;
+    private IntPtr _trayWindow;
     private IntPtr _previousWndProc;
     private bool _attached;
     private bool _trayVisible;
     private bool _hiddenToTray;
     private bool _allowNextClose;
+    private bool _trayWindowClassRegistered;
     private int _minimumWidth = 920;
     private int _minimumHeight = 640;
     private string _title = "NeuralV";
+    private string? _trayWindowClassName;
     private Func<bool>? _shouldMinimizeToTray;
     private Func<TrayProgressState>? _trayStateProvider;
     private TrayProgressState _trayState = WindowsTrayProgressService.CreateIdle();
@@ -93,6 +98,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
         options ??= new WindowsWindowLifecycleOptions();
         _title = string.IsNullOrWhiteSpace(options.Title) ? "NeuralV" : options.Title.Trim();
+        EnsureTrayWindow();
         _minimumWidth = Math.Max(640, options.MinimumWidth);
         _minimumHeight = Math.Max(520, options.MinimumHeight);
         _shouldMinimizeToTray = options.ShouldMinimizeToTray;
@@ -177,6 +183,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         ShowWindow(_hwnd, SwRestore);
         ShowWindow(_hwnd, SwShow);
         _window?.Activate();
+        BringWindowToTop(_hwnd);
         SetForegroundWindow(_hwnd);
         ApplyTrayState();
         RestoreRequested?.Invoke();
@@ -208,6 +215,14 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             {
                 SetWindowLongPtr(_hwnd, GwlWndProc, _previousWndProc);
             }
+            if (_trayWindow != IntPtr.Zero)
+            {
+                DestroyWindow(_trayWindow);
+            }
+            if (_trayWindowClassRegistered && !string.IsNullOrWhiteSpace(_trayWindowClassName))
+            {
+                UnregisterClass(_trayWindowClassName, GetModuleHandle(null));
+            }
         }
         catch (Exception ex)
         {
@@ -218,6 +233,9 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             _attached = false;
             _previousWndProc = IntPtr.Zero;
             _hwnd = IntPtr.Zero;
+            _trayWindow = IntPtr.Zero;
+            _trayWindowClassRegistered = false;
+            _trayWindowClassName = null;
             _window = null;
             _currentIcon?.Dispose();
             _currentIcon = null;
@@ -287,7 +305,7 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         new()
         {
             cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATA>(),
-            hWnd = _hwnd,
+            hWnd = _trayWindow != IntPtr.Zero ? _trayWindow : _hwnd,
             uID = _trayIconId,
             uCallbackMessage = TrayCallbackMessage,
             szTip = string.Empty,
@@ -303,6 +321,29 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     {
         try
         {
+            if (hwnd == _trayWindow && _trayWindow != IntPtr.Zero)
+            {
+                if (message == TrayCallbackMessage)
+                {
+                    HandleTrayCallback(wParam, lParam);
+                    return IntPtr.Zero;
+                }
+
+                if (message == _taskbarCreatedMessage)
+                {
+                    _trayVisible = false;
+                    ApplyTrayState();
+                    return IntPtr.Zero;
+                }
+
+                if (message == WmDestroy)
+                {
+                    RemoveTrayIcon();
+                }
+
+                return DefWindowProc(hwnd, message, wParam, lParam);
+            }
+
             if (message == WmGetMinMaxInfo)
             {
                 ApplyMinTrackSize(lParam);
@@ -326,21 +367,6 @@ public sealed class WindowsWindowLifecycleService : IDisposable
             {
                 HandleLaunchArguments(lParam);
                 return IntPtr.Zero;
-            }
-
-            if (message == TrayCallbackMessage)
-            {
-                var callback = GetTrayCallbackEvent(lParam);
-                if (callback is WmLButtonUp or WmLButtonDblClk or NinSelect or NinKeySelect)
-                {
-                    RestoreFromTray();
-                    return IntPtr.Zero;
-                }
-                if (callback is WmRButtonUp or WmContextMenu)
-                {
-                    ShowTrayContextMenu(wParam, callback == WmContextMenu);
-                    return IntPtr.Zero;
-                }
             }
 
             if (message == _taskbarCreatedMessage)
@@ -403,6 +429,23 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         LaunchArgumentsReceived?.Invoke(launchArguments);
     }
 
+    private void HandleTrayCallback(IntPtr wParam, IntPtr lParam)
+    {
+        var callback = GetTrayCallbackEvent(lParam);
+        WindowsLog.Info($"Tray callback received: code=0x{callback:X}, hidden={_hiddenToTray}");
+
+        if (callback is WmLButtonDown or WmLButtonUp or WmLButtonDblClk or NinSelect or NinKeySelect)
+        {
+            RestoreFromTray();
+            return;
+        }
+
+        if (callback is WmRButtonDown or WmRButtonUp or WmContextMenu)
+        {
+            ShowTrayContextMenu(wParam, callback == WmContextMenu);
+        }
+    }
+
     private void ApplyMinTrackSize(IntPtr lParam)
     {
         if (lParam == IntPtr.Zero)
@@ -433,7 +476,8 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
     private void ShowTrayContextMenu(IntPtr wParam, bool useAnchorCoordinates)
     {
-        if (_hwnd == IntPtr.Zero)
+        var menuOwner = _trayWindow != IntPtr.Zero ? _trayWindow : _hwnd;
+        if (menuOwner == IntPtr.Zero)
         {
             return;
         }
@@ -449,16 +493,16 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
             AppendMenu(menu, MfString, TrayCommandOpen, "Открыть");
             AppendMenu(menu, MfString, TrayCommandExit, "Выйти");
-            SetForegroundWindow(_hwnd);
+            SetForegroundWindow(menuOwner);
             var point = ResolveContextMenuPoint(wParam, useAnchorCoordinates);
             var command = TrackPopupMenuEx(
                 menu,
                 TpmLeftAlign | TpmBottomAlign | TpmRightButton | TpmReturnCommand,
                 point.x,
                 point.y,
-                _hwnd,
+                menuOwner,
                 IntPtr.Zero);
-            PostMessage(_hwnd, WmNull, IntPtr.Zero, IntPtr.Zero);
+            PostMessage(menuOwner, WmNull, IntPtr.Zero, IntPtr.Zero);
 
             if (command == TrayCommandOpen)
             {
@@ -506,6 +550,52 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     private static int GetSignedLowWord(IntPtr value) => unchecked((short)value.ToInt64());
 
     private static int GetSignedHighWord(IntPtr value) => unchecked((short)(value.ToInt64() >> 16));
+
+    private void EnsureTrayWindow()
+    {
+        if (_trayWindow != IntPtr.Zero)
+        {
+            return;
+        }
+
+        _trayWindowClassName ??= $"NeuralV.TrayWindow.{Environment.ProcessId}";
+        var moduleHandle = GetModuleHandle(null);
+        var windowClass = new WNDCLASSEX
+        {
+            cbSize = (uint)Marshal.SizeOf<WNDCLASSEX>(),
+            lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate),
+            hInstance = moduleHandle,
+            lpszClassName = _trayWindowClassName
+        };
+
+        SetLastError(0);
+        var atom = RegisterClassEx(ref windowClass);
+        var registerError = Marshal.GetLastWin32Error();
+        if (atom == 0 && registerError != 1410)
+        {
+            throw new InvalidOperationException($"Не удалось зарегистрировать tray window class. Win32={registerError}");
+        }
+
+        _trayWindowClassRegistered = true;
+        SetLastError(0);
+        _trayWindow = CreateWindowEx(
+            0,
+            _trayWindowClassName,
+            _title,
+            0,
+            0,
+            0,
+            0,
+            0,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            moduleHandle,
+            IntPtr.Zero);
+        if (_trayWindow == IntPtr.Zero)
+        {
+            throw new InvalidOperationException($"Не удалось создать tray helper window. Win32={Marshal.GetLastWin32Error()}");
+        }
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT
@@ -565,6 +655,23 @@ public sealed class WindowsWindowLifecycleService : IDisposable
         public uint uVersion;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WNDCLASSEX
+    {
+        public uint cbSize;
+        public uint style;
+        public IntPtr lpfnWndProc;
+        public int cbClsExtra;
+        public int cbWndExtra;
+        public IntPtr hInstance;
+        public IntPtr hIcon;
+        public IntPtr hCursor;
+        public IntPtr hbrBackground;
+        public string? lpszMenuName;
+        public string lpszClassName;
+        public IntPtr hIconSm;
+    }
+
     private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
@@ -572,6 +679,24 @@ public sealed class WindowsWindowLifecycleService : IDisposable
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern uint RegisterWindowMessage(string text);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern ushort RegisterClassEx(ref WNDCLASSEX windowClass);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateWindowEx(
+        uint exStyle,
+        string className,
+        string windowName,
+        uint style,
+        int x,
+        int y,
+        int width,
+        int height,
+        IntPtr parentHandle,
+        IntPtr menuHandle,
+        IntPtr instanceHandle,
+        IntPtr param);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr CreatePopupMenu();
@@ -595,6 +720,9 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     private static extern bool ShowWindow(IntPtr hwnd, uint command);
 
     [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool BringWindowToTop(IntPtr hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -603,11 +731,23 @@ public sealed class WindowsWindowLifecycleService : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool GetCursorPos(out POINT point);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool UnregisterClass(string className, IntPtr moduleHandle);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyWindow(IntPtr hwnd);
+
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr DefWindowProc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+
     [DllImport("kernel32.dll")]
     private static extern void SetLastError(uint errorCode);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string? moduleName);
 
     private static bool ShellNotifyIcon(uint message, ref NOTIFYICONDATA data)
     {

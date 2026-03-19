@@ -2,6 +2,8 @@ const express = require('express');
 
 const auth = require('../middleware/auth');
 const {
+    getNetworkProtectionManifest,
+    getNetworkProtectionFeed,
     getNetworkProtectionState,
     updateNetworkProtectionState,
     recordNetworkProtectionEvent
@@ -17,6 +19,37 @@ function sendError(res, error, fallbackMessage) {
     }
     return res.status(status).json(body);
 }
+
+router.get('/manifest', async (req, res) => {
+    try {
+        const manifest = await getNetworkProtectionManifest();
+        res.set('Cache-Control', 'public, max-age=900');
+        return res.json({ success: true, manifest });
+    } catch (error) {
+        console.error('Network protection manifest error:', error);
+        return sendError(res, error, 'Не удалось получить манифест сетевой защиты');
+    }
+});
+
+router.get('/feeds/:feedId', async (req, res) => {
+    try {
+        const result = await getNetworkProtectionFeed(req.params.feedId, req.query.format);
+        if (result.etag && req.headers['if-none-match'] === result.etag) {
+            res.status(304).end();
+            return;
+        }
+
+        res.set('Content-Type', 'text/plain; charset=utf-8');
+        res.set('Cache-Control', `public, max-age=${result.cacheMaxAgeSec}`);
+        if (result.etag) {
+            res.set('ETag', result.etag);
+        }
+        return res.send(result.body);
+    } catch (error) {
+        console.error('Network protection feed error:', error);
+        return sendError(res, error, 'Не удалось получить правила сетевой защиты');
+    }
+});
 
 router.get('/state', auth, async (req, res) => {
     try {

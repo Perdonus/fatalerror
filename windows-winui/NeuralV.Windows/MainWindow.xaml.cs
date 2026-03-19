@@ -532,7 +532,8 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(ScreenHost, 2);
         shell.Children.Add(ScreenHost);
 
-        SplashView = BuildSplashView();
+        WindowsLog.Info("BuildLayout: splash");
+        SplashView = BuildSplashViewSafe();
         WelcomeView = null!;
         LoginView = null!;
         RegisterView = null!;
@@ -548,7 +549,7 @@ public sealed partial class MainWindow : Window
         ScanOverlay = null!;
         HistoryDetailOverlay = null!;
 
-        WindowsLog.Info("BuildLayout: drawer");
+        WindowsLog.Info("BuildLayout: drawer scrim");
         DrawerScrim = new Border
         {
             Background = ThemeBrush("AppOverlayScrimBrush"),
@@ -559,12 +560,8 @@ public sealed partial class MainWindow : Window
         Canvas.SetZIndex(DrawerScrim, 60);
         _windowRoot.Children.Add(DrawerScrim);
 
-        DrawerPanel = BuildDrawerPanel();
-        DrawerPanel.Visibility = Visibility.Collapsed;
-        DrawerPanel.Opacity = 0;
-        DrawerPanel.RenderTransform = new TranslateTransform { X = -36 };
-        Canvas.SetZIndex(DrawerPanel, 61);
-        _windowRoot.Children.Add(DrawerPanel);
+        WindowsLog.Info("BuildLayout: drawer deferred");
+        DrawerPanel = null!;
 
         WindowsLog.Info("BuildLayout: busy overlay");
         BusyOverlay = new Border
@@ -697,6 +694,30 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(logoCard);
         stack.Children.Add(CreateTitleText("Запускаем NeuralV", 36));
         return host;
+    }
+
+    private FrameworkElement BuildSplashViewSafe()
+    {
+        try
+        {
+            return BuildSplashView();
+        }
+        catch (Exception ex)
+        {
+            WindowsLog.Error("BuildSplashView failed, using minimal splash", ex);
+            var host = new Grid();
+            host.Children.Add(new TextBlock
+            {
+                Text = "NeuralV",
+                Foreground = ThemeBrush("AppTextBrush"),
+                FontSize = 28,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center
+            });
+            return host;
+        }
     }
 
     private FrameworkElement BuildWelcomeView()
@@ -1430,6 +1451,23 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void EnsureDrawerReady()
+    {
+        if (DrawerPanel is not null && _windowRoot.Children.Contains(DrawerPanel))
+        {
+            return;
+        }
+
+        WindowsLog.Info("Creating deferred drawer panel");
+        DrawerPanel = BuildDrawerPanel();
+        DrawerPanel.Visibility = Visibility.Collapsed;
+        DrawerPanel.Opacity = 0;
+        DrawerPanel.RenderTransform = new TranslateTransform { X = -36 };
+        Canvas.SetZIndex(DrawerPanel, 61);
+        _windowRoot.Children.Add(DrawerPanel);
+        WindowsLog.Info("Deferred drawer panel attached");
+    }
+
     private void ShowScreen(AppScreen screen)
     {
         if (screen != AppScreen.Splash)
@@ -1637,8 +1675,18 @@ public sealed partial class MainWindow : Window
     private void SetDrawerState(bool isOpen)
     {
         _drawerOpen = isOpen;
+        if (DrawerScrim is null)
+        {
+            return;
+        }
         if (isOpen)
         {
+            EnsureDrawerReady();
+            if (DrawerPanel is null)
+            {
+                return;
+            }
+
             DrawerScrim.Visibility = Visibility.Visible;
             DrawerPanel.Visibility = Visibility.Visible;
         }
@@ -1650,6 +1698,10 @@ public sealed partial class MainWindow : Window
                 DrawerScrim.Visibility = Visibility.Collapsed;
             }
         });
+        if (DrawerPanel is null)
+        {
+            return;
+        }
         AnimateElement(DrawerPanel, "Opacity", isOpen ? 1 : 0, 220, new SineEase { EasingMode = EasingMode.EaseOut }, () =>
         {
             if (!isOpen)

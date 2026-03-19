@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "generated_at": "2026-03-19T13:29:24Z",
+  "release_channel": "main",
+  "artifacts": [
+    {
+      "platform": "site",
+      "channel": "main",
+      "version": "c2d2567",
+      "sha256": "3866bbff7daf94bc1cfb0a0d351ac4d0db08553fcc0f84d9a360010160173209",
+      "download_url": "https://raw.githubusercontent.com/Perdonus/fatalerror/site-builds/site/neuralv-site.zip",
+      "install_command": "",
+      "file_name": "neuralv-site.zip",
+      "notes": [
+        "Static web bundle for /neuralv/"
+      ],
+      "metadata": {}
+    }
+  ]
+}

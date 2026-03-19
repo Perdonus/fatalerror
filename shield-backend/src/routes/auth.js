@@ -302,7 +302,7 @@ async function sendPasswordResetEmail(email, resetLinks) {
         to: email,
         subject: 'NeuralV: сброс пароля',
         text: [
-            'Откройте NeuralV по ссылке ниже, чтобы сбросить пароль.',
+            'Откройте страницу NeuralV по ссылке ниже, чтобы перейти к сбросу пароля.',
             resetLinks.web,
             resetLinks.primary,
             ...resetLinks.alternates,
@@ -311,11 +311,11 @@ async function sendPasswordResetEmail(email, resetLinks) {
         html: renderMailShell({
             eyebrow: 'NeuralV',
             title: 'Сброс пароля',
-            bodyHtml: '<p style="margin:0 0 12px;">Откройте письмо на устройстве с NeuralV и нажмите кнопку ниже. Приложение откроет экран сброса пароля сразу с готовым deep link.</p>',
-            ctaLabel: 'Открыть сброс пароля в NeuralV',
+            bodyHtml: '<p style="margin:0 0 12px;">Нажмите кнопку ниже. Откроется страница NeuralV, которая сразу попробует перевести вас в приложение на экран сброса пароля.</p>',
+            ctaLabel: 'Открыть сброс пароля',
             ctaHref: resetLinks.web || resetLinks.primary,
             footerHtml: [
-                `<div>Если кнопка не открылась, используйте одну из ссылок вручную:</div>`,
+                `<div>Если переход не сработал автоматически, используйте одну из ссылок вручную:</div>`,
                 `<div style="margin-top:10px;">${fallbackLinksHtml}</div>`,
                 `<div style="margin-top:12px;">Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.</div>`
             ].join('')

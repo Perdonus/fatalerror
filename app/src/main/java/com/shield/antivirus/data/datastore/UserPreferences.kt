@@ -69,6 +69,7 @@ class UserPreferences(private val context: Context) {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLORS_ENABLED = booleanPreferencesKey("dynamic_colors_enabled")
         val KEY_IS_DEVELOPER_MODE = booleanPreferencesKey("is_developer_mode")
+        val KEY_IS_PREMIUM = booleanPreferencesKey("is_premium")
     }
 
     val isLoggedIn: Flow<Boolean> = context.dataStore.data.preferenceFlow(KEY_IS_LOGGED_IN, false)
@@ -101,20 +102,44 @@ class UserPreferences(private val context: Context) {
         context.dataStore.data.preferenceFlow(KEY_DYNAMIC_COLORS_ENABLED, true)
     val isDeveloperMode: Flow<Boolean> =
         context.dataStore.data.preferenceFlow(KEY_IS_DEVELOPER_MODE, false)
+    val isPremium: Flow<Boolean> =
+        context.dataStore.data.preferenceFlow(KEY_IS_PREMIUM, false)
 
     suspend fun setLoggedIn(value: Boolean) {
         context.dataStore.edit { it[KEY_IS_LOGGED_IN] = value }
     }
 
-    suspend fun saveUser(name: String, email: String, id: String) {
+    suspend fun saveUser(
+        name: String,
+        email: String,
+        id: String,
+        isPremium: Boolean = false,
+        isDeveloperMode: Boolean = false
+    ) {
         context.dataStore.edit {
             it[KEY_USER_NAME] = name
             it[KEY_USER_EMAIL] = email
             it[KEY_USER_ID] = id
             it[KEY_IS_LOGGED_IN] = true
             it[KEY_IS_GUEST] = false
+            it[KEY_IS_PREMIUM] = isPremium
+            it[KEY_IS_DEVELOPER_MODE] = isDeveloperMode
             it[KEY_REALTIME_PROT] = true
             it[KEY_SCAN_ON_INSTALL] = true
+            it.remove(KEY_PENDING_AUTH_FLOW)
+            it.remove(KEY_PENDING_AUTH_CHALLENGE_ID)
+            it.remove(KEY_PENDING_AUTH_EMAIL)
+            it.remove(KEY_PENDING_AUTH_EXPIRES_AT)
+        }
+    }
+
+    suspend fun syncUserProfile(name: String, email: String, id: String) {
+        context.dataStore.edit {
+            it[KEY_USER_NAME] = name
+            it[KEY_USER_EMAIL] = email
+            it[KEY_USER_ID] = id
+            it[KEY_IS_LOGGED_IN] = true
+            it[KEY_IS_GUEST] = false
             it.remove(KEY_PENDING_AUTH_FLOW)
             it.remove(KEY_PENDING_AUTH_CHALLENGE_ID)
             it.remove(KEY_PENDING_AUTH_EMAIL)
@@ -130,6 +155,8 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit {
             it[KEY_IS_GUEST] = true
             it[KEY_IS_LOGGED_IN] = false
+            it[KEY_IS_DEVELOPER_MODE] = false
+            it[KEY_IS_PREMIUM] = false
             it[KEY_REALTIME_PROT] = false
             it[KEY_SCAN_ON_INSTALL] = false
             it[KEY_USER_NAME] = ""
@@ -149,6 +176,7 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit {
             it[KEY_IS_GUEST] = true
             it[KEY_IS_LOGGED_IN] = true
+            it[KEY_IS_DEVELOPER_MODE] = true
             it[KEY_REALTIME_PROT] = false
             it[KEY_SCAN_ON_INSTALL] = false
             it.remove(KEY_ACTIVE_DEEP_SCAN_WORK_ID)
@@ -180,6 +208,8 @@ class UserPreferences(private val context: Context) {
             it[KEY_USER_EMAIL] = ""
             it[KEY_USER_ID] = ""
             it[KEY_AUTH_TOKEN] = ""
+            it.remove(KEY_IS_DEVELOPER_MODE)
+            it.remove(KEY_IS_PREMIUM)
             it.remove(KEY_PENDING_AUTH_FLOW)
             it.remove(KEY_PENDING_AUTH_CHALLENGE_ID)
             it.remove(KEY_PENDING_AUTH_EMAIL)
@@ -234,8 +264,12 @@ class UserPreferences(private val context: Context) {
         context.dataStore.edit { it[KEY_DYNAMIC_COLORS_ENABLED] = enabled }
     }
 
-    suspend fun setDeveloperMode(enabled: Boolean) {
+    suspend fun syncDeveloperModeFromServer(enabled: Boolean) {
         context.dataStore.edit { it[KEY_IS_DEVELOPER_MODE] = enabled }
+    }
+
+    suspend fun syncPremiumFromServer(enabled: Boolean) {
+        context.dataStore.edit { it[KEY_IS_PREMIUM] = enabled }
     }
 
     suspend fun updateLastScanTime() {

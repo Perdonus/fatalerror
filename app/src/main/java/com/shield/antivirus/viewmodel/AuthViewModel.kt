@@ -301,18 +301,56 @@ class AuthViewModel(private val context: Context) : ViewModel() {
         viewModelScope.launch { prefs.setDynamicColorsEnabled(enabled) }
     }
 
-    fun activateDeveloperMode(devKey: String, onResult: (Boolean) -> Unit) {
+    fun refreshDeveloperModeState(onResult: ((String?) -> Unit)? = null) {
         viewModelScope.launch {
-            val success = devKey.trim() == DEV_ACCESS_KEY
-            if (success) {
-                prefs.setDeveloperMode(true)
+            when (val result = repo.refreshAccountState()) {
+                is AuthResult.Error -> onResult?.invoke(result.message)
+                is AuthResult.Message -> onResult?.invoke(null)
+                else -> onResult?.invoke(null)
             }
-            onResult(success)
         }
     }
 
-    fun deactivateDeveloperMode() {
-        viewModelScope.launch { prefs.setDeveloperMode(false) }
+    fun activateDeveloperMode(devKey: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            when (val result = repo.activateDeveloperMode(devKey)) {
+                is AuthResult.Message -> {
+                    refreshDeveloperModeState()
+                    onResult(true, result.message)
+                }
+                is AuthResult.Success -> {
+                    refreshDeveloperModeState()
+                    onResult(true, null)
+                }
+                is AuthResult.Error -> {
+                    onResult(false, result.message)
+                }
+                else -> {
+                    onResult(false, "Не удалось активировать режим разработчика")
+                }
+            }
+        }
+    }
+
+    fun deactivateDeveloperMode(onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            when (val result = repo.deactivateDeveloperMode()) {
+                is AuthResult.Message -> {
+                    refreshDeveloperModeState()
+                    onResult(true, result.message)
+                }
+                is AuthResult.Success -> {
+                    refreshDeveloperModeState()
+                    onResult(true, null)
+                }
+                is AuthResult.Error -> {
+                    onResult(false, result.message)
+                }
+                else -> {
+                    onResult(false, "Не удалось отключить режим разработчика")
+                }
+            }
+        }
     }
 
     fun clearError() {
@@ -338,10 +376,5 @@ class AuthViewModel(private val context: Context) : ViewModel() {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>) =
             AuthViewModel(context.applicationContext) as T
-    }
-
-    companion object {
-        const val DEV_ACCESS_KEY =
-            "SHIELD-LOCAL-DEV-KEY-2026::A3F7D91C-4B68-44A2-93D9-91F5B2AAE7D6::UNLOCK-7D2C-11E6-9C89"
     }
 }

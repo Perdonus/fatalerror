@@ -37,6 +37,51 @@ class AuthRepository(context: Context) {
     private val prefs = UserPreferences(context)
     private val sessionManager = ShieldSessionManager(context)
 
+    suspend fun refreshAccountState(): AuthResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val token = sessionManager.getValidAccessToken()
+                    ?: return@withContext AuthResult.Error("Сначала войдите в аккаунт")
+                val response = ApiClient.executeShieldCall { api ->
+                    api.getMe("Bearer $token")
+                }
+                if (!response.isSuccessful) {
+                    return@withContext AuthResult.Error(
+                        parseError(response.errorBody()?.string()) ?: "Не удалось обновить состояние аккаунта"
+                    )
+                }
+                val user = response.body()?.user
+                    ?: return@withContext AuthResult.Error("Сервер не вернул профиль аккаунта")
+                sessionManager.syncRemoteUser(user)
+                AuthResult.Message("Состояние аккаунта обновлено")
+            } catch (error: Exception) {
+                AuthResult.Error(error.toUserMessage())
+            }
+        }
+
+    suspend fun activateDeveloperMode(devKey: String): AuthResult =
+        withContext(Dispatchers.IO) {
+            if (devKey.isBlank()) {
+                return@withContext AuthResult.Error("Введите ключ разработчика")
+            }
+            val syncResult = refreshAccountState()
+            if (syncResult is AuthResult.Error) {
+                return@withContext syncResult
+            }
+            // TODO(server): wire a real server activation endpoint once it exists in auth/profile API.
+            AuthResult.Error("Серверная активация режима разработчика ещё не подключена в Android API")
+        }
+
+    suspend fun deactivateDeveloperMode(): AuthResult =
+        withContext(Dispatchers.IO) {
+            val syncResult = refreshAccountState()
+            if (syncResult is AuthResult.Error) {
+                return@withContext syncResult
+            }
+            // TODO(server): wire a real server deactivation endpoint once it exists in auth/profile API.
+            AuthResult.Error("Серверное отключение режима разработчика ещё не подключено в Android API")
+        }
+
     suspend fun startRegister(name: String, email: String, password: String): AuthResult =
         withContext(Dispatchers.IO) {
             try {
@@ -265,7 +310,10 @@ class AuthRepository(context: Context) {
                 api.getMe("Bearer $token")
             }
             when {
-                response.isSuccessful -> true
+                response.isSuccessful -> {
+                    response.body()?.user?.let { sessionManager.syncRemoteUser(it) }
+                    true
+                }
                 response.code() == 401 || response.code() == 403 -> false
                 else -> sessionManager.hasStoredSession()
             }

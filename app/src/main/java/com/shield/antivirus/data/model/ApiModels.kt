@@ -76,8 +76,12 @@ data class RemoteUser(
     val name: String,
     val email: String,
     @SerializedName("is_premium") val isPremium: Boolean = false,
-    @SerializedName("premium_expires_at") val premiumExpiresAt: Long? = null
-)
+    @SerializedName("premium_expires_at") val premiumExpiresAt: Long? = null,
+    @SerializedName("is_developer_mode") val isDeveloperMode: Boolean? = null,
+    @SerializedName("is_dev_mode") val legacyDeveloperMode: Boolean? = null
+) {
+    fun resolvedDeveloperMode(): Boolean? = isDeveloperMode ?: legacyDeveloperMode
+}
 
 // ---- Scans ----
 data class SaveScanRequest(

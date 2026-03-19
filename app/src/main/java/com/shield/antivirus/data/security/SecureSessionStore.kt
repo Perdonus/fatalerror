@@ -15,7 +15,10 @@ data class StoredSession(
     val refreshTokenExpiresAt: Long,
     val userId: String? = null,
     val userName: String? = null,
-    val userEmail: String? = null
+    val userEmail: String? = null,
+    val isPremium: Boolean? = null,
+    val premiumExpiresAt: Long? = null,
+    val isDeveloperMode: Boolean? = null
 ) {
     fun isAccessTokenFresh(now: Long = System.currentTimeMillis(), skewMs: Long = 60_000L): Boolean {
         return accessToken.isNotBlank() && accessTokenExpiresAt > now + skewMs
@@ -28,7 +31,7 @@ data class StoredSession(
 
 class SecureSessionStore(context: Context) {
     private val appContext = context.applicationContext
-    private val preferences: SharedPreferences by lazy {
+    private val legacyPreferences: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(appContext)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -42,49 +45,79 @@ class SecureSessionStore(context: Context) {
         )
     }
     private val sessionFile: File by lazy {
+        File(appContext.filesDir, "session/shield.session")
+    }
+    private val legacySessionFile: File by lazy {
         File(appContext.filesDir, "session/shield_session.json")
     }
 
     fun getSession(): StoredSession? {
-        val accessToken = preferences.getString(KEY_ACCESS_TOKEN, "").orEmpty()
-        val refreshToken = preferences.getString(KEY_REFRESH_TOKEN, "").orEmpty()
-        val sessionId = preferences.getString(KEY_SESSION_ID, "").orEmpty()
-        if (accessToken.isNotBlank() && refreshToken.isNotBlank() && sessionId.isNotBlank()) {
-            return StoredSession(
-                accessToken = accessToken,
-                refreshToken = refreshToken,
-                sessionId = sessionId,
-                accessTokenExpiresAt = preferences.getLong(KEY_ACCESS_TOKEN_EXPIRES_AT, 0L),
-                refreshTokenExpiresAt = preferences.getLong(KEY_REFRESH_TOKEN_EXPIRES_AT, 0L)
-            )
+        readSessionFile(sessionFile)?.let { return it }
+
+        readSessionFile(legacySessionFile)?.let { legacyFileSession ->
+            writeSessionFile(legacyFileSession)
+            runCatching { legacySessionFile.delete() }
+            clearLegacyPreferences()
+            return legacyFileSession
         }
 
-        val fileSession = readSessionFile() ?: return null
-        saveSession(fileSession)
-        return fileSession
+        val legacyPreferenceSession = readLegacyPreferenceSession() ?: return null
+        writeSessionFile(legacyPreferenceSession)
+        clearLegacyPreferences()
+        return legacyPreferenceSession
     }
 
     fun saveSession(session: StoredSession) {
-        preferences.edit()
-            .putString(KEY_ACCESS_TOKEN, session.accessToken)
-            .putString(KEY_REFRESH_TOKEN, session.refreshToken)
-            .putString(KEY_SESSION_ID, session.sessionId)
-            .putLong(KEY_ACCESS_TOKEN_EXPIRES_AT, session.accessTokenExpiresAt)
-            .putLong(KEY_REFRESH_TOKEN_EXPIRES_AT, session.refreshTokenExpiresAt)
-            .apply()
         writeSessionFile(session)
+        clearLegacyPreferences()
     }
 
     fun clear() {
-        preferences.edit().clear().apply()
+        clearLegacyPreferences()
         runCatching { sessionFile.delete() }
+        runCatching { legacySessionFile.delete() }
     }
 
-    private fun readSessionFile(): StoredSession? = runCatching {
-        if (!sessionFile.exists()) {
+    private fun readLegacyPreferenceSession(): StoredSession? {
+        val accessToken = legacyPreferences.getString(KEY_ACCESS_TOKEN, "").orEmpty()
+        val refreshToken = legacyPreferences.getString(KEY_REFRESH_TOKEN, "").orEmpty()
+        val sessionId = legacyPreferences.getString(KEY_SESSION_ID, "").orEmpty()
+        if (accessToken.isBlank() || refreshToken.isBlank() || sessionId.isBlank()) {
+            return null
+        }
+
+        return StoredSession(
+            accessToken = accessToken,
+            refreshToken = refreshToken,
+            sessionId = sessionId,
+            accessTokenExpiresAt = legacyPreferences.getLong(KEY_ACCESS_TOKEN_EXPIRES_AT, 0L),
+            refreshTokenExpiresAt = legacyPreferences.getLong(KEY_REFRESH_TOKEN_EXPIRES_AT, 0L),
+            userId = legacyPreferences.getString(KEY_USER_ID, "").orEmpty().ifBlank { null },
+            userName = legacyPreferences.getString(KEY_USER_NAME, "").orEmpty().ifBlank { null },
+            userEmail = legacyPreferences.getString(KEY_USER_EMAIL, "").orEmpty().ifBlank { null },
+            isPremium = if (legacyPreferences.contains(KEY_IS_PREMIUM)) {
+                legacyPreferences.getBoolean(KEY_IS_PREMIUM, false)
+            } else {
+                null
+            },
+            premiumExpiresAt = if (legacyPreferences.contains(KEY_PREMIUM_EXPIRES_AT)) {
+                legacyPreferences.getLong(KEY_PREMIUM_EXPIRES_AT, 0L)
+            } else {
+                null
+            },
+            isDeveloperMode = if (legacyPreferences.contains(KEY_IS_DEVELOPER_MODE)) {
+                legacyPreferences.getBoolean(KEY_IS_DEVELOPER_MODE, false)
+            } else {
+                null
+            }
+        )
+    }
+
+    private fun readSessionFile(file: File): StoredSession? = runCatching {
+        if (!file.exists()) {
             return@runCatching null
         }
-        val payload = JSONObject(sessionFile.readText(Charsets.UTF_8))
+        val payload = JSONObject(file.readText(Charsets.UTF_8))
         val accessToken = payload.optString(KEY_ACCESS_TOKEN, "")
         val refreshToken = payload.optString(KEY_REFRESH_TOKEN, "")
         val sessionId = payload.optString(KEY_SESSION_ID, "")
@@ -100,7 +133,10 @@ class SecureSessionStore(context: Context) {
             refreshTokenExpiresAt = payload.optLong(KEY_REFRESH_TOKEN_EXPIRES_AT, 0L),
             userId = payload.optString(KEY_USER_ID, "").ifBlank { null },
             userName = payload.optString(KEY_USER_NAME, "").ifBlank { null },
-            userEmail = payload.optString(KEY_USER_EMAIL, "").ifBlank { null }
+            userEmail = payload.optString(KEY_USER_EMAIL, "").ifBlank { null },
+            isPremium = payload.takeIf { it.has(KEY_IS_PREMIUM) }?.optBoolean(KEY_IS_PREMIUM),
+            premiumExpiresAt = payload.takeIf { it.has(KEY_PREMIUM_EXPIRES_AT) }?.optLong(KEY_PREMIUM_EXPIRES_AT),
+            isDeveloperMode = payload.takeIf { it.has(KEY_IS_DEVELOPER_MODE) }?.optBoolean(KEY_IS_DEVELOPER_MODE)
         )
     }.getOrNull()
 
@@ -117,6 +153,9 @@ class SecureSessionStore(context: Context) {
                 put(KEY_USER_ID, session.userId.orEmpty())
                 put(KEY_USER_NAME, session.userName.orEmpty())
                 put(KEY_USER_EMAIL, session.userEmail.orEmpty())
+                session.isPremium?.let { put(KEY_IS_PREMIUM, it) }
+                session.premiumExpiresAt?.let { put(KEY_PREMIUM_EXPIRES_AT, it) }
+                session.isDeveloperMode?.let { put(KEY_IS_DEVELOPER_MODE, it) }
             }
             tempFile.writeText(payload.toString(), Charsets.UTF_8)
             if (!tempFile.renameTo(sessionFile)) {
@@ -124,6 +163,10 @@ class SecureSessionStore(context: Context) {
                 tempFile.delete()
             }
         }
+    }
+
+    private fun clearLegacyPreferences() {
+        legacyPreferences.edit().clear().apply()
     }
 
     companion object {
@@ -136,5 +179,8 @@ class SecureSessionStore(context: Context) {
         private const val KEY_USER_ID = "user_id"
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
+        private const val KEY_IS_PREMIUM = "is_premium"
+        private const val KEY_PREMIUM_EXPIRES_AT = "premium_expires_at"
+        private const val KEY_IS_DEVELOPER_MODE = "is_developer_mode"
     }
 }

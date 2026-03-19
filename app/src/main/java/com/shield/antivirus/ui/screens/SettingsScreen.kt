@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,10 +72,11 @@ fun SettingsScreen(
 
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showDevMenuDialog by remember { mutableStateOf(false) }
+    var devActionInProgress by remember { mutableStateOf(false) }
     var devKeyInput by remember { mutableStateOf("") }
     var devKeyError by remember { mutableStateOf<String?>(null) }
     var versionTapCount by rememberSaveable { mutableIntStateOf(0) }
-    var isDevMenuUnlocked by rememberSaveable { mutableStateOf(false) }
+    var isDeveloperMenuRevealed by rememberSaveable { mutableStateOf(false) }
     var exportInProgress by rememberSaveable { mutableStateOf(false) }
     var pendingLogZip by remember { mutableStateOf<File?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -123,6 +125,12 @@ fun SettingsScreen(
         )
     }
 
+    LaunchedEffect(showDevMenuDialog) {
+        if (showDevMenuDialog) {
+            viewModel.refreshDeveloperModeState()
+        }
+    }
+
     if (showDevMenuDialog) {
         AlertDialog(
             onDismissRequest = { showDevMenuDialog = false },
@@ -131,9 +139,9 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = if (isDeveloperMode) {
-                            "Режим разработчика активирован."
+                            "Режим разработчика активирован для аккаунта."
                         } else {
-                            "Введите ключ разработки для активации."
+                            "Введите ключ разработчика. Активация выполняется через сервер и аккаунт."
                         },
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -157,31 +165,49 @@ fun SettingsScreen(
                     }
                     Button(
                         onClick = {
-                            viewModel.activateDeveloperMode(devKeyInput) { success ->
+                            if (devActionInProgress) return@Button
+                            devActionInProgress = true
+                            viewModel.activateDeveloperMode(devKeyInput) { success, message ->
+                                devActionInProgress = false
                                 if (success) {
                                     devKeyError = null
                                     devKeyInput = ""
-                                    Toast
-                                        .makeText(context, "Режим разработчика активирован", Toast.LENGTH_SHORT)
-                                        .show()
+                                    Toast.makeText(
+                                        context,
+                                        message ?: "Запрос на активацию отправлен",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 } else {
-                                    devKeyError = "Неверный ключ разработки"
+                                    devKeyError = message ?: "Не удалось активировать режим разработчика"
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !devActionInProgress
                     ) {
-                        Text("Активировать разработку")
+                        Text(if (devActionInProgress) "Проверяем..." else "Активировать через сервер")
                     }
                     Button(
                         onClick = {
-                            viewModel.deactivateDeveloperMode()
-                            Toast.makeText(context, "Режим разработчика отключён", Toast.LENGTH_SHORT).show()
+                            if (devActionInProgress) return@Button
+                            devActionInProgress = true
+                            viewModel.deactivateDeveloperMode { success, message ->
+                                devActionInProgress = false
+                                if (success) {
+                                    Toast.makeText(
+                                        context,
+                                        message ?: "Режим разработчика отключён",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    devKeyError = message ?: "Не удалось отключить режим разработчика"
+                                }
+                            }
                         },
                         enabled = isDeveloperMode,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Отписаться от разработки")
+                        Text("Отключить на сервере")
                     }
                 }
             },
@@ -212,7 +238,7 @@ fun SettingsScreen(
                     SettingsVersionRow(
                         version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                         onClick = {
-                            if (isDeveloperMode || isDevMenuUnlocked) {
+                            if (isDeveloperMode || isDeveloperMenuRevealed) {
                                 showDevMenuDialog = true
                                 return@SettingsVersionRow
                             }
@@ -227,9 +253,9 @@ fun SettingsScreen(
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 } else {
-                                    isDevMenuUnlocked = true
+                                    isDeveloperMenuRevealed = true
                                     showDevMenuDialog = true
-                                    Toast.makeText(context, "Вы разработчик!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Меню разработчика открыто", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }

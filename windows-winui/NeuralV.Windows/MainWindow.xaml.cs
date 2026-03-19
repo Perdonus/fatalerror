@@ -426,6 +426,7 @@ public sealed partial class MainWindow : Window
 
     private void BuildLayout()
     {
+        WindowsLog.Info("BuildLayout: reset root");
         _windowRoot.Children.Clear();
         _floatingShapes.Clear();
         _welcomePointer = null;
@@ -434,6 +435,7 @@ public sealed partial class MainWindow : Window
         _windowRoot.MinWidth = 1180;
         _windowRoot.MinHeight = 820;
 
+        WindowsLog.Info("BuildLayout: ambient layer");
         var ambientLayer = new Grid();
         BackdropGradient = new UiRectangle();
         FabricLayerA = new UiRectangle
@@ -500,11 +502,7 @@ public sealed partial class MainWindow : Window
         ambientLayer.Children.Add(GlowC);
         _windowRoot.Children.Add(ambientLayer);
 
-        AuthBackdropLayer = BuildAuthBackdropLayer();
-        AuthBackdropLayer.Visibility = Visibility.Collapsed;
-        Canvas.SetZIndex(AuthBackdropLayer, 5);
-        _windowRoot.Children.Add(AuthBackdropLayer);
-
+        WindowsLog.Info("BuildLayout: shell");
         var shell = new Grid
         {
             Padding = new Thickness(32, 22, 32, 28),
@@ -516,9 +514,11 @@ public sealed partial class MainWindow : Window
         shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _windowRoot.Children.Add(shell);
 
+        WindowsLog.Info("BuildLayout: top bar");
         TopBar = BuildTopBar();
         shell.Children.Add(TopBar);
 
+        WindowsLog.Info("BuildLayout: status banner");
         StatusBanner = CreateCardBorder("AppSurfaceBrush", "AppOutlineBrush", 18, new Thickness(14, 10, 14, 10));
         StatusBanner.Visibility = Visibility.Collapsed;
         StatusBanner.Margin = new Thickness(0, 0, 0, 14);
@@ -527,6 +527,7 @@ public sealed partial class MainWindow : Window
         StatusBanner.Child = StatusBannerText;
         shell.Children.Add(StatusBanner);
 
+        WindowsLog.Info("BuildLayout: screen host");
         ScreenHost = new Grid();
         Grid.SetRow(ScreenHost, 2);
         shell.Children.Add(ScreenHost);
@@ -542,17 +543,12 @@ public sealed partial class MainWindow : Window
 
         ScreenHost.Children.Add(SplashView);
 
-        // Keep stable overlays attached from startup. Runtime insertion of the
-        // heavier scan overlay tree has been the most probable source of the
-        // WinUI crash path after the first server scan.
-        ScanOverlay = BuildFallbackScanOverlay();
-        Canvas.SetZIndex(ScanOverlay, 40);
-        _windowRoot.Children.Add(ScanOverlay);
+        WindowsLog.Info("BuildLayout: defer heavy overlays");
+        AuthBackdropLayer = null!;
+        ScanOverlay = null!;
+        HistoryDetailOverlay = null!;
 
-        HistoryDetailOverlay = BuildHistoryDetailOverlay();
-        Canvas.SetZIndex(HistoryDetailOverlay, 50);
-        _windowRoot.Children.Add(HistoryDetailOverlay);
-
+        WindowsLog.Info("BuildLayout: drawer");
         DrawerScrim = new Border
         {
             Background = ThemeBrush("AppOverlayScrimBrush"),
@@ -570,6 +566,7 @@ public sealed partial class MainWindow : Window
         Canvas.SetZIndex(DrawerPanel, 61);
         _windowRoot.Children.Add(DrawerPanel);
 
+        WindowsLog.Info("BuildLayout: busy overlay");
         BusyOverlay = new Border
         {
             Background = ThemeBrush("AppOverlayScrimBrush"),
@@ -593,7 +590,9 @@ public sealed partial class MainWindow : Window
         BusyOverlay.Child = busyCard;
         _windowRoot.Children.Add(BusyOverlay);
 
+        WindowsLog.Info("BuildLayout: ambient palette");
         ApplyAmbientPalette();
+        WindowsLog.Info("BuildLayout: complete");
     }
 
     private Grid BuildTopBar()
@@ -763,6 +762,21 @@ public sealed partial class MainWindow : Window
 
         EnsureFloatingShapes();
         return host;
+    }
+
+    private void EnsureAuthBackdropLayerReady()
+    {
+        if (AuthBackdropLayer is not null)
+        {
+            return;
+        }
+
+        WindowsLog.Info("Creating deferred auth backdrop layer");
+        AuthBackdropLayer = BuildAuthBackdropLayer();
+        AuthBackdropLayer.Visibility = Visibility.Collapsed;
+        Canvas.SetZIndex(AuthBackdropLayer, 5);
+        _windowRoot.Children.Add(AuthBackdropLayer);
+        WindowsLog.Info("Deferred auth backdrop layer attached");
     }
 
     private void EnsureFloatingShapes()
@@ -1436,7 +1450,14 @@ public sealed partial class MainWindow : Window
         var chromeVisible = screen is AppScreen.Home or AppScreen.History or AppScreen.Settings;
         var authBackdropVisible = screen is AppScreen.Welcome or AppScreen.Login or AppScreen.Register or AppScreen.Code;
         TopBar.Visibility = chromeVisible ? Visibility.Visible : Visibility.Collapsed;
-        AuthBackdropLayer.Visibility = authBackdropVisible ? Visibility.Visible : Visibility.Collapsed;
+        if (authBackdropVisible)
+        {
+            EnsureAuthBackdropLayerReady();
+        }
+        if (AuthBackdropLayer is not null)
+        {
+            AuthBackdropLayer.Visibility = authBackdropVisible ? Visibility.Visible : Visibility.Collapsed;
+        }
         if (screen is AppScreen.Welcome or AppScreen.Login or AppScreen.Register or AppScreen.Code)
         {
             _shapeTimer.Start();

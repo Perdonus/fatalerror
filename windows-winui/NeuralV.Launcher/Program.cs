@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using NeuralV.Windows.Services;
 
 WindowsLog.StartSession("windows-launcher");
@@ -120,9 +119,9 @@ static bool TryActivateExistingInstance(string guiPath)
                 continue;
             }
 
-            ShowWindow(hwnd, SwRestore);
-            ShowWindow(hwnd, SwShow);
-            SetForegroundWindow(hwnd);
+            LauncherNativeMethods.ShowWindow(hwnd, LauncherNativeMethods.SwRestore);
+            LauncherNativeMethods.ShowWindow(hwnd, LauncherNativeMethods.SwShow);
+            LauncherNativeMethods.SetForegroundWindow(hwnd);
             return true;
         }
     }
@@ -134,11 +133,14 @@ static bool TryActivateExistingInstance(string guiPath)
     return false;
 }
 
-const uint SwRestore = 9;
-const uint SwShow = 5;
+internal static class LauncherNativeMethods
+{
+    public const uint SwRestore = 9;
+    public const uint SwShow = 5;
 
-[DllImport("user32.dll", SetLastError = true)]
-static extern bool ShowWindow(IntPtr hwnd, uint command);
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    public static extern bool ShowWindow(IntPtr hwnd, uint command);
 
-[DllImport("user32.dll", SetLastError = true)]
-static extern bool SetForegroundWindow(IntPtr hwnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetForegroundWindow(IntPtr hwnd);
+}

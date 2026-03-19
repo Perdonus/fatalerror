@@ -3,6 +3,7 @@ import { AppShell } from './components/AppShell';
 import { AndroidPage } from './pages/AndroidPage';
 import { HomePage } from './pages/HomePage';
 import { LinuxPage } from './pages/LinuxPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { WindowsPage } from './pages/WindowsPage';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="android" element={<AndroidPage />} />
         <Route path="windows" element={<WindowsPage />} />
         <Route path="linux" element={<LinuxPage />} />
+        <Route path="reset-password" element={<ResetPasswordPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

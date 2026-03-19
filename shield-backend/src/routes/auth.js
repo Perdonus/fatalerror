@@ -74,16 +74,16 @@ function appendQuery(baseUrl, params) {
 }
 
 function getResetLinks(token, email) {
-    const configuredBases = [
+    const webBaseUrl = String(process.env.APP_RESET_WEB_URL || 'https://sosiskibot.ru/neuralv/reset-password').trim();
+    const configuredAppBases = [
         process.env.APP_RESET_URL || 'shieldsecurity://auth/reset-password',
-        process.env.APP_RESET_ALT_URL || 'neuralv://auth/reset-password',
-        process.env.APP_RESET_WEB_URL || ''
+        process.env.APP_RESET_ALT_URL || 'neuralv://auth/reset-password'
     ]
         .map((value) => String(value || '').trim())
         .filter(Boolean)
         .filter((value, index, list) => list.indexOf(value) === index);
 
-    const links = configuredBases.map((baseUrl) =>
+    const appLinks = configuredAppBases.map((baseUrl) =>
         appendQuery(baseUrl, {
             token,
             email
@@ -91,8 +91,9 @@ function getResetLinks(token, email) {
     );
 
     return {
-        primary: links[0],
-        alternates: links.slice(1)
+        web: webBaseUrl ? appendQuery(webBaseUrl, { token, email }) : '',
+        primary: appLinks[0],
+        alternates: appLinks.slice(1)
     };
 }
 
@@ -122,6 +123,10 @@ function queueAuthCodeEmail(email, code, purpose) {
 
 function queuePasswordResetEmail(email, resetLinks) {
     queueMailTask(`password-reset:${email}`, () => sendPasswordResetEmail(email, resetLinks));
+}
+
+function queuePasswordResetCodeEmail(email, code) {
+    queueMailTask(`password-reset-code:${email}`, () => sendPasswordResetCodeEmail(email, code));
 }
 
 function parsePayload(jsonValue) {
@@ -237,7 +242,11 @@ async function refreshChallengeCode(challenge) {
 }
 
 async function sendAuthCodeEmail(email, code, purpose) {
-    const actionLabel = purpose === 'REGISTER' ? 'регистрации' : 'входа';
+    const actionLabel = purpose === 'REGISTER'
+        ? 'регистрации'
+        : purpose === 'LOGIN'
+            ? 'входа'
+            : 'подтверждения';
     await sendMail({
         to: email,
         subject: `NeuralV: код ${actionLabel}`,
@@ -251,8 +260,40 @@ async function sendAuthCodeEmail(email, code, purpose) {
     });
 }
 
+async function sendPasswordResetCodeEmail(email, code) {
+    await sendMail({
+        to: email,
+        subject: 'NeuralV: код сброса пароля',
+        text: `Ваш код сброса пароля: ${code}. Код действует ${PASSWORD_RESET_TTL_MINUTES} минут.`,
+        html: renderMailShell({
+            eyebrow: 'NeuralV',
+            title: 'Код сброса пароля',
+            bodyHtml: `<p style="margin:0 0 12px;">Введите этот код в CLI или desktop-версии NeuralV, чтобы задать новый пароль.</p><div style="display:inline-block;padding:14px 18px;border-radius:18px;background:#eff7f2;border:1px solid rgba(33,79,58,0.14);font-size:30px;font-weight:800;letter-spacing:0.24em;color:#214f3a;">${escapeHtml(code)}</div>`,
+            footerHtml: `Код действует ${PASSWORD_RESET_TTL_MINUTES} минут. Если вы не запрашивали сброс пароля, просто проигнорируйте это письмо.`
+        })
+    });
+}
+
+async function createPasswordResetToken(user, rawToken) {
+    const now = nowMs();
+    const expiresAt = passwordResetExpiresAt(now);
+
+    await pool.query(
+        'DELETE FROM password_reset_tokens WHERE user_id = ? AND consumed_at IS NULL',
+        [user.id]
+    );
+    await pool.query(
+        `INSERT INTO password_reset_tokens
+         (id, user_id, email, token_hash, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), user.id, user.email, hashToken(rawToken), now, expiresAt]
+    );
+
+    return { expiresAt };
+}
+
 async function sendPasswordResetEmail(email, resetLinks) {
-    const fallbackLinks = [resetLinks.primary, ...resetLinks.alternates].filter(Boolean);
+    const fallbackLinks = [resetLinks.web, resetLinks.primary, ...resetLinks.alternates].filter(Boolean);
     const fallbackLinksHtml = fallbackLinks
         .map((link, index) => `<div style="margin-top:${index === 0 ? '0' : '10px'};"><a href="${escapeHtml(link)}" style="color:#214f3a;text-decoration:none;word-break:break-all;">${escapeHtml(link)}</a></div>`)
         .join('');
@@ -262,6 +303,7 @@ async function sendPasswordResetEmail(email, resetLinks) {
         subject: 'NeuralV: сброс пароля',
         text: [
             'Откройте NeuralV по ссылке ниже, чтобы сбросить пароль.',
+            resetLinks.web,
             resetLinks.primary,
             ...resetLinks.alternates,
             `Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.`
@@ -271,7 +313,7 @@ async function sendPasswordResetEmail(email, resetLinks) {
             title: 'Сброс пароля',
             bodyHtml: '<p style="margin:0 0 12px;">Откройте письмо на устройстве с NeuralV и нажмите кнопку ниже. Приложение откроет экран сброса пароля сразу с готовым deep link.</p>',
             ctaLabel: 'Открыть сброс пароля в NeuralV',
-            ctaHref: resetLinks.primary,
+            ctaHref: resetLinks.web || resetLinks.primary,
             footerHtml: [
                 `<div>Если кнопка не открылась, используйте одну из ссылок вручную:</div>`,
                 `<div style="margin-top:10px;">${fallbackLinksHtml}</div>`,
@@ -637,20 +679,7 @@ router.post('/password-reset/request', async (req, res) => {
 
         const user = rows[0];
         const token = createRefreshToken();
-        const tokenHash = hashToken(token);
-        const now = nowMs();
-        const expiresAt = passwordResetExpiresAt(now);
-
-        await pool.query(
-            'DELETE FROM password_reset_tokens WHERE user_id = ? AND consumed_at IS NULL',
-            [user.id]
-        );
-        await pool.query(
-            `INSERT INTO password_reset_tokens
-             (id, user_id, email, token_hash, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [uuidv4(), user.id, user.email, tokenHash, now, expiresAt]
-        );
+        await createPasswordResetToken(user, token);
 
         const resetLinks = getResetLinks(token, user.email);
         queuePasswordResetEmail(user.email, resetLinks);
@@ -658,6 +687,7 @@ router.post('/password-reset/request', async (req, res) => {
             success: true,
             message: 'Reset link sent to email',
             delivery: 'queued',
+            open_url: resetLinks.web || resetLinks.primary,
             deeplink: {
                 primary: resetLinks.primary,
                 alternates: resetLinks.alternates,
@@ -669,6 +699,109 @@ router.post('/password-reset/request', async (req, res) => {
         if (e.code === 'MAIL_NOT_CONFIGURED') {
             return res.status(503).json({ error: 'Mail service is not configured' });
         }
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// POST /api/auth/password-reset/code/request
+router.post('/password-reset/code/request', async (req, res) => {
+    if (!ensureMailConfigured(res)) return;
+    try {
+        const normalizedEmail = normalizeEmail(req.body.email);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+            return res.status(400).json({ error: 'Invalid email address' });
+        }
+
+        const [rows] = await pool.query(
+            'SELECT id, email FROM users WHERE email = ?',
+            [normalizedEmail]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Email not found' });
+        }
+
+        const user = rows[0];
+        const code = createNumericCode();
+        const resetToken = await createPasswordResetToken(user, code);
+        queuePasswordResetCodeEmail(user.email, code);
+
+        res.status(202).json({
+            success: true,
+            delivery: 'queued',
+            email: normalizedEmail,
+            expires_at: resetToken.expiresAt,
+            message: 'Reset code sent to email'
+        });
+    } catch (e) {
+        console.error('Password reset code request error:', e);
+        if (e.code === 'MAIL_NOT_CONFIGURED') {
+            return res.status(503).json({ error: 'Mail service is not configured' });
+        }
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// POST /api/auth/password-reset/code/confirm
+router.post('/password-reset/code/confirm', async (req, res) => {
+    try {
+        const normalizedEmail = normalizeEmail(req.body.email);
+        const code = String(req.body.code || '').trim();
+        const password = String(req.body.password || '');
+
+        if (!normalizedEmail || !code || !password) {
+            return res.status(400).json({ error: 'code, email and password required' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        const [rows] = await pool.query(
+            `SELECT id, user_id, email, expires_at, consumed_at
+             FROM password_reset_tokens
+             WHERE token_hash = ? AND email = ?`,
+            [hashToken(code), normalizedEmail]
+        );
+
+        if (rows.length === 0) {
+            return res.status(400).json({ error: 'Reset code is invalid' });
+        }
+
+        const resetToken = rows[0];
+        if (resetToken.consumed_at) {
+            return res.status(410).json({ error: 'Reset code already used' });
+        }
+        if (resetToken.expires_at <= nowMs()) {
+            return res.status(410).json({ error: 'Reset code expired' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            await connection.query(
+                'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?',
+                [await hashPassword(password), nowMs(), resetToken.user_id]
+            );
+            await connection.query(
+                'UPDATE password_reset_tokens SET consumed_at = ? WHERE id = ?',
+                [nowMs(), resetToken.id]
+            );
+            await connection.query(
+                `UPDATE auth_sessions
+                 SET revoked_at = ?, revoke_reason = ?, updated_at = ?
+                 WHERE user_id = ? AND revoked_at IS NULL`,
+                [nowMs(), 'password_reset', nowMs(), resetToken.user_id]
+            );
+            await connection.commit();
+            res.json({ success: true, message: 'Password updated successfully' });
+        } catch (e) {
+            await connection.rollback();
+            throw e;
+        } finally {
+            connection.release();
+        }
+    } catch (e) {
+        console.error('Password reset code confirm error:', e);
         res.status(500).json({ error: 'Server error' });
     }
 });

@@ -926,22 +926,13 @@ public sealed partial class MainWindow : Window
         };
         var centeredHost = new Grid
         {
-            MaxWidth = 1120,
+            MaxWidth = 1360,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Top
         };
         centeredHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         centeredHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         host.Children.Add(centeredHost);
-
-        var stack = new StackPanel
-        {
-            Spacing = 18,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Top
-        };
-        Grid.SetRow(stack, 1);
-        centeredHost.Children.Add(stack);
 
         ActiveScanCard = CreateCardBorder("AppSurfaceBrush", "AppOutlineStrongBrush", 24, new Thickness(18));
         ActiveScanCard.Visibility = Visibility.Collapsed;
@@ -961,49 +952,50 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(ActiveScanCard, 0);
         centeredHost.Children.Add(ActiveScanCard);
 
-        var content = new Grid();
-        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        HomePrimaryContent = content;
-        stack.Children.Add(content);
-
-        var modes = new Grid
+        var content = new Grid
         {
-            HorizontalAlignment = HorizontalAlignment.Stretch
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Top,
+            RowSpacing = 18,
+            ColumnSpacing = 18
         };
-        modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
-        modes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        modes.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        modes.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-        modes.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.4, GridUnitType.Star) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.05, GridUnitType.Star) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.95, GridUnitType.Star) });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(content, 1);
+        HomePrimaryContent = content;
+        centeredHost.Children.Add(content);
 
         var deepCard = CreateWideModePanel("Глубокая", "◈", OnDeepScanClick);
-        Grid.SetColumnSpan(deepCard, 3);
+        deepCard.MinHeight = 356;
+        Grid.SetColumn(deepCard, 0);
         Grid.SetRow(deepCard, 0);
-        modes.Children.Add(deepCard);
+        Grid.SetRowSpan(deepCard, 2);
+        content.Children.Add(deepCard);
 
         var quickCard = CreateGridModePanel("Быстрая", "⚡", OnQuickScanClick, true);
-        Grid.SetColumn(quickCard, 0);
-        Grid.SetRow(quickCard, 2);
-        modes.Children.Add(quickCard);
+        quickCard.MinHeight = 170;
+        Grid.SetColumn(quickCard, 1);
+        Grid.SetRow(quickCard, 0);
+        content.Children.Add(quickCard);
 
         var selectiveCard = CreateGridModePanel("Выборочная", "◎", OnSelectiveScanClick, false);
-        Grid.SetColumn(selectiveCard, 2);
-        Grid.SetRow(selectiveCard, 2);
-        modes.Children.Add(selectiveCard);
-        Grid.SetRow(modes, 0);
-        content.Children.Add(modes);
+        selectiveCard.MinHeight = 170;
+        Grid.SetColumn(selectiveCard, 1);
+        Grid.SetRow(selectiveCard, 1);
+        content.Children.Add(selectiveCard);
 
         var artifactCard = CreateSlimModePanel("Проверить программу", "▣", OnProgramScanClick);
-        artifactCard.Margin = new Thickness(0, 18, 0, 0);
-        Grid.SetRow(artifactCard, 1);
+        artifactCard.MinHeight = 170;
+        Grid.SetColumn(artifactCard, 2);
+        Grid.SetRow(artifactCard, 0);
         content.Children.Add(artifactCard);
 
         HomeNetworkCard = CreateCardBorder("AppAccentSoftGradientBrush", "AppOutlineStrongBrush", 26, new Thickness(20));
-        HomeNetworkCard.MaxWidth = 720;
         HomeNetworkCard.HorizontalAlignment = HorizontalAlignment.Stretch;
+        HomeNetworkCard.VerticalAlignment = VerticalAlignment.Stretch;
         var networkGrid = new Grid();
         networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         networkGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1011,7 +1003,6 @@ public sealed partial class MainWindow : Window
         networkText.Children.Add(CreateSectionTitle("Защита в сети", 24));
         NetworkCountersText = CreateBodyText("AppMutedTextBrush");
         NetworkCountersText.TextWrapping = TextWrapping.Wrap;
-        NetworkCountersText.MaxWidth = 460;
         networkText.Children.Add(NetworkCountersText);
         networkGrid.Children.Add(networkText);
         NetworkProtectionToggle = new ToggleSwitch
@@ -1024,15 +1015,9 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(NetworkProtectionToggle, 1);
         networkGrid.Children.Add(NetworkProtectionToggle);
         HomeNetworkCard.Child = networkGrid;
-        HomeNetworkCard.Margin = new Thickness(0, 18, 0, 0);
-        var networkHost = new Grid
-        {
-            MaxWidth = 720,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        networkHost.Children.Add(HomeNetworkCard);
-        Grid.SetRow(networkHost, 2);
-        content.Children.Add(networkHost);
+        Grid.SetColumn(HomeNetworkCard, 2);
+        Grid.SetRow(HomeNetworkCard, 1);
+        content.Children.Add(HomeNetworkCard);
 
         return host;
     }
@@ -1343,10 +1328,30 @@ public sealed partial class MainWindow : Window
         if (ScanOverlay is null)
         {
             WindowsLog.Info("Creating deferred scan overlay");
-            ScanOverlay = BuildFallbackScanOverlay();
-            Canvas.SetZIndex(ScanOverlay, 40);
-            _windowRoot.Children.Add(ScanOverlay);
-            WindowsLog.Info("Deferred scan overlay attached");
+            try
+            {
+                ScanOverlay = BuildFallbackScanOverlay();
+            }
+            catch (Exception ex)
+            {
+                WindowsLog.Error("BuildFallbackScanOverlay failed, switching to minimal overlay", ex);
+                ScanOverlay = BuildMinimalScanOverlay();
+            }
+
+            try
+            {
+                Canvas.SetZIndex(ScanOverlay, 40);
+                _windowRoot.Children.Add(ScanOverlay);
+                WindowsLog.Info("Deferred scan overlay attached");
+            }
+            catch (Exception ex)
+            {
+                WindowsLog.Error("Attaching deferred scan overlay failed", ex);
+                ScanOverlay = BuildMinimalScanOverlay();
+                Canvas.SetZIndex(ScanOverlay, 40);
+                _windowRoot.Children.Add(ScanOverlay);
+                WindowsLog.Info("Minimal scan overlay attached");
+            }
         }
     }
 
@@ -1387,17 +1392,27 @@ public sealed partial class MainWindow : Window
 
     private Grid BuildFallbackScanOverlay()
     {
+        WindowsLog.Info("BuildFallbackScanOverlay: begin");
         var overlay = new Grid
         {
             Background = ThemeBrush("AppOverlayScrimBrush"),
             Visibility = Visibility.Collapsed
         };
 
-        var frame = CreateCardBorder("AppSurfaceStrongBrush", "AppOutlineStrongBrush", 24, new Thickness(20));
+        var frame = new Border
+        {
+            Background = ThemeBrush("AppSurfaceStrongBrush"),
+            BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(24),
+            Padding = new Thickness(20),
+            MaxWidth = 760,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
         frame.MaxWidth = 720;
-        frame.HorizontalAlignment = HorizontalAlignment.Center;
-        frame.VerticalAlignment = VerticalAlignment.Center;
         overlay.Children.Add(frame);
+        WindowsLog.Info("BuildFallbackScanOverlay: frame ready");
 
         var stack = new StackPanel { Spacing = 14 };
         ScanModeText = CreateTitleText("Проверка", 24);
@@ -1405,13 +1420,10 @@ public sealed partial class MainWindow : Window
         ScanTargetText = CreateBodyText("AppMutedTextBrush");
         ScanProgressText = CreateTitleText("0%", 34);
         ScanCountsText = CreateBodyText("AppMutedTextBrush");
-        ScanProgressBar = new ProgressBar
-        {
-            Minimum = 0,
-            Maximum = 100,
-            Height = 10
-        };
+        WindowsLog.Info("BuildFallbackScanOverlay: labels ready");
+        ScanProgressBar = null!;
         ScanTimelineHost = new StackPanel { Spacing = 10 };
+        WindowsLog.Info("BuildFallbackScanOverlay: progress/timeline ready");
 
         var timelineScroll = new ScrollViewer
         {
@@ -1420,13 +1432,13 @@ public sealed partial class MainWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = ScanTimelineHost
         };
+        WindowsLog.Info("BuildFallbackScanOverlay: scroll ready");
 
         stack.Children.Add(ScanModeText);
         stack.Children.Add(ScanStageText);
         stack.Children.Add(ScanTargetText);
         stack.Children.Add(ScanProgressText);
         stack.Children.Add(ScanCountsText);
-        stack.Children.Add(ScanProgressBar);
         stack.Children.Add(timelineScroll);
 
         var actions = new StackPanel
@@ -1434,13 +1446,71 @@ public sealed partial class MainWindow : Window
             Orientation = Orientation.Horizontal,
             Spacing = 12
         };
-        var cancelButton = CreateFilledButton("Остановить", OnCancelScanClick);
-        var hideButton = CreateTonalButton("Скрыть", OnHideScanOverlayClick);
+        var cancelButton = CreateSafeOverlayButton("Остановить", OnCancelScanClick, true);
+        var hideButton = CreateSafeOverlayButton("Скрыть", OnHideScanOverlayClick, false);
         actions.Children.Add(cancelButton);
         actions.Children.Add(hideButton);
         stack.Children.Add(actions);
 
         frame.Child = stack;
+        WindowsLog.Info("BuildFallbackScanOverlay: complete");
+        return overlay;
+    }
+
+    private Grid BuildMinimalScanOverlay()
+    {
+        var overlay = new Grid
+        {
+            Background = ThemeBrush("AppOverlayScrimBrush"),
+            Visibility = Visibility.Collapsed
+        };
+
+        var frame = new Border
+        {
+            Background = ThemeBrush("AppSurfaceStrongBrush"),
+            BorderBrush = ThemeBrush("AppOutlineStrongBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(24),
+            Padding = new Thickness(20),
+            MaxWidth = 680,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var stack = new StackPanel { Spacing = 12 };
+        ScanModeText = CreateTitleText("Проверка", 24);
+        ScanStageText = CreateBodyText("AppMutedTextBrush");
+        ScanTargetText = CreateBodyText("AppMutedTextBrush");
+        ScanProgressText = CreateTitleText("0%", 32);
+        ScanCountsText = CreateBodyText("AppMutedTextBrush");
+        ScanProgressBar = null!;
+        ScanTimelineHost = new StackPanel { Spacing = 10 };
+
+        var timelineScroll = new ScrollViewer
+        {
+            MaxHeight = 300,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = ScanTimelineHost
+        };
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 12
+        };
+        actions.Children.Add(CreateSafeOverlayButton("Остановить", OnCancelScanClick, true));
+        actions.Children.Add(CreateSafeOverlayButton("Скрыть", OnHideScanOverlayClick, false));
+
+        stack.Children.Add(ScanModeText);
+        stack.Children.Add(ScanStageText);
+        stack.Children.Add(ScanTargetText);
+        stack.Children.Add(ScanProgressText);
+        stack.Children.Add(ScanCountsText);
+        stack.Children.Add(timelineScroll);
+        stack.Children.Add(actions);
+        frame.Child = stack;
+        overlay.Children.Add(frame);
         return overlay;
     }
 
@@ -2592,6 +2662,7 @@ public sealed partial class MainWindow : Window
         try
         {
             EnsureScanOverlayReady();
+            WindowsLog.Info("RenderScan: overlay ready");
             var progress = WindowsTrayProgressService.EstimateProgressPercent(scan);
             ScanModeText.Text = scan.Mode switch
             {
@@ -2610,7 +2681,11 @@ public sealed partial class MainWindow : Window
             }
             ScanProgressText.Text = $"{progress}%";
             ScanCountsText.Text = $"Этапов в ленте: {scan.Timeline.Count} · находок: {scan.SurfacedFindings}";
-            ScanProgressBar.Value = progress;
+            if (ScanProgressBar is not null)
+            {
+                ScanProgressBar.Value = progress;
+            }
+            WindowsLog.Info($"RenderScan: counters updated progress={progress}");
 
             _scanTimeline.Clear();
             foreach (var item in scan.Timeline.DefaultIfEmpty(string.IsNullOrWhiteSpace(scan.Message) ? "Сервер обрабатывает проверку." : scan.Message))
@@ -2627,12 +2702,10 @@ public sealed partial class MainWindow : Window
                 ScanTimelineHost.Children.Clear();
                 foreach (var line in _scanTimeline)
                 {
-                    var card = CreateCardBorder("AppSurfaceRaisedBrush", "AppOutlineBrush", 18, new Thickness(14, 12, 14, 12));
-                    card.Child = CreateBodyText("AppTextBrush");
-                    ((TextBlock)card.Child).Text = line;
-                    ScanTimelineHost.Children.Add(card);
+                    ScanTimelineHost.Children.Add(CreateSafeTimelineLine(line));
                 }
             }
+            WindowsLog.Info($"RenderScan: timeline rendered count={_scanTimeline.Count}");
 
             UpdateHomeState();
             App.WindowLifecycle?.UpdateTray(WindowsTrayProgressService.FromScan(scan));
@@ -3474,6 +3547,43 @@ public sealed partial class MainWindow : Window
             PasswordRevealMode = PasswordRevealMode.Peek,
             VerticalContentAlignment = VerticalAlignment.Center
         };
+    }
+
+    private static Button CreateSafeOverlayButton(string text, RoutedEventHandler handler, bool emphasized)
+    {
+        var button = new Button
+        {
+            Content = text,
+            MinHeight = 46,
+            Padding = new Thickness(18, 0, 18, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            BorderThickness = new Thickness(1),
+            BorderBrush = ThemeBrush(emphasized ? "AppOutlineStrongBrush" : "AppOutlineBrush"),
+            Background = ThemeBrush(emphasized ? "AppAccentSoftGradientBrush" : "AppSurfaceBrush"),
+            Foreground = ThemeBrush("AppTextBrush"),
+            CornerRadius = new CornerRadius(16)
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private static Border CreateSafeTimelineLine(string text)
+    {
+        var card = new Border
+        {
+            Background = ThemeBrush("AppSurfaceRaisedBrush"),
+            BorderBrush = ThemeBrush("AppOutlineBrush"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(14, 12, 14, 12)
+        };
+        card.Child = new TextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ThemeBrush("AppTextBrush")
+        };
+        return card;
     }
 
     private static ListView CreateListView()

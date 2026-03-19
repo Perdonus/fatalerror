@@ -293,19 +293,12 @@ async function createPasswordResetToken(user, rawToken) {
 }
 
 async function sendPasswordResetEmail(email, resetLinks) {
-    const fallbackLinks = [resetLinks.web, resetLinks.primary, ...resetLinks.alternates].filter(Boolean);
-    const fallbackLinksHtml = fallbackLinks
-        .map((link, index) => `<div style="margin-top:${index === 0 ? '0' : '10px'};"><a href="${escapeHtml(link)}" style="color:#214f3a;text-decoration:none;word-break:break-all;">${escapeHtml(link)}</a></div>`)
-        .join('');
-
     await sendMail({
         to: email,
         subject: 'NeuralV: сброс пароля',
         text: [
             'Откройте страницу NeuralV по ссылке ниже, чтобы перейти к сбросу пароля.',
             resetLinks.web,
-            resetLinks.primary,
-            ...resetLinks.alternates,
             `Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.`
         ].filter(Boolean).join('\n'),
         html: renderMailShell({
@@ -314,11 +307,7 @@ async function sendPasswordResetEmail(email, resetLinks) {
             bodyHtml: '<p style="margin:0 0 12px;">Нажмите кнопку ниже. Откроется страница NeuralV, которая сразу попробует перевести вас в приложение на экран сброса пароля.</p>',
             ctaLabel: 'Открыть сброс пароля',
             ctaHref: resetLinks.web || resetLinks.primary,
-            footerHtml: [
-                `<div>Если переход не сработал автоматически, используйте одну из ссылок вручную:</div>`,
-                `<div style="margin-top:10px;">${fallbackLinksHtml}</div>`,
-                `<div style="margin-top:12px;">Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.</div>`
-            ].join('')
+            footerHtml: `Ссылка действует ${PASSWORD_RESET_TTL_MINUTES} минут.`
         })
     });
 }

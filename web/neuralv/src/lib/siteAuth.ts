@@ -442,6 +442,15 @@ function challengeFromPayload(payload: Record<string, unknown> | undefined): Sit
   };
 }
 
+function forwardFailure<T>(result: SiteAuthResult<unknown>, fallback: string): SiteAuthResult<T> {
+  return {
+    ok: false,
+    status: result.status,
+    error: result.error || fallback,
+    retryAfterMs: result.retryAfterMs
+  };
+}
+
 export function evaluatePasswordStrength(password: string): PasswordStrength {
   const rules = [
     { id: 'length', label: 'Минимум 8 символов', passed: password.length >= 8 },
@@ -516,7 +525,7 @@ export async function verifyLoginCode(challengeId: string, code: string): Promis
   });
 
   if (!result.ok || !result.data) {
-    return result as SiteAuthResult<SiteAuthSession>;
+    return forwardFailure<SiteAuthSession>(result, 'Не удалось завершить вход.');
   }
 
   const session = storeSiteSession(mapAuthResponse(result.data));
@@ -559,7 +568,7 @@ export async function verifyRegisterCode(challengeId: string, code: string): Pro
   });
 
   if (!result.ok || !result.data) {
-    return result as SiteAuthResult<SiteAuthSession>;
+    return forwardFailure<SiteAuthSession>(result, 'Не удалось завершить регистрацию.');
   }
 
   const session = storeSiteSession(mapAuthResponse(result.data));
@@ -588,7 +597,7 @@ export async function refreshStoredSiteSession(): Promise<SiteAuthResult<SiteAut
 
   if (!result.ok || !result.data) {
     clearStoredSiteSession();
-    return result as SiteAuthResult<SiteAuthSession>;
+    return forwardFailure<SiteAuthSession>(result, 'Не удалось обновить сессию.');
   }
 
   const session = storeSiteSession({
@@ -634,7 +643,7 @@ export async function fetchCurrentSiteUser(): Promise<SiteAuthResult<SiteAuthSes
   });
 
   if (!result.ok || !result.data) {
-    return result as SiteAuthResult<SiteAuthSession>;
+    return forwardFailure<SiteAuthSession>(result, 'Не удалось получить профиль.');
   }
 
   const merged = storeSiteSession({

@@ -140,13 +140,19 @@ public static class SessionStore
     {
         yield return AppDirectory;
 
+        string? binDirectory = null;
         try
         {
             var installRoot = InstallLayout.ResolveInstallRootFromExecutablePath(Environment.ProcessPath ?? AppContext.BaseDirectory);
-            yield return InstallLayout.BinDirectory(installRoot);
+            binDirectory = InstallLayout.BinDirectory(installRoot);
         }
         catch
         {
+        }
+
+        if (!string.IsNullOrWhiteSpace(binDirectory))
+        {
+            yield return binDirectory;
         }
     }
 

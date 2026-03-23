@@ -35,9 +35,39 @@ public sealed class PreparedWindowsBundle : IDisposable
     }
 }
 
+public enum WindowsUpdateStage
+{
+    Checking,
+    UpdateAvailable,
+    Downloading,
+    Extracting,
+    Installing,
+    Launching,
+    Completed,
+    Failed
+}
+
+public sealed class WindowsUpdateProgressSnapshot
+{
+    public WindowsUpdateStage Stage { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string Detail { get; init; } = string.Empty;
+    public bool IsIndeterminate { get; init; }
+    public int OverallPercent { get; init; }
+    public int StagePercent { get; init; }
+    public long BytesDownloaded { get; init; }
+    public long BytesTotal { get; init; }
+}
+
 public static class WindowsBundleInstaller
 {
-    public static async Task<PreparedWindowsBundle> PrepareBundleAsync(string portableUrl, string installRoot, string version, bool autoStartEnabled, CancellationToken cancellationToken = default)
+    public static async Task<PreparedWindowsBundle> PrepareBundleAsync(
+        string portableUrl,
+        string installRoot,
+        string version,
+        bool autoStartEnabled,
+        IProgress<WindowsUpdateProgressSnapshot>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var normalizedInstallRoot = InstallLayout.NormalizeInstallRoot(installRoot);
         var parentDir = Path.GetDirectoryName(normalizedInstallRoot) ?? AppContext.BaseDirectory;
@@ -50,7 +80,27 @@ public static class WindowsBundleInstaller
         var extractRoot = Path.Combine(workingDirectory, "extract");
         var stageRoot = Path.Combine(parentDir, $".NeuralV.stage-{Guid.NewGuid():N}");
 
-        await DownloadFileAsync(portableUrl, archivePath, cancellationToken);
+        progress?.Report(new WindowsUpdateProgressSnapshot
+        {
+            Stage = WindowsUpdateStage.Downloading,
+            Title = "Скачивание обновления",
+            Detail = "Получаем пакет новой версии.",
+            IsIndeterminate = true,
+            OverallPercent = 10,
+            StagePercent = 0
+        });
+
+        await DownloadFileAsync(portableUrl, archivePath, progress, cancellationToken);
+
+        progress?.Report(new WindowsUpdateProgressSnapshot
+        {
+            Stage = WindowsUpdateStage.Extracting,
+            Title = "Распаковка обновления",
+            Detail = "Подготавливаем файлы перед установкой.",
+            IsIndeterminate = true,
+            OverallPercent = 62,
+            StagePercent = 0
+        });
         ZipFile.ExtractToDirectory(archivePath, extractRoot, overwriteFiles: true);
         var payloadRoot = FindPayloadRoot(extractRoot);
         CopyDirectory(payloadRoot, stageRoot);
@@ -58,6 +108,16 @@ public static class WindowsBundleInstaller
         var installState = InstallStateStore.CreateDefault(normalizedInstallRoot, version);
         installState.AutoStartEnabled = autoStartEnabled;
         WriteMetadataInto(stageRoot, installState);
+
+        progress?.Report(new WindowsUpdateProgressSnapshot
+        {
+            Stage = WindowsUpdateStage.Extracting,
+            Title = "Обновление подготовлено",
+            Detail = "Файлы готовы к установке.",
+            IsIndeterminate = false,
+            OverallPercent = 82,
+            StagePercent = 100
+        });
 
         return new PreparedWindowsBundle
         {
@@ -67,11 +127,25 @@ public static class WindowsBundleInstaller
         };
     }
 
-    public static async Task InstallPreparedBundleAsync(PreparedWindowsBundle preparedBundle, InstallState installState, CancellationToken cancellationToken = default)
+    public static async Task InstallPreparedBundleAsync(
+        PreparedWindowsBundle preparedBundle,
+        InstallState installState,
+        IProgress<WindowsUpdateProgressSnapshot>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedInstallRoot = InstallLayout.NormalizeInstallRoot(installState.InstallRoot);
         var backupRoot = normalizedInstallRoot + ".backup";
+
+        progress?.Report(new WindowsUpdateProgressSnapshot
+        {
+            Stage = WindowsUpdateStage.Installing,
+            Title = "Установка обновления",
+            Detail = "Заменяем текущую версию на новую.",
+            IsIndeterminate = true,
+            OverallPercent = 88,
+            StagePercent = 0
+        });
 
         if (Directory.Exists(backupRoot))
         {
@@ -93,6 +167,15 @@ public static class WindowsBundleInstaller
             WindowsProtocolRegistration.EnsureHandlers(installState);
             EnsureAutoStart(installState);
             TryDelete(backupRoot);
+            progress?.Report(new WindowsUpdateProgressSnapshot
+            {
+                Stage = WindowsUpdateStage.Completed,
+                Title = "Обновление установлено",
+                Detail = "Можно запускать новую версию.",
+                IsIndeterminate = false,
+                OverallPercent = 100,
+                StagePercent = 100
+            });
         }
         catch
         {
@@ -106,7 +189,7 @@ public static class WindowsBundleInstaller
 
     public static async Task InstallFromReleaseAsync(WindowsReleaseInfo releaseInfo, InstallState installState, CancellationToken cancellationToken = default)
     {
-        using var preparedBundle = await PrepareBundleAsync(releaseInfo.PortableUrl, installState.InstallRoot, releaseInfo.Version, installState.AutoStartEnabled, cancellationToken);
+        using var preparedBundle = await PrepareBundleAsync(releaseInfo.PortableUrl, installState.InstallRoot, releaseInfo.Version, installState.AutoStartEnabled, progress: null, cancellationToken);
         installState.Version = releaseInfo.Version;
         installState.CliBinary = releaseInfo.CliBinaryName;
         installState.GuiBinary = releaseInfo.GuiBinaryName;
@@ -115,7 +198,7 @@ public static class WindowsBundleInstaller
         installState.UpdaterHostBinary = releaseInfo.UpdaterHostBinaryName;
         installState.ProtocolSchemes = InstallLayout.UriSchemes.ToArray();
         installState.ProtocolHandlerBinary = releaseInfo.LauncherBinaryName;
-        await InstallPreparedBundleAsync(preparedBundle, installState, cancellationToken);
+        await InstallPreparedBundleAsync(preparedBundle, installState, progress: null, cancellationToken);
     }
 
     public static void Uninstall(InstallState installState)
@@ -217,14 +300,67 @@ public static class WindowsBundleInstaller
         return scriptPath;
     }
 
-    private static async Task DownloadFileAsync(string url, string targetPath, CancellationToken cancellationToken)
+    private static async Task DownloadFileAsync(
+        string url,
+        string targetPath,
+        IProgress<WindowsUpdateProgressSnapshot>? progress,
+        CancellationToken cancellationToken)
     {
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         using var response = await httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
+        var totalBytes = response.Content.Headers.ContentLength ?? 0L;
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
         await using var output = File.Create(targetPath);
-        await input.CopyToAsync(output, cancellationToken);
+        var buffer = new byte[1024 * 96];
+        long downloaded = 0;
+        int read;
+        while ((read = await input.ReadAsync(buffer, cancellationToken)) > 0)
+        {
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            downloaded += read;
+
+            var hasTotal = totalBytes > 0;
+            var stagePercent = hasTotal
+                ? (int)Math.Clamp(downloaded * 100d / totalBytes, 0d, 100d)
+                : 0;
+            var overallPercent = hasTotal
+                ? (int)Math.Clamp(10d + (downloaded * 45d / totalBytes), 10d, 55d)
+                : 10;
+
+            progress?.Report(new WindowsUpdateProgressSnapshot
+            {
+                Stage = WindowsUpdateStage.Downloading,
+                Title = "Скачивание обновления",
+                Detail = hasTotal
+                    ? $"Загружено {FormatSize(downloaded)} из {FormatSize(totalBytes)}"
+                    : $"Загружено {FormatSize(downloaded)}",
+                IsIndeterminate = !hasTotal,
+                OverallPercent = overallPercent,
+                StagePercent = stagePercent,
+                BytesDownloaded = downloaded,
+                BytesTotal = totalBytes
+            });
+        }
+    }
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 Б";
+        }
+
+        string[] suffixes = ["Б", "КБ", "МБ", "ГБ"];
+        var value = (double)bytes;
+        var index = 0;
+        while (value >= 1024 && index < suffixes.Length - 1)
+        {
+            value /= 1024d;
+            index++;
+        }
+
+        return $"{value:0.#} {suffixes[index]}";
     }
 
     private static string FindPayloadRoot(string extractRoot)

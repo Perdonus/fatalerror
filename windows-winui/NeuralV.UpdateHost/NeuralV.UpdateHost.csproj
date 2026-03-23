@@ -6,9 +6,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <SelfContained>true</SelfContained>
-    <PublishSingleFile>false</PublishSingleFile>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishReadyToRun>false</PublishReadyToRun>
     <UseAppHost>true</UseAppHost>
+    <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>neuralv-updater-host</AssemblyName>
     <RootNamespace>NeuralV.UpdateHost</RootNamespace>
     <ApplicationIcon>..\NeuralV.Windows\Assets\NeuralV.ico</ApplicationIcon>

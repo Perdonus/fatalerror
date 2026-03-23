@@ -143,7 +143,6 @@ jobs:
             -p:InformationalVersion=$semver `
             -p:AssemblyVersion=$assemblyVersion `
             -p:FileVersion=$assemblyVersion `
-            -p:PublishSingleFile=false `
             -o dist\windows\updater-host-temp
           Copy-Item 'dist/windows/updater-host-temp/*' 'dist/windows/NeuralV/libs/' -Force -Recurse
 

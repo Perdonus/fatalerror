@@ -5,12 +5,11 @@ import { AuthPageLayout } from '../components/AuthPageLayout';
 import { SessionSummaryCard } from '../components/SessionSummaryCard';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
-  SiteAuthChallenge,
-  SiteAuthSession,
   resendLoginCode,
   startLogin,
   verifyLoginCode
 } from '../lib/siteAuth';
+import type { SiteAuthChallenge, SiteAuthSession } from '../lib/siteAuth';
 
 type LoginPageProps = {
   onAuthenticated?: (session: SiteAuthSession) => void;

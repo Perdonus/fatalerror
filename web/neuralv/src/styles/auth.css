@@ -148,6 +148,7 @@
     grid-template-columns: 1fr;
   }
 }
+
 .auth-shell.action-shell,
 .auth-shell.reset-shell {
   align-items: stretch;

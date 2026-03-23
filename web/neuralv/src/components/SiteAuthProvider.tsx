@@ -1,14 +1,14 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   clearStoredSiteSession,
   fetchCurrentSiteUser,
   logoutSiteSession,
   readStoredSiteSession,
-  SiteAuthSession,
-  SiteAuthUser,
   storeSiteSession,
   subscribeToSiteAuthSession
 } from '../lib/siteAuth';
+import type { SiteAuthSession, SiteAuthUser } from '../lib/siteAuth';
 
 type SiteAuthContextValue = {
   ready: boolean;

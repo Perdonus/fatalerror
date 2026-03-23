@@ -6,9 +6,9 @@ import {
   confirmProfileAction,
   humanizeError,
   inspectProfileAction,
-  SiteProfileActionPreview,
   validatePasswordStrength
 } from '../lib/siteAuth';
+import type { SiteProfileActionPreview } from '../lib/siteAuth';
 
 export function AccountActionPage() {
   const { logout, refresh } = useSiteAuth();

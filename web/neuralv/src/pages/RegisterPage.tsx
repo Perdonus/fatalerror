@@ -6,14 +6,13 @@ import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter';
 import { SessionSummaryCard } from '../components/SessionSummaryCard';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
-  SiteAuthChallenge,
-  SiteAuthSession,
   evaluatePasswordStrength,
   resendRegisterCode,
   startRegister,
   validatePasswordStrength,
   verifyRegisterCode
 } from '../lib/siteAuth';
+import type { SiteAuthChallenge, SiteAuthSession } from '../lib/siteAuth';
 
 type RegisterPageProps = {
   onAuthenticated?: (session: SiteAuthSession) => void;

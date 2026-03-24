@@ -502,7 +502,8 @@ function createPlatformState() {
         blocked_ads: 0,
         blocked_threats: 0,
         updated_at: 0,
-        last_event_at: 0
+        last_event_at: 0,
+        last_seen_at: 0
     };
 }
 
@@ -636,7 +637,8 @@ function migrateLegacyUserState(userState) {
             blocked_ads: Math.max(0, Number(source.blocked_ads || 0) || 0),
             blocked_threats: Math.max(0, Number(source.blocked_threats || 0) || 0),
             updated_at: Math.max(0, Number(source.updated_at || 0) || 0),
-            last_event_at: Math.max(0, Number(source.last_event_at || 0) || 0)
+            last_event_at: Math.max(0, Number(source.last_event_at || 0) || 0),
+            last_seen_at: Math.max(0, Number(source.last_seen_at || source.lastSeenAt || 0) || 0)
         };
     }
 
@@ -653,6 +655,33 @@ function ensureUserState(store, userId) {
     }
     store.users[key] = migrateLegacyUserState(store.users[key]);
     return store.users[key];
+}
+
+function touchPlatformPresence(userState, platform, timestamp = nowMs()) {
+    if (!userState?.platforms?.[platform]) {
+        userState.platforms[platform] = createPlatformState();
+    }
+    userState.platforms[platform].last_seen_at = Math.max(
+        Number(userState.platforms[platform].last_seen_at || 0) || 0,
+        Number(timestamp || 0) || 0
+    );
+}
+
+function buildPlatformProtectionState(userState, platform) {
+    const platformState = userState.platforms[platform] || createPlatformState();
+    const requestedEnabled = Boolean(userState?.toggles?.protection_enabled);
+    const lastSeenAt = Number(platformState.last_seen_at || 0) || 0;
+    const active = requestedEnabled && lastSeenAt > 0;
+    return {
+        platform,
+        state: active ? 'ACTIVE' : 'INACTIVE',
+        label: active ? 'Активна' : 'Не активна',
+        requested_enabled: requestedEnabled,
+        last_seen_at: lastSeenAt,
+        last_event_at: Number(platformState.last_event_at || 0) || 0,
+        blocked_ads: Number(platformState.blocked_ads || 0) || 0,
+        blocked_threats: Number(platformState.blocked_threats || 0) || 0
+    };
 }
 
 function shapeState(userState, platform, developerMode) {
@@ -697,7 +726,8 @@ function shapeState(userState, platform, developerMode) {
         },
         updated_at: Number(userState.updated_at || 0),
         platform_updated_at: Number(platformState.updated_at || 0),
-        last_event_at: Number(platformState.last_event_at || 0)
+        last_event_at: Number(platformState.last_event_at || 0),
+        last_seen_at: Number(platformState.last_seen_at || 0)
     };
 }
 
@@ -1221,6 +1251,7 @@ async function getNetworkProtectionState(userId, platform) {
     const context = await resolveContext(userId, platform);
     const store = readStore();
     const userState = ensureUserState(store, userId);
+    touchPlatformPresence(userState, context.platform);
     writeStore(store);
     return shapeState(userState, context.platform, context.developerMode);
 }
@@ -1233,6 +1264,7 @@ async function updateNetworkProtectionState(userId, payload = {}) {
 
     Object.assign(userState.toggles, togglePatch);
     userState.updated_at = nowMs();
+    touchPlatformPresence(userState, context.platform, userState.updated_at);
 
     writeStore(store);
     return shapeState(userState, context.platform, context.developerMode);
@@ -1258,6 +1290,7 @@ async function recordNetworkProtectionEvent(userId, payload = {}) {
     const platformState = userState.platforms[context.platform];
     const timestamp = nowMs();
 
+    touchPlatformPresence(userState, context.platform, timestamp);
     platformState.blocked_ads += blockedAds;
     platformState.blocked_threats += blockedThreats;
     platformState.updated_at = timestamp;
@@ -1276,10 +1309,36 @@ async function recordNetworkProtectionEvent(userId, payload = {}) {
     };
 }
 
+async function getNetworkProtectionProfileOverview(userId) {
+    const devState = await getUserDevMode(userId);
+    if (!devState.exists) {
+        throw createHttpError(404, 'User not found', 'USER_NOT_FOUND');
+    }
+
+    const store = readStore();
+    const userState = ensureUserState(store, userId);
+    writeStore(store);
+
+    return {
+        toggles: {
+            protection_enabled: Boolean(userState.toggles.protection_enabled),
+            ad_block_enabled: Boolean(userState.toggles.ad_block_enabled),
+            unsafe_sites_enabled: Boolean(userState.toggles.unsafe_sites_enabled)
+        },
+        updated_at: Number(userState.updated_at || 0) || 0,
+        platforms: {
+            android: buildPlatformProtectionState(userState, 'android'),
+            windows: buildPlatformProtectionState(userState, 'windows'),
+            linux: buildPlatformProtectionState(userState, 'linux')
+        }
+    };
+}
+
 module.exports = {
     getNetworkProtectionManifest,
     getNetworkProtectionFeed,
     getNetworkProtectionState,
+    getNetworkProtectionProfileOverview,
     updateNetworkProtectionState,
     recordNetworkProtectionEvent
 };

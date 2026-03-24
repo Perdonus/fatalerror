@@ -1001,6 +1001,48 @@ async function getDesktopFullReports(userId, ids) {
     };
 }
 
+async function listUserDesktopScans(userId, { limit = 50, offset = 0 } = {}) {
+    const safeLimit = Math.max(1, Math.min(200, Number(limit || 50) || 50));
+    const safeOffset = Math.max(0, Number(offset || 0) || 0);
+    const schema = await getDesktopScanSchema();
+    const [rows] = await pool.query(
+        `SELECT id, platform, ${schema.jobs.modeColumn} AS mode, status, verdict, risk_score,
+                ${schema.jobs.hasSurfacedFindings ? 'surfaced_findings' : '0 AS surfaced_findings'},
+                summary_json, findings_json, error_message, target_name, created_at, started_at, completed_at, updated_at
+         FROM desktop_scan_jobs
+         WHERE user_id = ?
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`,
+        [userId, safeLimit, safeOffset]
+    );
+
+    return rows.map((row) => {
+        const summary = parseJson(row.summary_json, {});
+        const findings = normalizeFindings(parseJson(row.findings_json, []));
+        const surfacedFindings = Number(row.surfaced_findings || findings.length || 0);
+        return {
+            id: `desktop:${row.id}`,
+            source: 'desktop_scan_jobs',
+            source_id: row.id,
+            platform: String(row.platform || '').trim().toLowerCase(),
+            client: String(row.platform || '').trim().toLowerCase(),
+            mode: String(effectiveMode(row) || 'unknown').toLowerCase(),
+            status: String(row.status || '').toUpperCase(),
+            verdict: normalizeVerdict(row.verdict || summary.verdict || 'unknown'),
+            risk_score: Number(row.risk_score || 0),
+            threats_found: surfacedFindings,
+            total_scanned: null,
+            label: row.target_name || summary?.artifact?.file_name || 'Desktop scan',
+            message: row.error_message || summary.message || buildStatusMessage(row.status, row.verdict, surfacedFindings),
+            started_at: Number(row.started_at || 0) || null,
+            completed_at: Number(row.completed_at || 0) || null,
+            created_at: Number(row.created_at || 0) || null,
+            updated_at: Number(row.updated_at || 0) || null,
+            sort_at: Number(row.completed_at || row.started_at || row.updated_at || row.created_at || 0) || 0
+        };
+    });
+}
+
 async function getReleaseManifest() {
     const { getReleaseManifest: getAggregatedReleaseManifest } = require('./releaseManifestService');
     return getAggregatedReleaseManifest();
@@ -1019,6 +1061,7 @@ module.exports = {
     getDesktopScanJob,
     cancelActiveDesktopScans,
     getDesktopFullReports,
+    listUserDesktopScans,
     getReleaseManifest,
     resumePendingDesktopScans,
     extractDesktopFailureReason

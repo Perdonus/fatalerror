@@ -1455,6 +1455,46 @@ async function getDeepScanFullReports(ids, userId) {
         .map((row) => buildDeepScanFullReportPayload(row));
 }
 
+async function listUserDeepScans(userId, { limit = 50, offset = 0 } = {}) {
+    const safeLimit = Math.max(1, Math.min(200, Number(limit || 50) || 50));
+    const safeOffset = Math.max(0, Number(offset || 0) || 0);
+    const [rows] = await pool.query(
+        `SELECT id, package_name, app_name, sha256, scan_mode, status, verdict, risk_score,
+                summary_json, findings_json, error_message, created_at, started_at, completed_at, updated_at
+         FROM deep_scan_jobs
+         WHERE user_id = ?
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`,
+        [userId, safeLimit, safeOffset]
+    );
+
+    return rows.map((row) => {
+        const summary = parseJson(row.summary_json, {});
+        const findings = normalizeFindingsList(parseJson(row.findings_json, []));
+        const surfacedFindings = findings.length;
+        return {
+            id: `deep:${row.id}`,
+            source: 'deep_scan_jobs',
+            source_id: row.id,
+            platform: 'android',
+            client: 'android',
+            mode: String(normalizeScanMode(row.scan_mode || 'FULL') || 'FULL').toLowerCase(),
+            status: String(row.status || '').toUpperCase(),
+            verdict: formatVerdict(row.verdict || summary.verdict || null),
+            risk_score: Number(row.risk_score || 0),
+            threats_found: surfacedFindings,
+            total_scanned: null,
+            label: row.app_name || row.package_name || 'Android scan',
+            message: row.error_message || summary.message || null,
+            started_at: Number(row.started_at || 0) || null,
+            completed_at: Number(row.completed_at || 0) || null,
+            created_at: Number(row.created_at || 0) || null,
+            updated_at: Number(row.updated_at || 0) || null,
+            sort_at: Number(row.completed_at || row.started_at || row.updated_at || row.created_at || 0) || 0
+        };
+    });
+}
+
 async function attachDeepScanApk(id, userId, payload, originalName = 'sample.apk') {
     const [rows] = await pool.query(
         `SELECT request_json FROM deep_scan_jobs WHERE id = ? AND user_id = ? LIMIT 1`,
@@ -1985,6 +2025,7 @@ module.exports = {
     createDeepScanJob,
     getDeepScanJob,
     getDeepScanFullReports,
+    listUserDeepScans,
     attachDeepScanApk,
     getUserDeepScanLimits,
     resumePendingDeepScans

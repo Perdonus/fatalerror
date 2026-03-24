@@ -17,6 +17,7 @@ const scansRoutes = require('./routes/scans');
 const purchasesRoutes = require('./routes/purchases');
 const logsRoutes = require('./routes/logs');
 const verifiedAppsRoutes = require('./routes/verifiedApps');
+const profileOverviewRoutes = require('./routes/profileOverview');
 const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
 const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
@@ -93,6 +94,7 @@ app.use('/api/purchases', purchasesRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/network-protection', networkProtectionRoutes);
 app.use('/api/releases', releasesRoutes);
+app.use('/api/profile', profileOverviewRoutes);
 app.use('/api', verifiedAppsRoutes);
 
 function buildHealthPayload() {

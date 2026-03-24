@@ -1,24 +1,28 @@
-import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { PasswordStrength } from '../components/PasswordStrength';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
   fetchDeveloperPortalState,
   fetchOwnVerifiedApps,
+  fetchProfileOverview,
   humanizeError,
   requestProfileEmailChange,
   requestProfileNameChange,
   requestProfilePasswordChange,
+  resolveDeveloperApplicationState,
   submitDeveloperApplication,
   submitVerifiedAppReview,
+  type SiteDeveloperApplication,
   type SiteDeveloperPortalState,
+  type SiteProfileOverview,
+  type SiteProfileScan,
+  type SiteProfileSystem,
   type SiteVerifiedApp,
-  validatePasswordStrength
 } from '../lib/siteAuth';
 import '../styles/auth.css';
 
-type ProfileTab = 'developer' | 'security';
-type AccountPending = 'name' | 'email' | 'password' | 'refresh' | 'logout' | null;
+type ProfileTab = 'profile' | 'developer' | 'security';
+type AccountPending = 'name' | 'email' | 'password' | 'logout' | null;
 type DeveloperPending = 'load' | 'apply' | 'verify' | null;
 type PlatformOption = 'android' | 'windows' | 'linux';
 
@@ -45,20 +49,21 @@ type SecurityWorkspaceProps = {
   onPasswordChange: (event: FormEvent) => Promise<void>;
 };
 
-type DeveloperWorkspaceProps = {
-  portal: SiteDeveloperPortalState | null;
+type VerifiedDeveloperWorkspaceProps = {
   apps: SiteVerifiedApp[];
-  loading: boolean;
   pending: DeveloperPending;
-  note: string;
-  error: string;
-  applyMessage: string;
-  setApplyMessage: (value: string) => void;
   reviewForm: ReviewFormState;
   setReviewForm: Dispatch<SetStateAction<ReviewFormState>>;
-  onApply: (event: FormEvent) => Promise<void>;
   onVerify: (event: FormEvent) => Promise<void>;
-  onReload: () => Promise<void>;
+};
+
+type DeveloperApplicationCardProps = {
+  projectName: string;
+  setProjectName: (value: string) => void;
+  message: string;
+  setMessage: (value: string) => void;
+  pending: DeveloperPending;
+  onApply: (event: FormEvent) => Promise<void>;
 };
 
 function formatDate(value: string | number | null | undefined) {
@@ -70,6 +75,136 @@ function formatDate(value: string | number | null | undefined) {
     return null;
   }
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(parsed);
+}
+
+function formatScanMode(mode: string) {
+  switch (String(mode || '').trim().toLowerCase()) {
+    case 'quick':
+      return 'Быстрая';
+    case 'full':
+      return 'Глубокая';
+    case 'selective':
+      return 'Выборочная';
+    case 'apk':
+      return 'APK';
+    case 'filesystem':
+      return 'Файлы';
+    default:
+      return 'Проверка';
+  }
+}
+
+function formatScanVerdict(scan: SiteProfileScan) {
+  const verdict = String(scan.verdict || '').trim().toUpperCase();
+  const status = String(scan.status || '').trim().toUpperCase();
+  if (status === 'RUNNING') {
+    return 'Идёт';
+  }
+  if (status === 'QUEUED' || status === 'AWAITING_UPLOAD') {
+    return 'Ожидает';
+  }
+  if (status === 'FAILED') {
+    return 'Ошибка';
+  }
+  if (verdict === 'CLEAN' || verdict === 'SAFE') {
+    return 'Чисто';
+  }
+  if (verdict === 'MALICIOUS') {
+    return 'Опасно';
+  }
+  if (verdict === 'SUSPICIOUS') {
+    return 'Подозрительно';
+  }
+  if (scan.threatsFound > 0) {
+    return 'Угрозы';
+  }
+  return 'Готово';
+}
+
+function verdictClass(scan: SiteProfileScan) {
+  const label = formatScanVerdict(scan);
+  if (label === 'Чисто') {
+    return 'is-safe';
+  }
+  if (label === 'Опасно' || label === 'Угрозы' || label === 'Ошибка') {
+    return 'is-danger';
+  }
+  if (label === 'Подозрительно' || label === 'Ожидает' || label === 'Идёт') {
+    return 'is-warn';
+  }
+  return '';
+}
+
+function ClientAvatar({
+  glyph,
+  accent,
+  label
+}: {
+  glyph: string;
+  accent: string;
+  label: string;
+}) {
+  const style = { ['--client-accent' as '--client-accent']: accent } as CSSProperties;
+  return (
+    <span className="profile-client-avatar" style={style} aria-label={label}>
+      {glyph}
+    </span>
+  );
+}
+
+function ProfileSystemCard({ system }: { system: SiteProfileSystem }) {
+  const lastSeen = formatDate(system.lastSeenAt || system.lastEventAt);
+
+  return (
+    <article className={`content-card profile-system-card${system.active ? ' is-active' : ''}`}>
+      <div className="profile-system-head">
+        <div className="profile-system-ident">
+          <ClientAvatar glyph={system.clientGlyph} accent={system.clientAccent} label={system.clientName} />
+          <div className="profile-system-copy">
+            <strong>{system.clientName}</strong>
+          </div>
+        </div>
+        <span className={`profile-status-pill${system.active ? ' is-active' : ''}`}>{system.statusLabel}</span>
+      </div>
+      <div className="profile-system-stats">
+        <div>
+          <span>Угрозы</span>
+          <strong>{system.blockedThreats}</strong>
+        </div>
+        <div>
+          <span>Реклама</span>
+          <strong>{system.blockedAds}</strong>
+        </div>
+      </div>
+      {lastSeen ? <div className="profile-system-footnote">Последняя активность: {lastSeen}</div> : null}
+    </article>
+  );
+}
+
+function ProfileScanCard({ scan }: { scan: SiteProfileScan }) {
+  const finishedAt = formatDate(scan.completedAt || scan.updatedAt || scan.createdAt);
+
+  return (
+    <article className="content-card profile-history-card">
+      <div className="profile-history-head">
+        <div className="profile-history-ident">
+          <ClientAvatar glyph={scan.clientGlyph} accent={scan.clientAccent} label={scan.clientName} />
+          <div className="profile-history-copy">
+            <strong>{scan.label}</strong>
+            <span>{scan.clientName}</span>
+          </div>
+        </div>
+        <span className={`profile-status-pill ${verdictClass(scan)}`.trim()}>{formatScanVerdict(scan)}</span>
+      </div>
+      <div className="profile-history-body">
+        <p>{scan.message}</p>
+      </div>
+      <div className="profile-history-meta">
+        <span>{formatScanMode(scan.mode)}</span>
+        {finishedAt ? <span>{finishedAt}</span> : null}
+      </div>
+    </article>
+  );
 }
 
 function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
@@ -90,7 +225,7 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
               {safe ? 'Безопасно' : (app.status || 'В проверке')}
             </span>
           </div>
-          <p>{app.authorName || 'Разработчик NeuralV'}</p>
+          <p>{app.authorName || 'Проверенный разработчик'}</p>
         </div>
       </div>
       {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
@@ -122,22 +257,12 @@ function SecurityWorkspace({
   onEmailChange,
   onPasswordChange
 }: SecurityWorkspaceProps) {
-  const passwordHint = useMemo(() => validatePasswordStrength(demoPassword), [demoPassword]);
-
   return (
     <div className="profile-panel-stack">
-      <article className="content-card profile-panel-card profile-panel-card-featured">
-        <div className="profile-panel-head">
-          <h2>Безопасность</h2>
-          <p>Имя, почта и пароль меняются только через письмо подтверждения.</p>
-        </div>
-      </article>
-
       <div className="profile-security-grid">
         <section className="content-card profile-panel-card profile-form-card">
           <div className="profile-panel-head">
-            <h3>Имя</h3>
-            <p>Подтверждение нового имени придёт по почте.</p>
+            <h2>Имя</h2>
           </div>
           <form className="auth-form" onSubmit={onNameChange}>
             <label className="auth-field">
@@ -150,8 +275,7 @@ function SecurityWorkspace({
 
         <section className="content-card profile-panel-card profile-form-card">
           <div className="profile-panel-head">
-            <h3>Почта</h3>
-            <p>Новый адрес подтверждается только ссылкой из письма.</p>
+            <h2>Почта</h2>
           </div>
           <form className="auth-form" onSubmit={onEmailChange}>
             <label className="auth-field">
@@ -165,12 +289,11 @@ function SecurityWorkspace({
 
       <section className="content-card profile-panel-card profile-form-card">
         <div className="profile-panel-head">
-          <h3>Пароль</h3>
-          <p>Новый пароль задаётся после перехода по ссылке из письма.</p>
+          <h2>Пароль</h2>
         </div>
         <form className="auth-form" onSubmit={onPasswordChange}>
           <label className="auth-field">
-            <span className="auth-field-label">Проверить пароль заранее</span>
+            <span className="auth-field-label">Новый пароль</span>
             <input
               className="auth-input"
               type="password"
@@ -181,237 +304,226 @@ function SecurityWorkspace({
             />
           </label>
           <PasswordStrength password={demoPassword} visible={focused || demoPassword.length > 0} />
-          {passwordHint ? <div className="hero-support-text">Финальный шаг смены пароля откроется в браузере по ссылке из письма.</div> : null}
           <button className="nv-button" type="submit" disabled={pending !== null}>Отправить письмо</button>
         </form>
-        <div className="auth-footer-note">
-          Нужен сброс без входа? <Link to="/reset-password">Открыть страницу сброса</Link>
-        </div>
       </section>
     </div>
   );
 }
 
-function DeveloperWorkspace({
-  portal,
-  apps,
-  loading,
+function DeveloperApplicationCard({
+  projectName,
+  setProjectName,
+  message,
+  setMessage,
   pending,
-  note,
-  error,
-  applyMessage,
-  setApplyMessage,
+  onApply
+}: DeveloperApplicationCardProps) {
+  return (
+    <section className="content-card profile-panel-card profile-form-card">
+      <form className="auth-form" onSubmit={onApply}>
+        <label className="auth-field">
+          <span className="auth-field-label">Проект</span>
+          <input
+            className="auth-input"
+            type="text"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            placeholder="Название проекта"
+          />
+        </label>
+        <label className="auth-field">
+          <span className="auth-field-label">Заявка</span>
+          <textarea
+            className="auth-input auth-textarea"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="Коротко опишите проект"
+            rows={5}
+          />
+        </label>
+        <button className="nv-button" type="submit" disabled={pending !== null}>
+          {pending === 'apply' ? 'Отправляем...' : 'Подать заявку'}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function VerifiedDeveloperWorkspace({
+  apps,
+  pending,
   reviewForm,
   setReviewForm,
-  onApply,
-  onVerify,
-  onReload
-}: DeveloperWorkspaceProps) {
-  const verifiedDeveloper = Boolean(portal?.verifiedDeveloper);
-  const verifiedAtText = formatDate(portal?.verifiedDeveloperAt);
-  const lastApplication = portal?.latestApplication;
-  const stats = portal?.stats;
+  onVerify
+}: VerifiedDeveloperWorkspaceProps) {
+  return (
+    <div className="profile-panel-stack">
+      <section className="content-card profile-panel-card profile-form-card">
+        <form className="auth-form" onSubmit={onVerify}>
+          <div className="profile-security-grid">
+            <label className="auth-field">
+              <span className="auth-field-label">Название</span>
+              <input
+                className="auth-input"
+                type="text"
+                value={reviewForm.appName}
+                onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
+              />
+            </label>
+            <label className="auth-field">
+              <span className="auth-field-label">Платформа</span>
+              <select
+                className="auth-input"
+                value={reviewForm.platform}
+                onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
+              >
+                <option value="windows">Windows</option>
+                <option value="android">Android</option>
+                <option value="linux">Linux</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="auth-field">
+            <span className="auth-field-label">Репозиторий</span>
+            <input
+              className="auth-input"
+              type="url"
+              value={reviewForm.repositoryUrl}
+              onChange={(event) => setReviewForm((current) => ({ ...current, repositoryUrl: event.target.value }))}
+              placeholder="https://github.com/owner/repo"
+            />
+          </label>
+
+          <label className="auth-field">
+            <span className="auth-field-label">Релиз</span>
+            <input
+              className="auth-input"
+              type="url"
+              value={reviewForm.releaseArtifactUrl}
+              onChange={(event) => setReviewForm((current) => ({ ...current, releaseArtifactUrl: event.target.value }))}
+              placeholder="https://github.com/.../releases/download/..."
+            />
+          </label>
+
+          <label className="auth-field">
+            <span className="auth-field-label">Сайт</span>
+            <input
+              className="auth-input"
+              type="url"
+              value={reviewForm.officialSiteUrl}
+              onChange={(event) => setReviewForm((current) => ({ ...current, officialSiteUrl: event.target.value }))}
+              placeholder="https://example.com"
+            />
+          </label>
+
+          <button className="nv-button" type="submit" disabled={pending !== null}>
+            {pending === 'verify' ? 'Отправляем...' : 'Запустить проверку'}
+          </button>
+        </form>
+      </section>
+
+      <section className="content-card profile-panel-card">
+        <div className="profile-panel-head">
+          <h2>Проверенные приложения</h2>
+        </div>
+        {apps.length > 0 ? (
+          <div className="developer-app-grid">
+            {apps.map((app) => (
+              <ProfileVerifiedAppCard key={app.id || `${app.appName}-${app.platform}`} app={app} />
+            ))}
+          </div>
+        ) : (
+          <div className="profile-empty-copy">Пока пусто.</div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function RejectedDeveloperCard({
+  application,
+  onRetry
+}: {
+  application: SiteDeveloperApplication | null | undefined;
+  onRetry: () => void;
+}) {
+  return (
+    <section className="content-card profile-panel-card profile-panel-card-rejected profile-panel-card-centered">
+      <h2>Заявка отклонена</h2>
+      {application?.reviewNote ? <div className="profile-inline-note profile-inline-note-danger">{application.reviewNote}</div> : null}
+      <button className="nv-button" type="button" onClick={onRetry}>Создать повторную заявку</button>
+    </section>
+  );
+}
+
+function ProfileOverviewPanel({
+  overview,
+  loading
+}: {
+  overview: SiteProfileOverview | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="profile-panel-stack">
+        <section className="content-card profile-panel-card">
+          <div className="profile-empty-copy">Загружаем профиль...</div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="profile-panel-stack">
-      <article className="content-card profile-panel-card profile-panel-card-featured">
-        <div className="profile-panel-head profile-panel-head-wide">
-          <div>
-            <div className="profile-panel-badge-row">
-              <span className={`profile-status-pill${verifiedDeveloper ? ' is-active' : ''}`}>
-                {verifiedDeveloper ? 'Статус разработчика подтверждён' : 'Обычный аккаунт'}
-              </span>
-            </div>
-            <h2>Разработчик</h2>
-            <p>
-              {verifiedDeveloper
-                ? 'Здесь подаются репозиторий, релиз и платформа приложения. После автоматической проверки безопасные сборки попадают в публичный каталог.'
-                : 'Сначала отправь заявку на статус разработчика. После подтверждения откроется форма сертификации приложений.'}
-            </p>
+      <section className="content-card profile-panel-card">
+        <div className="profile-panel-head">
+          <h2>Системы</h2>
+        </div>
+        <div className="profile-system-grid">
+          {(overview?.systems || []).map((system) => (
+            <ProfileSystemCard key={system.platform} system={system} />
+          ))}
+        </div>
+      </section>
+
+      <section className="content-card profile-panel-card">
+        <div className="profile-panel-head">
+          <h2>Проверки</h2>
+        </div>
+        {(overview?.scans || []).length ? (
+          <div className="profile-history-list">
+            {overview?.scans.map((scan) => (
+              <ProfileScanCard key={scan.id} scan={scan} />
+            ))}
           </div>
-          <button className="shell-chip" type="button" onClick={onReload} disabled={pending !== null}>
-            {loading || pending === 'load' ? 'Обновляем...' : 'Обновить раздел'}
-          </button>
-        </div>
-      </article>
-
-      <div className="profile-summary-grid profile-summary-grid-developer">
-        <article className="content-card profile-summary-card-hero">
-          <span className="profile-summary-label">Статус</span>
-          <strong>{verifiedDeveloper ? 'Подтверждён' : 'Ожидает подтверждения'}</strong>
-          <p>{verifiedAtText ? `Подтверждено ${verifiedAtText}.` : 'После подтверждения появится форма сертификации приложений.'}</p>
-        </article>
-        <article className="content-card profile-summary-card-hero">
-          <span className="profile-summary-label">Безопасных сборок</span>
-          <strong>{stats?.safe ?? 0}</strong>
-          <p>Столько релизов уже получили статус «Безопасно».</p>
-        </article>
-        <article className="content-card profile-summary-card-hero">
-          <span className="profile-summary-label">Очередь</span>
-          <strong>{(stats?.queued ?? 0) + (stats?.running ?? 0)}</strong>
-          <p>Активные проверки и задачи, которые ещё ждут завершения.</p>
-        </article>
-      </div>
-
-      {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
-      {note ? <div className="form-message is-success">{note}</div> : null}
-
-      {!verifiedDeveloper ? (
-        <div className="profile-developer-grid">
-          <section className="content-card profile-panel-card profile-form-card">
-            <div className="profile-panel-head">
-              <h3>Заявка на статус разработчика</h3>
-              <p>Письмо уйдёт на почту админа. После ручного подтверждения этот аккаунт получит доступ к сертификации приложений.</p>
-            </div>
-            <form className="auth-form" onSubmit={onApply}>
-              <label className="auth-field">
-                <span className="auth-field-label">Коротко о проекте</span>
-                <textarea
-                  className="auth-input auth-textarea"
-                  value={applyMessage}
-                  onChange={(event) => setApplyMessage(event.target.value)}
-                  placeholder="Что это за приложение, где лежит исходник и что именно нужно проверить"
-                  rows={5}
-                />
-              </label>
-              <button className="nv-button" type="submit" disabled={pending !== null}>
-                {pending === 'apply' ? 'Отправляем...' : 'Отправить заявку'}
-              </button>
-            </form>
-          </section>
-
-          <section className="content-card profile-panel-card">
-            <div className="profile-panel-head">
-              <h3>Последняя заявка</h3>
-              <p>{lastApplication ? 'Текущий статус последней заявки.' : 'Заявок пока нет.'}</p>
-            </div>
-            {lastApplication ? (
-              <div className="profile-status-stack">
-                <strong>{lastApplication.status || 'PENDING_REVIEW'}</strong>
-                {lastApplication.message ? <p>{lastApplication.message}</p> : null}
-                {lastApplication.createdAt ? <p>Отправлено: {formatDate(lastApplication.createdAt)}</p> : null}
-                {lastApplication.reviewedAt ? <p>Проверено: {formatDate(lastApplication.reviewedAt)}</p> : null}
-                {lastApplication.reviewNote ? <p>{lastApplication.reviewNote}</p> : null}
-              </div>
-            ) : (
-              <div className="profile-empty-copy">Как только заявка появится, её статус будет виден здесь.</div>
-            )}
-          </section>
-        </div>
-      ) : (
-        <>
-          <section className="content-card profile-panel-card profile-form-card">
-            <div className="profile-panel-head">
-              <h3>Сертификация приложения</h3>
-              <p>Нужен публичный GitHub-репозиторий, точный release artifact и платформа приложения.</p>
-            </div>
-            <form className="auth-form" onSubmit={onVerify}>
-              <div className="profile-security-grid">
-                <label className="auth-field">
-                  <span className="auth-field-label">Название приложения</span>
-                  <input
-                    className="auth-input"
-                    type="text"
-                    value={reviewForm.appName}
-                    onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
-                    placeholder="Например, NeuralV Launcher"
-                  />
-                </label>
-                <label className="auth-field">
-                  <span className="auth-field-label">Платформа</span>
-                  <select
-                    className="auth-input"
-                    value={reviewForm.platform}
-                    onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
-                  >
-                    <option value="windows">Windows</option>
-                    <option value="android">Android</option>
-                    <option value="linux">Linux</option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="auth-field">
-                <span className="auth-field-label">GitHub-репозиторий</span>
-                <input
-                  className="auth-input"
-                  type="url"
-                  value={reviewForm.repositoryUrl}
-                  onChange={(event) => setReviewForm((current) => ({ ...current, repositoryUrl: event.target.value }))}
-                  placeholder="https://github.com/owner/repo"
-                />
-              </label>
-
-              <label className="auth-field">
-                <span className="auth-field-label">Release artifact</span>
-                <input
-                  className="auth-input"
-                  type="url"
-                  value={reviewForm.releaseArtifactUrl}
-                  onChange={(event) => setReviewForm((current) => ({ ...current, releaseArtifactUrl: event.target.value }))}
-                  placeholder="https://github.com/owner/repo/releases/download/..."
-                />
-              </label>
-
-              <label className="auth-field">
-                <span className="auth-field-label">Официальный сайт (необязательно)</span>
-                <input
-                  className="auth-input"
-                  type="url"
-                  value={reviewForm.officialSiteUrl}
-                  onChange={(event) => setReviewForm((current) => ({ ...current, officialSiteUrl: event.target.value }))}
-                  placeholder="https://example.com"
-                />
-              </label>
-
-              <div className="profile-inline-note">
-                Сервер анализирует только публичный репозиторий и точный релизный файл. Если безопасная версия подтверждена, её хеш дальше используется как trusted-совпадение при проверках.
-              </div>
-
-              <button className="nv-button" type="submit" disabled={pending !== null}>
-                {pending === 'verify' ? 'Запускаем проверку...' : 'Запустить верификацию'}
-              </button>
-            </form>
-          </section>
-
-          <section className="content-card profile-panel-card">
-            <div className="profile-panel-head profile-panel-head-wide">
-              <div>
-                <h3>Проверенные приложения</h3>
-                <p>Безопасные релизы видны и здесь, и в общем каталоге.</p>
-              </div>
-              <Link className="shell-chip" to="/verified-apps">Открыть каталог</Link>
-            </div>
-            {apps.length > 0 ? (
-              <div className="developer-app-grid">
-                {apps.map((app) => (
-                  <ProfileVerifiedAppCard key={app.id || `${app.appName}-${app.platform}`} app={app} />
-                ))}
-              </div>
-            ) : (
-              <div className="profile-empty-copy">Сертифицированных приложений пока нет. Как только сервер закончит первую проверку, карточка появится здесь.</div>
-            )}
-          </section>
-        </>
-      )}
+        ) : (
+          <div className="profile-empty-copy">Пока пусто.</div>
+        )}
+      </section>
     </div>
   );
 }
 
 export function ProfilePage() {
-  const { user, refresh, logout } = useSiteAuth();
-  const [activeTab, setActiveTab] = useState<ProfileTab>('developer');
+  const { user, logout } = useSiteAuth();
+  const [activeTab, setActiveTab] = useState<ProfileTab>('profile');
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [focused, setFocused] = useState(false);
   const [demoPassword, setDemoPassword] = useState('');
   const [pending, setPending] = useState<AccountPending>(null);
   const [developerPending, setDeveloperPending] = useState<DeveloperPending>('load');
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [portal, setPortal] = useState<SiteDeveloperPortalState | null>(null);
+  const [overview, setOverview] = useState<SiteProfileOverview | null>(null);
   const [verifiedApps, setVerifiedApps] = useState<SiteVerifiedApp[]>([]);
+  const [applyProject, setApplyProject] = useState('');
   const [applyMessage, setApplyMessage] = useState('');
+  const [showRetryForm, setShowRetryForm] = useState(false);
   const [reviewForm, setReviewForm] = useState<ReviewFormState>({
     appName: '',
     platform: 'windows',
@@ -425,6 +537,17 @@ export function ProfilePage() {
     setEmail(user?.email || '');
   }, [user?.email, user?.name]);
 
+  async function loadOverview() {
+    setOverviewLoading(true);
+    const result = await fetchProfileOverview({ limit: 80 });
+    if (result.ok && result.data) {
+      setOverview(result.data);
+    } else {
+      setError(result.error || 'Не удалось загрузить профиль.');
+    }
+    setOverviewLoading(false);
+  }
+
   async function loadDeveloperData() {
     setDeveloperPending('load');
     try {
@@ -437,12 +560,7 @@ export function ProfilePage() {
         throw new Error(portalResult.error || 'Не удалось загрузить раздел разработчика.');
       }
       setPortal(portalResult.data || null);
-
-      if (appsResult.ok && appsResult.data) {
-        setVerifiedApps(appsResult.data);
-      } else {
-        setVerifiedApps([]);
-      }
+      setVerifiedApps(appsResult.ok && appsResult.data ? appsResult.data : []);
     } catch (loadError) {
       setError(humanizeError(loadError, 'Не удалось загрузить раздел разработчика.'));
     } finally {
@@ -451,7 +569,7 @@ export function ProfilePage() {
   }
 
   useEffect(() => {
-    void loadDeveloperData();
+    void Promise.all([loadOverview(), loadDeveloperData()]);
   }, []);
 
   async function handleNameChange(event: FormEvent) {
@@ -468,7 +586,7 @@ export function ProfilePage() {
       setError(result.error || 'Не удалось отправить письмо для смены имени.');
       return;
     }
-    setMessage(result.data?.message || 'Письмо для подтверждения нового имени отправлено.');
+    setMessage(result.data?.message || 'Письмо отправлено.');
   }
 
   async function handleEmailChange(event: FormEvent) {
@@ -485,7 +603,7 @@ export function ProfilePage() {
       setError(result.error || 'Не удалось отправить письмо для смены почты.');
       return;
     }
-    setMessage(result.data?.message || 'Письмо для подтверждения новой почты отправлено.');
+    setMessage(result.data?.message || 'Письмо отправлено.');
   }
 
   async function handlePasswordChange(event: FormEvent) {
@@ -502,22 +620,7 @@ export function ProfilePage() {
       setError(result.error || 'Не удалось отправить письмо для смены пароля.');
       return;
     }
-    setMessage(result.data?.message || 'Письмо для смены пароля отправлено.');
-  }
-
-  async function handleRefresh() {
-    setPending('refresh');
-    setMessage('');
-    setError('');
-    try {
-      await refresh();
-      await loadDeveloperData();
-      setMessage('Профиль обновлён.');
-    } catch (refreshError) {
-      setError(humanizeError(refreshError, 'Не удалось обновить профиль.'));
-    } finally {
-      setPending(null);
-    }
+    setMessage(result.data?.message || 'Письмо отправлено.');
   }
 
   async function handleLogout() {
@@ -526,7 +629,6 @@ export function ProfilePage() {
     setError('');
     try {
       await logout();
-      setMessage('Сессия завершена.');
     } catch (logoutError) {
       setError(humanizeError(logoutError, 'Не удалось завершить сессию.'));
     } finally {
@@ -539,16 +641,24 @@ export function ProfilePage() {
     if (developerPending || pending) {
       return;
     }
+
+    const composedMessage = [
+      applyProject.trim() ? `Проект: ${applyProject.trim()}` : '',
+      applyMessage.trim()
+    ].filter(Boolean).join('\n\n');
+
     setDeveloperPending('apply');
     setMessage('');
     setError('');
-    const result = await submitDeveloperApplication(applyMessage.trim());
+    const result = await submitDeveloperApplication(composedMessage);
     if (!result.ok) {
-      setError(result.error || 'Не удалось отправить заявку на статус разработчика.');
+      setError(result.error || 'Не удалось отправить заявку.');
       setDeveloperPending(null);
       return;
     }
+    setApplyProject('');
     setApplyMessage('');
+    setShowRetryForm(false);
     setMessage(result.data?.message || 'Заявка отправлена.');
     await loadDeveloperData();
     setDeveloperPending(null);
@@ -570,11 +680,11 @@ export function ProfilePage() {
       officialSiteUrl: reviewForm.officialSiteUrl
     });
     if (!result.ok) {
-      setError(result.error || 'Не удалось запустить проверку приложения.');
+      setError(result.error || 'Не удалось отправить приложение.');
       setDeveloperPending(null);
       return;
     }
-    setMessage(result.data?.message || 'Проверка запущена.');
+    setMessage(result.data?.message || 'Проверка отправлена.');
     await loadDeveloperData();
     setDeveloperPending(null);
   }
@@ -582,54 +692,30 @@ export function ProfilePage() {
   const displayName = user?.name || portal?.user?.name || 'Аккаунт NeuralV';
   const displayEmail = user?.email || portal?.user?.email || 'Почта недоступна';
   const verifiedDeveloper = Boolean(portal?.verifiedDeveloper || user?.is_verified_developer);
+  const applicationState = resolveDeveloperApplicationState(portal?.latestApplication, verifiedDeveloper);
 
   return (
     <div className="page-stack profile-dashboard-shell">
-      <section className="hero-shell profile-hub-hero">
-        <div className="hero-copy profile-hub-copy">
-          <div className="profile-hub-heading">
-            <h1>Профиль</h1>
-            <p>Раздел разработчика и настройки безопасности собраны в одном месте без лишних боковых блоков.</p>
-          </div>
-          <div className="hero-actions profile-hub-actions">
-            <button className="shell-chip" type="button" onClick={handleRefresh} disabled={pending !== null || developerPending !== null}>
-              {pending === 'refresh' ? 'Обновляем...' : 'Обновить профиль'}
-            </button>
-          </div>
-        </div>
-        <div className="profile-hub-summary-grid">
-          <article className="content-card profile-summary-card-hero">
-            <span className="profile-summary-label">Аккаунт</span>
-            <strong>{displayName}</strong>
-            <p>{displayEmail}</p>
-          </article>
-          <article className="content-card profile-summary-card-hero">
-            <span className="profile-summary-label">Доступ</span>
-            <strong>{user?.is_premium ? 'Расширенный' : 'Обычный'}</strong>
-            <p>{user?.is_premium ? 'Премиум активен на аккаунте.' : 'Обычный режим без премиум-доступа.'}</p>
-          </article>
-          <article className="content-card profile-summary-card-hero">
-            <span className="profile-summary-label">Разработчик</span>
-            <strong>{verifiedDeveloper ? 'Подтверждён' : 'Не подтверждён'}</strong>
-            <p>{verifiedDeveloper ? 'Сертификация приложений уже доступна.' : 'Сначала нужна заявка на статус разработчика.'}</p>
-          </article>
-        </div>
-      </section>
-
-      <section className="profile-dashboard-grid">
+      <section className="profile-dashboard-grid profile-dashboard-grid-tight">
         <aside className="content-card profile-nav-card">
           <div className="profile-nav-head">
-            <span className="profile-summary-label">Меню</span>
             <strong>{displayName}</strong>
+            <span>{displayEmail}</span>
           </div>
           <div className="profile-nav-list" role="tablist" aria-label="Разделы профиля">
+            <button
+              className={`profile-nav-button${activeTab === 'profile' ? ' is-active' : ''}`}
+              type="button"
+              onClick={() => setActiveTab('profile')}
+            >
+              <span>Профиль</span>
+            </button>
             <button
               className={`profile-nav-button${activeTab === 'developer' ? ' is-active' : ''}`}
               type="button"
               onClick={() => setActiveTab('developer')}
             >
               <span>Разработчик</span>
-              <small>Статус, сертификация и проверенные приложения.</small>
             </button>
             <button
               className={`profile-nav-button${activeTab === 'security' ? ' is-active' : ''}`}
@@ -637,7 +723,6 @@ export function ProfilePage() {
               onClick={() => setActiveTab('security')}
             >
               <span>Безопасность</span>
-              <small>Имя, почта и пароль через письмо подтверждения.</small>
             </button>
           </div>
           <div className="profile-nav-divider" />
@@ -647,42 +732,56 @@ export function ProfilePage() {
         </aside>
 
         <div className="profile-dashboard-main">
-          {activeTab === 'developer' ? (
-            <DeveloperWorkspace
-              portal={portal}
-              apps={verifiedApps}
-              loading={developerPending === 'load'}
-              pending={developerPending}
-              note={message}
-              error={error}
-              applyMessage={applyMessage}
-              setApplyMessage={setApplyMessage}
-              reviewForm={reviewForm}
-              setReviewForm={setReviewForm}
-              onApply={handleDeveloperApply}
-              onVerify={handleDeveloperVerify}
-              onReload={loadDeveloperData}
+          {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
+          {message ? <div className="form-message is-success">{message}</div> : null}
+
+          {activeTab === 'profile' ? (
+            <ProfileOverviewPanel overview={overview} loading={overviewLoading} />
+          ) : null}
+
+          {activeTab === 'security' ? (
+            <SecurityWorkspace
+              name={name}
+              setName={setName}
+              email={email}
+              setEmail={setEmail}
+              demoPassword={demoPassword}
+              setDemoPassword={setDemoPassword}
+              focused={focused}
+              setFocused={setFocused}
+              pending={pending}
+              onNameChange={handleNameChange}
+              onEmailChange={handleEmailChange}
+              onPasswordChange={handlePasswordChange}
             />
-          ) : (
-            <>
-              {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
-              {message ? <div className="form-message is-success">{message}</div> : null}
-              <SecurityWorkspace
-                name={name}
-                setName={setName}
-                email={email}
-                setEmail={setEmail}
-                demoPassword={demoPassword}
-                setDemoPassword={setDemoPassword}
-                focused={focused}
-                setFocused={setFocused}
-                pending={pending}
-                onNameChange={handleNameChange}
-                onEmailChange={handleEmailChange}
-                onPasswordChange={handlePasswordChange}
+          ) : null}
+
+          {activeTab === 'developer' ? (
+            verifiedDeveloper ? (
+              <VerifiedDeveloperWorkspace
+                apps={verifiedApps}
+                pending={developerPending}
+                reviewForm={reviewForm}
+                setReviewForm={setReviewForm}
+                onVerify={handleDeveloperVerify}
               />
-            </>
-          )}
+            ) : applicationState === 'pending' ? (
+              <article className="content-card profile-panel-card profile-panel-card-featured profile-panel-card-centered">
+                <h2>Заявка на рассмотрении</h2>
+              </article>
+            ) : applicationState === 'rejected' && !showRetryForm ? (
+              <RejectedDeveloperCard application={portal?.latestApplication} onRetry={() => setShowRetryForm(true)} />
+            ) : (
+              <DeveloperApplicationCard
+                projectName={applyProject}
+                setProjectName={setApplyProject}
+                message={applyMessage}
+                setMessage={setApplyMessage}
+                pending={developerPending}
+                onApply={handleDeveloperApply}
+              />
+            )
+          ) : null}
         </div>
       </section>
     </div>

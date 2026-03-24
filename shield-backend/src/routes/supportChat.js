@@ -62,13 +62,13 @@ router.post('/support/telegram/webhook', async (req, res) => {
         }
         const state = getAvailabilityState();
         if (!state.availability) {
-            return res.status(200).json({ ok: true, availability: false, message: state.message });
+            return res.status(503).json({ ok: false, availability: false, message: state.message });
         }
         const result = await receiveSupportWebhook(req.body || {});
         return res.status(200).json({ ok: true, ...result });
     } catch (error) {
         console.error('Support Telegram webhook error:', error);
-        return res.status(200).json({ ok: false, error: error?.message || 'Webhook processing failed' });
+        return res.status(500).json({ ok: false, error: error?.message || 'Webhook processing failed' });
     }
 });
 

@@ -18,20 +18,18 @@ export function LinuxPage() {
           <article className="platform-hero-card platform-hero-card-centered">
             <div className="platform-hero-copy platform-hero-copy-centered">
               <h1>NeuralV для Linux</h1>
-              <p>На Linux основной и поддерживаемый путь один: установка через NV. Так проще держать клиент в актуальном состоянии и не плодить лишние сценарии.</p>
               <div className="platform-hero-actions">
                 <a className="nv-button" href="#linux-install">Установка через NV</a>
               </div>
             </div>
             <div className="platform-hero-grid platform-hero-grid-centered">
               <div className="platform-main-stat">
-                <span className="story-scene-kicker">Версия и требования</span>
                 <strong>{version}</strong>
-                <p>{requirement}</p>
+                <p>Требования: {requirement}</p>
               </div>
-              <div className="platform-meta-chip">Основной путь</div>
-              <div className="platform-meta-chip">Один сценарий</div>
               <div className="platform-meta-chip">Только NV</div>
+              <div className="platform-meta-chip">Один маршрут</div>
+              <div className="platform-meta-chip">Без лишних пакетов</div>
             </div>
           </article>
         </div>
@@ -40,23 +38,23 @@ export function LinuxPage() {
       <div className="story-track">
         <StoryScene
           compact
-          title="Один поддерживаемый маршрут"
-          body="NV ставит клиент и помогает держать установку в актуальном состоянии. Поэтому на Linux мы не распыляемся на витрину из разных пакетов, а ведём сразу в основной сценарий."
-          accent="Один путь установки вместо набора случайных вариантов."
+          title="Один поддерживаемый способ"
+          body="NV ставит клиент и помогает обновлять его дальше. Поэтому Linux-страница ведёт сразу в основной сценарий, а не в длинный список случайных вариантов."
+          accent="Один путь установки вместо случайного набора пакетов."
           visual="linux"
         />
       </div>
 
       <section className="platform-install-shell" id="linux-install">
-        <div className="platform-section-heading">
+        <div className="platform-section-heading platform-section-heading-centered">
           <h2>Установка через NV</h2>
-          <p>Обычная установка и дальнейшие обновления идут через одну командную цепочку.</p>
         </div>
         <div className="platform-install-grid platform-install-grid-single">
-          <article className="platform-command-card platform-command-card-wide">
+          <article className="platform-command-card platform-command-card-wide platform-command-card-centered">
             <h3>Команда</h3>
-            <p>Подходит для новой установки и для поддержания клиента в актуальном состоянии.</p>
-            <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
+            <p>Подходит для новой установки и для дальнейших обновлений.</p>
+            <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh
+nv install @lvls/neuralv'}</pre></div>
           </article>
         </div>
       </section>

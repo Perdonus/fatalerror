@@ -93,7 +93,6 @@ export function AccountActionPage() {
     <div className="page-stack auth-page-stack">
       <section className="hero-shell auth-shell action-shell">
         <div className="hero-copy hero-copy-tight">
-          <span className="eyebrow">NeuralV account</span>
           <h1>{preview?.title || 'Подтверждение действия'}</h1>
           <p>Подтверждение идёт прямо на сайте. Если это были не вы, просто закройте страницу.</p>
         </div>

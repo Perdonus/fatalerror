@@ -111,7 +111,6 @@ export function ResetPasswordPage() {
   return (
     <AuthPageLayout
       title={hasResetLink ? 'Новый пароль' : 'Сброс пароля'}
-      description={hasResetLink ? 'Ссылка подтверждена. Осталось сохранить новый пароль.' : 'Отправим письмо со ссылкой и откроем финальный шаг на сайте.'}
       aside={<ResetAside hasResetLink={hasResetLink} />}
     >
       {hasResetLink ? (

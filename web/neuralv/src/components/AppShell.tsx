@@ -1,17 +1,229 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteAuth } from './SiteAuthProvider';
+import { SupportChatWidget, type SupportChatMessage as WidgetSupportChatMessage } from './SupportChatWidget';
+import {
+  fetchSupportChatState,
+  humanizeError,
+  sendSupportChatMessage,
+  type SiteSupportChatState
+} from '../lib/siteAuth';
 
-const navItems = [
+const productLinks = [
   { to: '/', label: 'Главная' },
-  { to: '/android', label: 'Android' },
-  { to: '/windows', label: 'Windows' },
-  { to: '/linux', label: 'Linux' },
-  { to: '/verified-apps', label: 'Проверенные' }
+  { to: '/verified-apps', label: 'Проверенные' },
+  { to: '/telegram', label: 'Telegram' }
 ];
 
+const clientLinks = [
+  { to: '/android', label: 'Android' },
+  { to: '/windows', label: 'Windows' },
+  { to: '/linux', label: 'Linux' }
+];
+
+function parseTimestamp(value: string | number | Date | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+  const parsed = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatPollLabel(ms: number | undefined) {
+  const safe = Math.max(0, Number(ms || 0) || 0);
+  if (!safe) {
+    return '';
+  }
+  if (safe < 1000) {
+    return 'Обновление сейчас';
+  }
+  const seconds = Math.round(safe / 1000);
+  if (seconds < 60) {
+    return `Обновление каждые ${seconds} сек`;
+  }
+  const minutes = Math.round(seconds / 60);
+  return `Обновление каждые ${minutes} мин`;
+}
+
+function mapSupportMessages(state: SiteSupportChatState | null): WidgetSupportChatMessage[] {
+  if (!state?.messages?.length) {
+    return [];
+  }
+
+  return state.messages.map((message) => ({
+    id: message.id,
+    role:
+      message.senderRole === 'support'
+        ? 'agent'
+        : message.senderRole === 'system'
+          ? 'system'
+          : 'user',
+    text: message.text,
+    author: message.senderName || undefined,
+    createdAt: message.createdAt,
+    meta:
+      message.senderRole === 'support'
+        ? 'Поддержка'
+        : message.senderRole === 'system'
+          ? 'Система'
+          : undefined
+  }));
+}
+
 export function AppShell() {
-  const { ready, session, user } = useSiteAuth();
+  const { ready, session, user, logout } = useSiteAuth();
   const currentYear = new Date().getFullYear();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportState, setSupportState] = useState<SiteSupportChatState | null>(null);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportSending, setSupportSending] = useState(false);
+  const [supportSeenAt, setSupportSeenAt] = useState(0);
+  const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+    if (menuOpen || supportOpen) {
+      body.style.overflow = 'hidden';
+    }
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [menuOpen, supportOpen]);
+
+  const accountLinks = useMemo(() => {
+    if (ready && session) {
+      return [{ to: '/profile', label: user?.name || 'Профиль' }];
+    }
+    return [
+      { to: '/login', label: 'Войти' },
+      { to: '/register', label: 'Регистрация' }
+    ];
+  }, [ready, session, user?.name]);
+
+  const latestSupportReplyAt = useMemo(() => {
+    return (supportState?.messages || []).reduce((latest, message) => {
+      if (message.senderRole !== 'support') {
+        return latest;
+      }
+      return Math.max(latest, parseTimestamp(message.createdAt));
+    }, 0);
+  }, [supportState]);
+
+  const launcherUnreadCount = latestSupportReplyAt > supportSeenAt ? 1 : 0;
+
+  const loadSupportState = useCallback(async () => {
+    if (!session) {
+      setSupportState(null);
+      return;
+    }
+
+    setSupportLoading(true);
+    const result = await fetchSupportChatState({ limit: 80 });
+    if (result.ok && result.data) {
+      setSupportState(result.data);
+    } else {
+      setSupportState({
+        availability: false,
+        message: result.error || 'Поддержка временно недоступна.',
+        messages: []
+      });
+    }
+    setSupportLoading(false);
+  }, [session]);
+
+  useEffect(() => {
+    if (!supportOpen || !session) {
+      return;
+    }
+    void loadSupportState();
+  }, [loadSupportState, session, supportOpen, supportRefreshNonce]);
+
+  useEffect(() => {
+    if (!supportOpen || !session) {
+      return;
+    }
+    const pollAfterMs = Math.max(1500, Number(supportState?.pollAfterMs || 0) || 4000);
+    const timer = window.setTimeout(() => {
+      void loadSupportState();
+    }, pollAfterMs);
+    return () => window.clearTimeout(timer);
+  }, [loadSupportState, session, supportOpen, supportState?.pollAfterMs, supportState?.messages]);
+
+  useEffect(() => {
+    if (!supportOpen) {
+      return;
+    }
+    setSupportSeenAt((current) => Math.max(current, latestSupportReplyAt));
+  }, [latestSupportReplyAt, supportOpen]);
+
+  async function handleLogout() {
+    await logout();
+    setMenuOpen(false);
+    setSupportOpen(false);
+    setSupportState(null);
+  }
+
+  async function handleSupportSend(text: string) {
+    if (!session) {
+      navigate('/login');
+      return;
+    }
+
+    setSupportSending(true);
+    const result = await sendSupportChatMessage(text, supportState?.chat?.id);
+    if (result.ok && result.data) {
+      setSupportState(result.data);
+      setSupportSeenAt((current) => Math.max(current, latestSupportReplyAt));
+    } else {
+      setSupportState((current) => ({
+        availability: false,
+        message: result.error || 'Не удалось отправить сообщение.',
+        chat: current?.chat || null,
+        messages: current?.messages || []
+      }));
+    }
+    setSupportSending(false);
+  }
+
+  const widgetUnavailable = useMemo(() => {
+    if (!ready) {
+      return {
+        title: 'Поддержка загружается',
+        description: 'Подождите немного.'
+      };
+    }
+
+    if (!session) {
+      return {
+        title: 'Войдите в аккаунт',
+        description: 'Чат поддержки открывается после входа.',
+        actionLabel: 'Войти',
+        onAction: () => {
+          setSupportOpen(false);
+          navigate('/login');
+        }
+      };
+    }
+
+    if (supportState && supportState.availability === false) {
+      return {
+        title: 'Поддержка пока не активна',
+        description: humanizeError(supportState.message || 'Поддержка скоро появится здесь.'),
+        actionLabel: 'Обновить',
+        onAction: () => setSupportRefreshNonce((value) => value + 1)
+      };
+    }
+
+    return null;
+  }, [navigate, ready, session, supportState]);
 
   return (
     <div className="app-shell">
@@ -20,54 +232,146 @@ export function AppShell() {
 
       <header className="shell-header">
         <div className="shell-header-inner">
-          <a className="brand-link" href="/neuralv/" aria-label="NeuralV home">
+          <NavLink className="brand-link" to="/" end aria-label="NeuralV home">
             <span className="brand-badge" aria-hidden="true">
               <span className="brand-badge-core" />
             </span>
             <span className="brand-name">NeuralV</span>
-          </a>
+          </NavLink>
 
-          <nav className="shell-nav" aria-label="Навигация NeuralV">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === '/'}
-                className={({ isActive }) => `shell-link shell-nav-link${isActive ? ' is-active' : ''}`}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="shell-actions">
-            {ready && session ? (
-              <NavLink className={({ isActive }) => `shell-link shell-auth-link${isActive ? ' is-active' : ''}`} to="/profile">
-                {user?.name || 'Профиль'}
-              </NavLink>
-            ) : (
-              <>
-                <NavLink className={({ isActive }) => `shell-link shell-auth-link${isActive ? ' is-active' : ''}`} to="/login">
-                  Войти
-                </NavLink>
-                <NavLink className="nv-button shell-button" to="/register">
-                  Регистрация
-                </NavLink>
-              </>
-            )}
-          </div>
+          <button
+            className={`shell-burger${menuOpen ? ' is-open' : ''}`}
+            type="button"
+            aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <span className="shell-burger-line" />
+            <span className="shell-burger-line" />
+            <span className="shell-burger-line" />
+          </button>
         </div>
       </header>
+
+      <div
+        className={`shell-overlay-scrim${menuOpen ? ' is-open' : ''}`}
+        aria-hidden={!menuOpen}
+        onClick={() => setMenuOpen(false)}
+      />
+
+      <aside className={`shell-drawer${menuOpen ? ' is-open' : ''}`} aria-hidden={!menuOpen}>
+        <div className="shell-drawer-panel">
+          <div className="shell-drawer-head">
+            <strong>Меню</strong>
+          </div>
+
+          <div className="shell-drawer-section">
+            <span>Сайт</span>
+            <div className="shell-drawer-list">
+              {productLinks.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
+          <div className="shell-drawer-section">
+            <span>Клиенты</span>
+            <div className="shell-drawer-list">
+              {clientLinks.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
+          <div className="shell-drawer-section">
+            <span>Аккаунт</span>
+            <div className="shell-drawer-list">
+              {accountLinks.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+
+          <div className="shell-drawer-section">
+            <span>Поддержка</span>
+            <button
+              className="shell-drawer-link shell-drawer-link-button"
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                setSupportOpen(true);
+              }}
+            >
+              Открыть чат
+            </button>
+          </div>
+
+          {ready && session ? (
+            <button className="shell-chip shell-chip-danger shell-drawer-logout" type="button" onClick={handleLogout}>
+              Выйти
+            </button>
+          ) : null}
+        </div>
+      </aside>
 
       <main className="page-frame">
         <Outlet />
       </main>
 
+      <SupportChatWidget
+        open={supportOpen}
+        onOpenChange={setSupportOpen}
+        title="Поддержка"
+        launcherLabel="Поддержка"
+        launcherUnreadCount={launcherUnreadCount}
+        launcherPending={supportLoading || supportSending}
+        statusLabel={
+          !session
+            ? 'Нужен вход'
+            : supportState?.chat?.ticketNumber
+              ? `Заявка #${supportState.chat.ticketNumber}`
+              : supportState?.availability === false
+                ? 'Не активна'
+                : 'Готова'
+        }
+        nextPollLabel={formatPollLabel(supportState?.pollAfterMs)}
+        messages={mapSupportMessages(supportState)}
+        loading={supportLoading}
+        refreshing={supportLoading && Boolean(supportState)}
+        sending={supportSending}
+        unavailable={widgetUnavailable}
+        emptyTitle="Напишите в поддержку"
+        emptyDescription="Откройте диалог и отправьте первое сообщение."
+        onRefresh={async () => {
+          await loadSupportState();
+        }}
+        onSend={handleSupportSend}
+      />
+
       <footer className="site-footer">
         <div className="site-footer-grid">
           <div className="footer-title">NeuralV</div>
           <nav className="site-footer-links" aria-label="Навигация внизу сайта">
-            {navItems.map((item) => (
+            {productLinks.concat(clientLinks).map((item) => (
               <a key={item.to} className="footer-link" href={`/neuralv${item.to === '/' ? '/' : item.to}`}>
                 {item.label}
               </a>

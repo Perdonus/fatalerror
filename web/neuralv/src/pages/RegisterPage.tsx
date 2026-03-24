@@ -120,7 +120,6 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   return (
     <AuthPageLayout
       title="Регистрация"
-      description="Новый аккаунт подтверждается письмом и коротким кодом."
       aside={<RegisterAside session={session} />}
       footer={<span className="hero-support-text">Пароль проверяется сразу, чтобы письмо пришло уже на готовый сценарий.</span>}
     >

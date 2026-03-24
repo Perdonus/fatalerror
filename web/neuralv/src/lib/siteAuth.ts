@@ -128,6 +128,8 @@ export type SiteDeveloperPortalState = {
   };
 };
 
+export type SiteDeveloperApplicationState = 'none' | 'pending' | 'rejected' | 'approved';
+
 export type SiteVerifiedApp = {
   id?: string;
   platform: 'android' | 'windows' | 'linux' | string;
@@ -155,6 +157,82 @@ export type SiteVerifiedAppReviewRequest = {
   repositoryUrl: string;
   releaseArtifactUrl: string;
   officialSiteUrl?: string;
+};
+
+export type SiteProfileSystem = {
+  platform: string;
+  clientKey: string;
+  clientName: string;
+  clientGlyph: string;
+  clientAccent: string;
+  active: boolean;
+  available: boolean;
+  statusLabel: string;
+  blockedAds: number;
+  blockedThreats: number;
+  lastSeenAt?: string | number | null;
+  lastEventAt?: string | number | null;
+};
+
+export type SiteProfileScan = {
+  id: string;
+  source: string;
+  platform: string;
+  clientKey: string;
+  clientName: string;
+  clientGlyph: string;
+  clientAccent: string;
+  mode: string;
+  status: string;
+  verdict?: string | null;
+  riskScore?: number | null;
+  threatsFound: number;
+  totalScanned?: number | null;
+  label: string;
+  message: string;
+  createdAt?: string | number | null;
+  startedAt?: string | number | null;
+  completedAt?: string | number | null;
+  updatedAt?: string | number | null;
+};
+
+export type SiteProfileOverview = {
+  systems: SiteProfileSystem[];
+  scans: SiteProfileScan[];
+  totalScans: number;
+  scanSources: {
+    legacy?: number;
+    deep?: number;
+    desktop?: number;
+  };
+};
+
+export type SiteSupportChatEnvelope = {
+  id: string;
+  ticketNumber: number;
+  status: string;
+  lastMessageFrom?: 'client' | 'support' | 'system' | null;
+  lastMessageAt?: string | number | null;
+  createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+};
+
+export type SiteSupportChatMessage = {
+  id: string;
+  senderRole: 'client' | 'support' | 'system';
+  senderName?: string | null;
+  text: string;
+  source?: string | null;
+  createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+};
+
+export type SiteSupportChatState = {
+  availability: boolean;
+  message?: string;
+  pollAfterMs?: number;
+  chat?: SiteSupportChatEnvelope | null;
+  messages: SiteSupportChatMessage[];
 };
 
 type AuthResponsePayload = {
@@ -262,7 +340,11 @@ function translateKnownMessage(value: string): string {
     'Public GitHub repository URL required': 'Нужна ссылка на публичный GitHub-репозиторий.',
     'GitHub release artifact URL required': 'Нужна ссылка на точный release artifact.',
     'Artifact must belong to the same repository': 'Релизный файл должен принадлежать этому же репозиторию.',
-    'Invalid official site URL': 'Укажите корректный адрес сайта.'
+    'Invalid official site URL': 'Укажите корректный адрес сайта.',
+    'Сообщение пустое.': 'Введите сообщение.',
+    'Чат поддержки временно не настроен. Напишите позже или дождитесь, пока администратор добавит Telegram chat id и bot token.': 'Чат поддержки скоро появится здесь.',
+    'Не удалось открыть диалог поддержки. Проверьте Telegram forum chat и настройки бота.': 'Не удалось открыть поддержку. Попробуйте позже.',
+    'У Telegram-чата нет forum topic. Проверьте SUPPORT_TELEGRAM_CHAT_ID и права бота.': 'Поддержка ещё не готова. Попробуйте позже.'
   };
   return map[normalized] || normalized;
 }
@@ -1085,6 +1167,30 @@ function mapDeveloperApplication(value: Record<string, unknown> | null | undefin
   };
 }
 
+export function resolveDeveloperApplicationState(
+  application: SiteDeveloperApplication | null | undefined,
+  verifiedDeveloper = false
+): SiteDeveloperApplicationState {
+  if (verifiedDeveloper) {
+    return 'approved';
+  }
+
+  const status = String(application?.status || '').trim().toUpperCase();
+  if (!status) {
+    return 'none';
+  }
+
+  if (['APPROVED', 'VERIFIED', 'GRANTED', 'ACTIVE'].includes(status)) {
+    return 'approved';
+  }
+
+  if (['REJECTED', 'DECLINED', 'DENIED'].includes(status)) {
+    return 'rejected';
+  }
+
+  return 'pending';
+}
+
 function mapDeveloperPortalState(value: Record<string, unknown> | null | undefined): SiteDeveloperPortalState {
   const developer = value?.developer as Record<string, unknown> | undefined;
   const stats = value?.stats as Record<string, unknown> | undefined;
@@ -1136,6 +1242,106 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
       : Number(value.artifact_size_bytes || 0) || undefined,
     riskScore: typeof value.risk_score === 'number' ? value.risk_score : Number(value.risk_score || 0) || undefined,
     verifiedAt: value.verified_at as string | number | null | undefined,
+    createdAt: value.created_at as string | number | null | undefined,
+    updatedAt: value.updated_at as string | number | null | undefined
+  };
+}
+
+function getClientMeta(platform: string) {
+  switch (String(platform || '').trim().toLowerCase()) {
+    case 'android':
+      return {
+        key: 'android',
+        name: 'NeuralV Android',
+        glyph: 'A',
+        accent: '#54d18d'
+      };
+    case 'linux':
+      return {
+        key: 'linux',
+        name: 'NeuralV Linux',
+        glyph: 'L',
+        accent: '#ff9e57'
+      };
+    case 'windows':
+    default:
+      return {
+        key: 'windows',
+        name: 'NeuralV Windows',
+        glyph: 'W',
+        accent: '#6aa8ff'
+      };
+  }
+}
+
+function mapProfileSystem(platform: string, value: Record<string, unknown> | null | undefined): SiteProfileSystem {
+  const meta = getClientMeta(platform);
+  return {
+    platform,
+    clientKey: meta.key,
+    clientName: meta.name,
+    clientGlyph: meta.glyph,
+    clientAccent: meta.accent,
+    active: String(value?.state || '').toUpperCase() === 'ACTIVE',
+    available: Boolean(
+      Number(value?.last_seen_at || 0) ||
+      Number(value?.last_event_at || 0) ||
+      Number(value?.blocked_ads || 0) ||
+      Number(value?.blocked_threats || 0)
+    ),
+    statusLabel: typeof value?.label === 'string' && value.label.trim() ? value.label : 'Не активна',
+    blockedAds: Number(value?.blocked_ads || 0),
+    blockedThreats: Number(value?.blocked_threats || 0),
+    lastSeenAt: value?.last_seen_at as string | number | null | undefined,
+    lastEventAt: value?.last_event_at as string | number | null | undefined
+  };
+}
+
+function mapProfileScan(value: Record<string, unknown> | null | undefined): SiteProfileScan | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const platform = typeof value.platform === 'string' ? value.platform.toLowerCase() : 'windows';
+  const meta = getClientMeta(platform);
+  return {
+    id: typeof value.id === 'string' ? value.id : `${platform}-${Math.random().toString(36).slice(2)}`,
+    source: typeof value.source === 'string' ? value.source : 'unknown',
+    platform,
+    clientKey: meta.key,
+    clientName: meta.name,
+    clientGlyph: meta.glyph,
+    clientAccent: meta.accent,
+    mode: typeof value.mode === 'string' ? value.mode : 'unknown',
+    status: typeof value.status === 'string' ? value.status : 'UNKNOWN',
+    verdict: typeof value.verdict === 'string' ? value.verdict : null,
+    riskScore: typeof value.risk_score === 'number' ? value.risk_score : Number(value.risk_score || 0) || null,
+    threatsFound: Number(value.threats_found || 0) || 0,
+    totalScanned: typeof value.total_scanned === 'number' ? value.total_scanned : Number(value.total_scanned || 0) || null,
+    label: typeof value.label === 'string' && value.label.trim() ? value.label : 'Проверка',
+    message: typeof value.message === 'string' && value.message.trim() ? value.message : 'Проверка завершена',
+    createdAt: value.created_at as string | number | null | undefined,
+    startedAt: value.started_at as string | number | null | undefined,
+    completedAt: value.completed_at as string | number | null | undefined,
+    updatedAt: value.updated_at as string | number | null | undefined
+  };
+}
+
+function mapSupportChatMessage(value: Record<string, unknown> | null | undefined): SiteSupportChatMessage | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  return {
+    id: typeof value.id === 'string' ? value.id : `msg-${Math.random().toString(36).slice(2)}`,
+    senderRole:
+      String(value.sender_role || '').trim().toLowerCase() === 'support'
+        ? 'support'
+        : String(value.sender_role || '').trim().toLowerCase() === 'system'
+          ? 'system'
+          : 'client',
+    senderName: typeof value.sender_name === 'string' ? value.sender_name : null,
+    text: typeof value.message_text === 'string' ? value.message_text : '',
+    source: typeof value.source === 'string' ? value.source : null,
     createdAt: value.created_at as string | number | null | undefined,
     updatedAt: value.updated_at as string | number | null | undefined
   };
@@ -1274,6 +1480,203 @@ export async function fetchPublicVerifiedApps(
     : [];
 
   return { ok: true, data: items };
+}
+
+export async function fetchProfileOverview(
+  options: { limit?: number; offset?: number } = {}
+): Promise<SiteAuthResult<SiteProfileOverview>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as unknown as SiteAuthResult<SiteProfileOverview>;
+  }
+
+  const query = new URLSearchParams();
+  if (options.limit) {
+    query.set('limit', String(options.limit));
+  }
+  if (options.offset) {
+    query.set('offset', String(options.offset));
+  }
+
+  const result = await requestJson<{ overview?: Record<string, unknown> }>(
+    `/profile/overview${query.toString() ? `?${query.toString()}` : ''}`,
+    {
+      method: 'GET',
+      baseUrl: VERIFIED_APPS_BASE_URL,
+      headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+    }
+  );
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteProfileOverview>;
+  }
+
+  const overview = (result.data?.overview as Record<string, unknown> | undefined) || {};
+  const systemsObject = (overview.protection as Record<string, unknown> | undefined)?.platforms as Record<string, unknown> | undefined;
+  const systems = ['android', 'windows', 'linux'].map((platform) => mapProfileSystem(platform, systemsObject?.[platform] as Record<string, unknown> | undefined));
+  const scans = Array.isArray(overview.scans)
+    ? overview.scans.map((entry) => mapProfileScan(entry as Record<string, unknown>)).filter((entry): entry is SiteProfileScan => Boolean(entry))
+    : [];
+
+  return {
+    ok: true,
+    data: {
+      systems,
+      scans,
+      totalScans: Number(overview.total_scans || 0) || scans.length,
+      scanSources: {
+        legacy: Number((overview.scan_sources as Record<string, unknown> | undefined)?.legacy || 0) || 0,
+        deep: Number((overview.scan_sources as Record<string, unknown> | undefined)?.deep || 0) || 0,
+        desktop: Number((overview.scan_sources as Record<string, unknown> | undefined)?.desktop || 0) || 0
+      }
+    }
+  };
+}
+
+export async function fetchSupportChatState(
+  options: { after?: number; limit?: number } = {}
+): Promise<SiteAuthResult<SiteSupportChatState>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as unknown as SiteAuthResult<SiteSupportChatState>;
+  }
+
+  const query = new URLSearchParams();
+  if (options.after) {
+    query.set('after', String(options.after));
+  }
+  if (options.limit) {
+    query.set('limit', String(options.limit));
+  }
+
+  const result = await requestJson<Record<string, unknown>>(
+    `/profile/support-chat${query.toString() ? `?${query.toString()}` : ''}`,
+    {
+      method: 'GET',
+      baseUrl: VERIFIED_APPS_BASE_URL,
+      headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+    }
+  );
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteSupportChatState>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      availability: Boolean(result.data?.availability),
+      message: typeof result.data?.message === 'string' ? result.data.message : undefined,
+      pollAfterMs: typeof result.data?.poll_after_ms === 'number' ? result.data.poll_after_ms : Number(result.data?.poll_after_ms || 0) || undefined,
+      chat: result.data?.chat && typeof result.data.chat === 'object'
+        ? {
+            id: typeof (result.data.chat as Record<string, unknown>).id === 'string' ? String((result.data.chat as Record<string, unknown>).id) : '',
+            ticketNumber: Number((result.data.chat as Record<string, unknown>).ticket_number || 0) || 0,
+            status: typeof (result.data.chat as Record<string, unknown>).status === 'string'
+              ? String((result.data.chat as Record<string, unknown>).status)
+              : 'OPEN',
+            lastMessageFrom: ((result.data.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
+            lastMessageAt: (result.data.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
+            createdAt: (result.data.chat as Record<string, unknown>).created_at as string | number | null | undefined,
+            updatedAt: (result.data.chat as Record<string, unknown>).updated_at as string | number | null | undefined
+          }
+        : null,
+      messages: Array.isArray(result.data?.messages)
+        ? result.data.messages.map((entry) => mapSupportChatMessage(entry as Record<string, unknown>)).filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
+        : []
+    }
+  };
+}
+
+export async function openSupportChat(): Promise<SiteAuthResult<SiteSupportChatState>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as unknown as SiteAuthResult<SiteSupportChatState>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>('/profile/support-chat/open', {
+    method: 'POST',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteSupportChatState>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      availability: Boolean(result.data?.availability),
+      message: typeof result.data?.message === 'string' ? result.data.message : undefined,
+      pollAfterMs: typeof result.data?.poll_after_ms === 'number' ? result.data.poll_after_ms : Number(result.data?.poll_after_ms || 0) || undefined,
+      chat: result.data?.chat && typeof result.data.chat === 'object'
+        ? {
+            id: typeof (result.data.chat as Record<string, unknown>).id === 'string' ? String((result.data.chat as Record<string, unknown>).id) : '',
+            ticketNumber: Number((result.data.chat as Record<string, unknown>).ticket_number || 0) || 0,
+            status: typeof (result.data.chat as Record<string, unknown>).status === 'string'
+              ? String((result.data.chat as Record<string, unknown>).status)
+              : 'OPEN',
+            lastMessageFrom: ((result.data.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
+            lastMessageAt: (result.data.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
+            createdAt: (result.data.chat as Record<string, unknown>).created_at as string | number | null | undefined,
+            updatedAt: (result.data.chat as Record<string, unknown>).updated_at as string | number | null | undefined
+          }
+        : null,
+      messages: Array.isArray(result.data?.messages)
+        ? result.data.messages.map((entry) => mapSupportChatMessage(entry as Record<string, unknown>)).filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
+        : []
+    }
+  };
+}
+
+export async function sendSupportChatMessage(
+  text: string,
+  chatId?: string | null
+): Promise<SiteAuthResult<SiteSupportChatState>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as unknown as SiteAuthResult<SiteSupportChatState>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>('/profile/support-chat/messages', {
+    method: 'POST',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    body: JSON.stringify({
+      text,
+      chat_id: chatId || undefined
+    }),
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<SiteSupportChatState>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      availability: Boolean(result.data?.availability),
+      message: typeof result.data?.message === 'string' ? result.data.message : undefined,
+      pollAfterMs: typeof result.data?.poll_after_ms === 'number' ? result.data.poll_after_ms : Number(result.data?.poll_after_ms || 0) || undefined,
+      chat: result.data?.chat && typeof result.data.chat === 'object'
+        ? {
+            id: typeof (result.data.chat as Record<string, unknown>).id === 'string' ? String((result.data.chat as Record<string, unknown>).id) : '',
+            ticketNumber: Number((result.data.chat as Record<string, unknown>).ticket_number || 0) || 0,
+            status: typeof (result.data.chat as Record<string, unknown>).status === 'string'
+              ? String((result.data.chat as Record<string, unknown>).status)
+              : 'OPEN',
+            lastMessageFrom: ((result.data.chat as Record<string, unknown>).last_message_from as 'client' | 'support' | 'system' | null | undefined) ?? null,
+            lastMessageAt: (result.data.chat as Record<string, unknown>).last_message_at as string | number | null | undefined,
+            createdAt: (result.data.chat as Record<string, unknown>).created_at as string | number | null | undefined,
+            updatedAt: (result.data.chat as Record<string, unknown>).updated_at as string | number | null | undefined
+          }
+        : null,
+      messages: Array.isArray(result.data?.messages)
+        ? result.data.messages.map((entry) => mapSupportChatMessage(entry as Record<string, unknown>)).filter((entry): entry is SiteSupportChatMessage => Boolean(entry))
+        : []
+    }
+  };
 }
 
 export function formatSessionExpiry(value: string | number | null | undefined): string {

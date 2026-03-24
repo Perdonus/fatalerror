@@ -1,0 +1,670 @@
+"""
+🧠 NeuralV — ИБ-анализатор кода для ExteraGram
+    Антивирус от Fatal Error Team (@OrangeFaHTA)
+    Получить ключ: https://aistudio.google.com/app/apikey
+"""
+
+import os
+import re
+import time
+import traceback
+from typing import Any, Dict, Optional, List, Tuple
+
+import requests
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from client_utils import get_file_loader, run_on_queue, send_message
+from markdown_utils import parse_markdown
+from ui.settings import Header, Input, Divider
+from ui.bulletin import BulletinHelper
+from android_utils import run_on_ui_thread, log
+
+from org.telegram.tgnet import TLRPC
+from org.telegram.messenger import MessageObject, FileLoader, LocaleController
+
+__id__ = "NeuralV"
+__name__ = "NeuralV"
+__description__ = """🧠 NeuralV — Антивирус от Fatal Error Team.
+Анализирует код плагинов и файлов через ИИ.
+Поддержка: Gemini, OpenAI, Groq и совместимые API.
+
+Команды:
+• .vcheck — ответить на файл или текст с кодом для анализа
+• .vlist  — история последних проверок
+• .vinfo [имя файла] — полный отчёт из кэша
+• .vclear — очистить историю проверок
+• .vhelp  — показать список команд
+
+Получить ключ Gemini: https://aistudio.google.com/app/apikey"""
+__author__ = "@NeuralV_chnl"
+__version__ = "1.0"
+__min_version__ = "11.12.1"
+__icon__ = "neuralvstickers/0"
+
+# ─── константы ───────────────────────────────────────────────────────────────
+
+VCHECK_CMD = ".vcheck"
+VLIST_CMD  = ".vlist"
+VINFO_CMD  = ".vinfo"
+VCLEAR_CMD = ".vclear"
+VHELP_CMD  = ".vhelp"
+
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
+
+VERDICT_PATTERN = re.compile(r'\b(Безопасно|Осторожно|Опасно)\b', re.IGNORECASE)
+
+VERDICT_ICONS = {
+    "безопасно": "✅",
+    "осторожно": "⚠️",
+    "опасно":    "🚫",
+}
+
+# ─── локализация ─────────────────────────────────────────────────────────────
+
+def get_localized_strings():
+    try:
+        lang = LocaleController.getInstance().getCurrentLocale().getLanguage()
+    except Exception:
+        lang = "en"
+
+    strings = {
+        "ru": {
+            "settings_header":      "🧠 NeuralV",
+            "settings_subtitle":    "Анализ кода плагинов и файлов через ИИ. Ответьте на файл командой .vcheck",
+            "gemini_section":       "Google Gemini",
+            "gemini_api_key_text":  "API Ключ (Gemini)",
+            "gemini_api_key_sub":   "Получить: https://aistudio.google.com/app/apikey",
+            "gemini_model_text":    "Модель Gemini",
+            "gemini_model_sub":     "Например: gemini-2.0-flash-exp, gemini-flash-latest, gemini-2.5-pro",
+            "openai_section":       "OpenAI / Groq / совместимый",
+            "openai_api_key_text":  "API Ключ (OpenAI / Groq)",
+            "openai_api_key_sub":   "Ключ провайдера (sk-...)",
+            "openai_base_url_text": "URL сервера",
+            "openai_base_url_sub":  "Например: https://api.openai.com или https://api.groq.com",
+            "openai_model_text":    "Модель",
+            "openai_model_sub":     "Например: gpt-4o, llama-3.3-70b-versatile",
+            "advanced_section":     "Параметры",
+            "provider_text":        "Провайдер",
+            "provider_sub":         "Введите: gemini — для Gemini, openai — для OpenAI/Groq",
+            "max_file_mb_text":     "Макс. размер файла (MB)",
+            "max_file_mb_sub":      "Файлы больше этого размера не анализируются (1–50)",
+            "api_key_missing":      "❗ NeuralV: Укажи API ключ Gemini в настройках плагина.",
+            "openai_key_missing":   "❗ NeuralV: Укажи API ключ OpenAI/Groq в настройках.",
+            "no_reply":             "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
+            "no_content":           "⚠️ NeuralV: В сообщении нет файла или текста для анализа.",
+            "analyzing":            "⌛ NeuralV: Анализирую...",
+            "download_error":       "❗ NeuralV: Не удалось загрузить файл.",
+            "read_error":           "❗ NeuralV: Не удалось прочитать файл.",
+            "too_big":              "❗ NeuralV: Файл слишком большой (>{mb} MB).",
+            "api_error":            "❗ NeuralV: Ошибка API — {error}",
+            "unexpected":           "❗ NeuralV: Неожиданная ошибка — {error}",
+            "report_header":        "🛡 Отчёт ИБ-анализа: {filename}\n\n",
+            "report_footer":        "\n\nИтоговая оценка: {icon} {word}",
+            "cache_empty":          "📂 NeuralV: История проверок пуста.",
+            "cache_header":         "📊 История анализа NeuralV:\n\n",
+            "cache_row":            "{icon} {name} — {word} ({age})\n",
+            "age_min":              "{n} мин. назад",
+            "age_hour":             "{n} ч. назад",
+            "vinfo_usage":          "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
+            "vinfo_not_found":      "❗ NeuralV: Файл «{name}» не найден в истории.",
+            "vinfo_expired":        "⏳ NeuralV: Запись устарела. Перепроверь файл.",
+            "vinfo_header":         "🛡 Отчёт из кэша: {name}\n\n",
+            "vinfo_footer":         "\n\nИтоговая оценка: {icon} {word}",
+            "vclear_done":          "🧹 NeuralV: История очищена.",
+            "vhelp_text": (
+                "🧠 NeuralV — команды:\n\n"
+                "• .vcheck — ответить на файл или текст с кодом для анализа\n"
+                "• .vlist  — история последних проверок\n"
+                "• .vinfo [имя] — полный отчёт из кэша (пример: .vinfo bot.py)\n"
+                "• .vclear — очистить историю\n"
+                "• .vhelp  — эта справка\n\n"
+                "Настройки провайдера и ключа — в меню плагина.\n"
+                "Получить ключ Gemini: https://aistudio.google.com/app/apikey"
+            ),
+        },
+        "en": {
+            "settings_header":      "🧠 NeuralV",
+            "settings_subtitle":    "AI-powered code security analyzer. Reply to a file with .vcheck",
+            "gemini_section":       "Google Gemini",
+            "gemini_api_key_text":  "API Key (Gemini)",
+            "gemini_api_key_sub":   "Get key: https://aistudio.google.com/app/apikey",
+            "gemini_model_text":    "Gemini Model",
+            "gemini_model_sub":     "E.g.: gemini-2.0-flash-exp, gemini-flash-latest, gemini-2.5-pro",
+            "openai_section":       "OpenAI / Groq / compatible",
+            "openai_api_key_text":  "API Key (OpenAI / Groq)",
+            "openai_api_key_sub":   "Provider key (sk-...)",
+            "openai_base_url_text": "Server URL",
+            "openai_base_url_sub":  "E.g.: https://api.openai.com or https://api.groq.com",
+            "openai_model_text":    "Model",
+            "openai_model_sub":     "E.g.: gpt-4o, llama-3.3-70b-versatile",
+            "advanced_section":     "Parameters",
+            "provider_text":        "Provider",
+            "provider_sub":         "Enter: gemini for Gemini, openai for OpenAI/Groq",
+            "max_file_mb_text":     "Max file size (MB)",
+            "max_file_mb_sub":      "Files larger than this won't be analyzed (1–50)",
+            "api_key_missing":      "❗ NeuralV: Set the Gemini API key in plugin settings.",
+            "openai_key_missing":   "❗ NeuralV: Set the OpenAI/Groq API key in settings.",
+            "no_reply":             "⚠️ NeuralV: Reply to a file or message with .vcheck",
+            "no_content":           "⚠️ NeuralV: No file or text found in that message.",
+            "analyzing":            "⌛ NeuralV: Analyzing...",
+            "download_error":       "❗ NeuralV: Failed to download the file.",
+            "read_error":           "❗ NeuralV: Failed to read the file.",
+            "too_big":              "❗ NeuralV: File too large (>{mb} MB).",
+            "api_error":            "❗ NeuralV: API error — {error}",
+            "unexpected":           "❗ NeuralV: Unexpected error — {error}",
+            "report_header":        "🛡 Security Report: {filename}\n\n",
+            "report_footer":        "\n\nFinal verdict: {icon} {word}",
+            "cache_empty":          "📂 NeuralV: No scan history yet.",
+            "cache_header":         "📊 NeuralV Scan History:\n\n",
+            "cache_row":            "{icon} {name} — {word} ({age})\n",
+            "age_min":              "{n} min ago",
+            "age_hour":             "{n} hr ago",
+            "vinfo_usage":          "⚠️ Specify a filename. Example: .vinfo bot.py",
+            "vinfo_not_found":      "❗ NeuralV: File '{name}' not found in history.",
+            "vinfo_expired":        "⏳ NeuralV: Cache entry expired. Re-scan the file.",
+            "vinfo_header":         "🛡 Cached Report: {name}\n\n",
+            "vinfo_footer":         "\n\nFinal verdict: {icon} {word}",
+            "vclear_done":          "🧹 NeuralV: History cleared.",
+            "vhelp_text": (
+                "🧠 NeuralV — commands:\n\n"
+                "• .vcheck — reply to a file or message to analyze\n"
+                "• .vlist  — show scan history\n"
+                "• .vinfo [name] — full cached report (e.g. .vinfo bot.py)\n"
+                "• .vclear — clear history\n"
+                "• .vhelp  — this help\n\n"
+                "Set provider and API key in plugin settings.\n"
+                "Get Gemini key: https://aistudio.google.com/app/apikey"
+            ),
+        },
+    }
+    return strings.get(lang, strings["en"])
+
+
+# ─── промпт ──────────────────────────────────────────────────────────────────
+
+def build_prompt(code_content: str, plugin_name: str = "file") -> str:
+    return (
+        f"Ты — старший эксперт по информационной безопасности (Red Team / DFIR).\n"
+        f"Выполни СТАТИЧЕСКИЙ анализ кода '{plugin_name}'. Отвечай строго на русском языке.\n\n"
+        "ПРАВИЛА ФОРМАТИРОВАНИЯ:\n"
+        "- Без Markdown-символов (*, #, _, `, |).\n"
+        "- Только обычный текст с нумерованными пунктами.\n"
+        "- Не выдумывай факты. Если не хватает контекста — укажи явно.\n\n"
+        "ОБЯЗАТЕЛЬНЫЕ ПРОВЕРКИ:\n"
+        "1. Выполнение команд ОС (os, subprocess, exec, eval, shell=True).\n"
+        "2. Сетевые запросы — адреса, передаваемые данные.\n"
+        "3. Кража токенов / паролей / ключей (env-переменные, hardcode, keylogger).\n"
+        "4. Эксфильтрация данных (отправка файлов, скриншотов, буфера обмена).\n"
+        "5. Автозапуск / персистентность (реестр, cron, startup).\n"
+        "6. Обфускация (base64, zlib, marshal, exec(compile(...))).\n"
+        "7. Подозрительные импорты (ctypes, winreg, pynput, pyautogui).\n"
+        "8. Манипуляции с файлами (удаление, шифрование, рекурсивный обход).\n"
+        "9. Повышение привилегий / обход UAC.\n"
+        "10. Признаки C2 / reverse shell / backdoor.\n\n"
+        "СТРУКТУРА ОТВЕТА (строго соблюдай):\n"
+        "1) НАЗНАЧЕНИЕ: что делает код (2-4 предложения).\n"
+        "2) РИСКИ: список рисков с уровнем (Критично / Высоко / Средне / Низко).\n"
+        "3) ПОДОЗРИТЕЛЬНЫЕ ФРАГМЕНТЫ: конкретные строки с пояснением.\n"
+        "4) РЕКОМЕНДАЦИИ: конкретные шаги по устранению.\n"
+        "5) ИТОГ: одно слово — Безопасно, Осторожно или Опасно.\n\n"
+        f"КОД ДЛЯ ПРОВЕРКИ:\n{code_content}"
+    )
+
+
+def extract_verdict(text: str) -> Tuple[str, str]:
+    matches = VERDICT_PATTERN.findall(text)
+    if matches:
+        word = matches[-1].capitalize()
+        icon = VERDICT_ICONS.get(word.lower(), "🛡️")
+        return word, icon
+    return "Не определено", "🛡️"
+
+
+def parse_plugin_name(code: str) -> str:
+    m = re.search(r'__name__\s*=\s*["\'](.+?)["\']', code)
+    return m.group(1) if m else ""
+
+
+# ─── AI клиенты ──────────────────────────────────────────────────────────────
+
+class GeminiClient:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Content-Type": "application/json",
+            "User-Agent": f"exteraPlugin/{__id__}/{__version__}",
+        })
+
+    def analyze(self, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
+        url = f"{GEMINI_BASE_URL}{model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 4096},
+        }
+        try:
+            r = self.session.post(url, json=payload, timeout=120)
+            r.raise_for_status()
+            data = r.json()
+            if "candidates" in data and data["candidates"]:
+                parts = data["candidates"][0].get("content", {}).get("parts", [])
+                text = parts[0].get("text", "") if parts else ""
+                if text:
+                    return {"success": True, "text": text}
+            err = data.get("error", {}).get("message", "Empty response")
+            return {"success": False, "error": err}
+        except requests.exceptions.HTTPError as e:
+            err = f"HTTP {e.response.status_code}"
+            try:
+                err += f": {e.response.json().get('error', {}).get('message', '')}"
+            except Exception:
+                pass
+            return {"success": False, "error": err}
+        except requests.exceptions.Timeout:
+            return {"success": False, "error": "Timeout (120s)"}
+        except Exception as e:
+            log(f"[NeuralV/Gemini] {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
+
+
+class OpenAIClient:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Content-Type": "application/json",
+            "User-Agent": f"exteraPlugin/{__id__}/{__version__}",
+        })
+
+    def analyze(self, base_url: str, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
+        try:
+            bu = (base_url or "https://api.openai.com").rstrip("/")
+            url = bu if "/chat/completions" in bu else (
+                bu + "/chat/completions" if bu.endswith("/v1") else bu + "/v1/chat/completions"
+            )
+            headers = {"Authorization": f"Bearer {api_key}"}
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "Ты — эксперт по ИБ. Отвечай строго на русском. Без Markdown."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 4096,
+                "stream": False,
+            }
+            r = self.session.post(url, json=payload, headers=headers, timeout=120)
+            r.raise_for_status()
+            data = r.json()
+            if "choices" not in data or not data["choices"]:
+                return {"success": False, "error": data.get("error", {}).get("message", "No choices")}
+            text = (data["choices"][0].get("message") or {}).get("content", "")
+            if not text or not text.strip():
+                return {"success": False, "error": "Empty content"}
+            return {"success": True, "text": text}
+        except requests.exceptions.HTTPError as e:
+            err = f"HTTP {e.response.status_code}"
+            try:
+                err += f": {e.response.json().get('error', {}).get('message', '')}"
+            except Exception:
+                pass
+            return {"success": False, "error": err}
+        except requests.exceptions.Timeout:
+            return {"success": False, "error": "Timeout (120s)"}
+        except Exception as e:
+            log(f"[NeuralV/OpenAI] {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
+
+
+# ─── основной класс ──────────────────────────────────────────────────────────
+
+class NeuralVPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self.gemini = GeminiClient()
+        self.openai = OpenAIClient()
+        self.v_cache: dict = {}  # {filename: {verdict, icon, word, ts}}
+
+    def on_plugin_load(self):
+        self.add_on_send_message_hook()
+        log("[NeuralV] loaded")
+
+    def on_plugin_unload(self):
+        self.v_cache.clear()
+        log("[NeuralV] unloaded")
+
+    # ── настройки ─────────────────────────────────────────────────────────────
+
+    def create_settings(self) -> List[Any]:
+        s = get_localized_strings()
+        return [
+            Header(text=s["settings_header"]),
+            Divider(text=s["settings_subtitle"]),
+
+            Header(text=s["gemini_section"]),
+            Input(
+                key="gemini_api_key",
+                text=s["gemini_api_key_text"],
+                subtext=s["gemini_api_key_sub"],
+                default="",
+                icon="input_bot2",
+            ),
+            Input(
+                key="gemini_model",
+                text=s["gemini_model_text"],
+                subtext=s["gemini_model_sub"],
+                default="gemini-2.0-flash-exp",
+                icon="msg_language",
+            ),
+
+            Header(text=s["openai_section"]),
+            Input(
+                key="openai_api_key",
+                text=s["openai_api_key_text"],
+                subtext=s["openai_api_key_sub"],
+                default="",
+                icon="input_bot2",
+            ),
+            Input(
+                key="openai_base_url",
+                text=s["openai_base_url_text"],
+                subtext=s["openai_base_url_sub"],
+                default="https://api.openai.com",
+                icon="msg_language",
+            ),
+            Input(
+                key="openai_model",
+                text=s["openai_model_text"],
+                subtext=s["openai_model_sub"],
+                default="gpt-4o",
+                icon="msg_language",
+            ),
+
+            Header(text=s["advanced_section"]),
+            Input(
+                key="provider",
+                text=s["provider_text"],
+                subtext=s["provider_sub"],
+                default="gemini",
+                icon="msg_language",
+            ),
+            Input(
+                key="max_file_mb",
+                text=s["max_file_mb_text"],
+                subtext=s["max_file_mb_sub"],
+                default="10",
+                icon="input_phone",
+            ),
+        ]
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _s(self, key: str, **kwargs) -> str:
+        s = get_localized_strings()
+        template = s.get(key, key)
+        try:
+            return template.format(**kwargs) if kwargs else template
+        except Exception:
+            return template
+
+    def _show_error(self, key: str, **kwargs):
+        msg = self._s(key, **kwargs)
+        run_on_ui_thread(lambda: BulletinHelper.show_error(msg))
+
+    def _get_max_bytes(self) -> int:
+        try:
+            mb = max(1, min(50, int(self.get_setting("max_file_mb", "10"))))
+        except Exception:
+            mb = 10
+        return mb * 1024 * 1024
+
+    def _run_analysis(self, prompt: str) -> Dict[str, Any]:
+        provider = (self.get_setting("provider", "gemini") or "gemini").strip().lower()
+        if provider == "gemini":
+            api_key = (self.get_setting("gemini_api_key", "") or "").strip()
+            if not api_key:
+                return {"success": False, "error": "API_KEY_MISSING"}
+            model = (self.get_setting("gemini_model", "gemini-2.0-flash-exp") or "gemini-2.0-flash-exp").strip()
+            return self.gemini.analyze(api_key, model, prompt)
+        else:
+            api_key = (self.get_setting("openai_api_key", "") or "").strip()
+            if not api_key:
+                return {"success": False, "error": "OPENAI_KEY_MISSING"}
+            base_url = (self.get_setting("openai_base_url", "https://api.openai.com") or "").strip()
+            model = (self.get_setting("openai_model", "gpt-4o") or "").strip()
+            return self.openai.analyze(base_url, api_key, model, prompt)
+
+    def _send_report(self, params: Any, filename: str, verdict_text: str):
+        word, icon = extract_verdict(verdict_text)
+
+        self.v_cache[filename] = {
+            "verdict": verdict_text,
+            "icon": icon,
+            "word": word,
+            "ts": time.time(),
+        }
+
+        header = self._s("report_header", filename=filename)
+        footer = self._s("report_footer", icon=icon, word=word)
+        full_text = header + verdict_text.strip() + footer
+
+        try:
+            peer_id = params.peer
+        except Exception:
+            log("[NeuralV] Cannot get peer from params")
+            return
+
+        payload: Dict[str, Any] = {"peer": peer_id, "message": ""}
+        reply_to = getattr(params, "replyToMsg", None)
+        if reply_to:
+            payload["replyToMsg"] = reply_to
+
+        try:
+            parsed = parse_markdown(full_text)
+            entities = []
+            if parsed.entities:
+                for ent in parsed.entities:
+                    try:
+                        obj = ent.to_tlrpc_object()
+                        if obj:
+                            entities.append(obj)
+                    except Exception:
+                        pass
+            payload["message"] = parsed.text
+            payload["entities"] = entities or None
+            send_message(payload)
+        except Exception as e:
+            log(f"[NeuralV] markdown parse failed: {e}, using plain text")
+            try:
+                payload["message"] = full_text
+                payload["entities"] = None
+                send_message(payload)
+            except Exception as e2:
+                log(f"[NeuralV] fallback send failed: {e2}")
+                return
+
+        def show_bulletin():
+            w = word.lower()
+            if "опасно" in w:
+                BulletinHelper.show_error(f"{icon} {word}")
+            elif "осторожно" in w:
+                BulletinHelper.show_info(f"{icon} {word}")
+            else:
+                BulletinHelper.show_success(f"{icon} {word}")
+        run_on_ui_thread(show_bulletin)
+
+    def _send_msg(self, params: Any, text: str):
+        try:
+            send_message({"peer": params.peer, "message": text})
+        except Exception as e:
+            log(f"[NeuralV] _send_msg failed: {e}")
+
+    def _send_vlist(self, params: Any):
+        if not self.v_cache:
+            self._send_msg(params, self._s("cache_empty"))
+            return
+        now = time.time()
+        text = self._s("cache_header")
+        for name, entry in self.v_cache.items():
+            age_min = int((now - entry["ts"]) / 60)
+            age = self._s("age_min", n=age_min) if age_min < 60 else self._s("age_hour", n=age_min // 60)
+            text += self._s("cache_row", icon=entry["icon"], name=name, word=entry["word"], age=age)
+        self._send_msg(params, text)
+
+    def _send_vinfo(self, params: Any, args: str):
+        name = args.strip()
+        if not name:
+            self._send_msg(params, self._s("vinfo_usage"))
+            return
+        entry = self.v_cache.get(name)
+        if not entry:
+            self._send_msg(params, self._s("vinfo_not_found", name=name))
+            return
+        # Проверяем TTL (1 час)
+        if time.time() - entry["ts"] > 3600:
+            self._send_msg(params, self._s("vinfo_expired"))
+            return
+        header = self._s("vinfo_header", name=name)
+        footer = self._s("vinfo_footer", icon=entry["icon"], word=entry["word"])
+        self._send_msg(params, header + entry["verdict"].strip() + footer)
+
+    def _send_vclear(self, params: Any):
+        self.v_cache.clear()
+        self._send_msg(params, self._s("vclear_done"))
+
+    def _send_vhelp(self, params: Any):
+        self._send_msg(params, self._s("vhelp_text"))
+
+    def _handle_result(self, params: Any, filename: str, result: Dict[str, Any]):
+        if result.get("success"):
+            self._send_report(params, filename, result["text"])
+        else:
+            err = result.get("error", "Unknown")
+            if err == "API_KEY_MISSING":
+                self._show_error("api_key_missing")
+            elif err == "OPENAI_KEY_MISSING":
+                self._show_error("openai_key_missing")
+            else:
+                self._show_error("api_error", error=err)
+
+    # ── фоновые задачи ────────────────────────────────────────────────────────
+
+    def _analyze_file_task(self, params: Any, document: Any):
+        try:
+            file_path_obj = get_file_loader().getPathToAttach(document, True)
+            file_path = file_path_obj.getAbsolutePath()
+
+            if not os.path.exists(file_path):
+                get_file_loader().loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
+                for _ in range(30):
+                    if os.path.exists(file_path):
+                        break
+                    time.sleep(1)
+
+            if not os.path.exists(file_path):
+                self._show_error("download_error")
+                return
+
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    code = f.read()
+            except Exception as e:
+                self._show_error("read_error")
+                log(f"[NeuralV] read error: {e}")
+                return
+
+            if not code.strip():
+                self._show_error("no_content")
+                return
+
+            max_bytes = self._get_max_bytes()
+            if len(code.encode("utf-8")) > max_bytes:
+                self._show_error("too_big", mb=max_bytes // (1024 * 1024))
+                return
+
+            filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}"
+            name = parse_plugin_name(code) or filename
+            result = self._run_analysis(build_prompt(code, name))
+            self._handle_result(params, filename, result)
+
+        except Exception as e:
+            log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
+            self._show_error("unexpected", error=str(e))
+
+    def _analyze_text_task(self, params: Any, text: str, filename: str):
+        try:
+            max_bytes = self._get_max_bytes()
+            if len(text.encode("utf-8")) > max_bytes:
+                self._show_error("too_big", mb=max_bytes // (1024 * 1024))
+                return
+
+            name = parse_plugin_name(text) or filename
+            result = self._run_analysis(build_prompt(text, name))
+            self._handle_result(params, filename, result)
+
+        except Exception as e:
+            log(f"[NeuralV] _analyze_text_task: {traceback.format_exc()}")
+            self._show_error("unexpected", error=str(e))
+
+    # ── хук команд ───────────────────────────────────────────────────────────
+
+    def on_send_message_hook(self, account: int, params: Any) -> HookResult:
+        if not hasattr(params, "message") or not isinstance(params.message, str):
+            return HookResult()
+
+        msg = params.message.strip()
+        cmd = msg.lower()
+
+        # ── .vlist ──
+        if cmd == VLIST_CMD:
+            run_on_queue(lambda: self._send_vlist(params))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        # ── .vclear ──
+        if cmd == VCLEAR_CMD:
+            run_on_queue(lambda: self._send_vclear(params))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        # ── .vhelp ──
+        if cmd == VHELP_CMD:
+            run_on_queue(lambda: self._send_vhelp(params))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        # ── .vinfo [name] ──
+        if cmd.startswith(VINFO_CMD):
+            args = msg[len(VINFO_CMD):].strip()
+            run_on_queue(lambda: self._send_vinfo(params, args))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        # ── .vcheck ──
+        if cmd != VCHECK_CMD:
+            return HookResult()
+
+        if not hasattr(params, "replyToMsg") or not params.replyToMsg:
+            self._show_error("no_reply")
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        reply_msg = params.replyToMsg
+        document = None
+
+        try:
+            document = MessageObject.getDocument(reply_msg.messageOwner)
+        except Exception:
+            pass
+
+        if document:
+            run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
+            run_on_queue(lambda: self._analyze_file_task(params, document))
+        else:
+            try:
+                reply_text = (reply_msg.messageOwner.message or "").strip()
+            except Exception:
+                reply_text = ""
+
+            if not reply_text:
+                self._show_error("no_content")
+                return HookResult(strategy=HookStrategy.CANCEL)
+
+            filename = f"snippet_{int(time.time())}.txt"
+            run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
+            run_on_queue(lambda: self._analyze_text_task(params, reply_text, filename))
+
+        return HookResult(strategy=HookStrategy.CANCEL)

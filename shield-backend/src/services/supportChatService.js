@@ -139,7 +139,7 @@ async function setMeta(metaKey, metaValue, db = pool) {
 function verifyWebhookSecret(receivedSecret) {
     const expected = String(process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET || '').trim();
     if (!expected) {
-        return true;
+        return false;
     }
     const left = Buffer.from(String(receivedSecret || ''), 'utf8');
     const right = Buffer.from(expected, 'utf8');
@@ -333,28 +333,40 @@ async function createSupportChat(userId, db = pool) {
         throw createHttpError(404, 'User not found', 'USER_NOT_FOUND');
     }
 
-    const existing = await findOpenChatForUser(userId, db);
-    if (existing) {
-        return {
-            ...availability,
-            message: 'Диалог уже открыт.',
-            chat: shapeChatRow(existing),
-            messages: await loadChatMessages(existing.id, {}, db)
-        };
+    const lockName = `support-chat:${userId}`;
+    const [lockRows] = await db.query('SELECT GET_LOCK(?, 10) AS is_locked', [lockName]);
+    const isLocked = Number(lockRows?.[0]?.is_locked || 0) === 1;
+    if (!isLocked) {
+        throw createHttpError(503, 'Не удалось подготовить чат поддержки.', 'SUPPORT_CHAT_LOCK_TIMEOUT');
     }
 
-    const chatId = uuidv4();
-    const timestamp = nowMs();
-    await db.query(
-        `INSERT INTO support_chats (id, user_id, status, last_message_from, created_at, updated_at)
-         VALUES (?, ?, 'OPEN', 'client', ?, ?)`,
-        [chatId, userId, timestamp, timestamp]
-    );
+    let created = null;
+    try {
+        const existing = await findOpenChatForUser(userId, db);
+        if (existing) {
+            return {
+                ...availability,
+                message: 'Диалог уже открыт.',
+                chat: shapeChatRow(existing),
+                messages: await loadChatMessages(existing.id, {}, db)
+            };
+        }
 
-    const [rows] = await db.query('SELECT * FROM support_chats WHERE id = ? LIMIT 1', [chatId]);
-    const created = rows[0];
-    if (!created) {
-        throw createHttpError(500, 'Не удалось открыть чат поддержки.', 'SUPPORT_CHAT_CREATE_FAILED');
+        const chatId = uuidv4();
+        const timestamp = nowMs();
+        await db.query(
+            `INSERT INTO support_chats (id, user_id, status, last_message_from, created_at, updated_at)
+             VALUES (?, ?, 'OPEN', 'client', ?, ?)`,
+            [chatId, userId, timestamp, timestamp]
+        );
+
+        const [rows] = await db.query('SELECT * FROM support_chats WHERE id = ? LIMIT 1', [chatId]);
+        created = rows[0] || null;
+        if (!created) {
+            throw createHttpError(500, 'Не удалось открыть чат поддержки.', 'SUPPORT_CHAT_CREATE_FAILED');
+        }
+    } finally {
+        await db.query('SELECT RELEASE_LOCK(?) AS released', [lockName]).catch(() => {});
     }
 
     try {
@@ -526,11 +538,11 @@ async function syncSupportUpdates(db = pool) {
 
         let nextOffset = offset;
         for (const update of updates) {
+            await ingestTelegramUpdate(update, db);
             nextOffset = Math.max(nextOffset, Number(update.update_id || 0) + 1);
-            await ingestTelegramUpdate(update, db).catch(() => null);
+            await setMeta('telegram_update_offset', String(nextOffset), db);
         }
 
-        await setMeta('telegram_update_offset', String(nextOffset), db);
         return {
             ...availability,
             message: 'Сообщения синхронизированы.'

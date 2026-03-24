@@ -17,7 +17,6 @@ export function AndroidPage() {
           <article className="platform-hero-card platform-hero-card-centered">
             <div className="platform-hero-copy platform-hero-copy-centered">
               <h1>NeuralV для Android</h1>
-              <p>Мобильный клиент для ежедневной проверки, входа и общей истории без отдельного сценария для телефона.</p>
               <div className="platform-hero-actions">
                 {ready && artifact?.downloadUrl ? (
                   <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать APK</a>
@@ -28,13 +27,12 @@ export function AndroidPage() {
             </div>
             <div className="platform-hero-grid platform-hero-grid-centered">
               <div className="platform-main-stat">
-                <span className="story-scene-kicker">Версия и требования</span>
                 <strong>{version}</strong>
-                <p>{requirement}</p>
+                <p>Требования: {requirement}</p>
               </div>
               <div className="platform-meta-chip">Телефон и планшет</div>
               <div className="platform-meta-chip">Один APK</div>
-              <div className="platform-meta-chip">Общий аккаунт</div>
+              <div className="platform-meta-chip">Общий профиль</div>
             </div>
           </article>
         </div>
@@ -43,16 +41,16 @@ export function AndroidPage() {
       <div className="story-track">
         <StoryScene
           compact
-          title="Установка без лишних шагов"
-          body="Скачай APK, установи приложение и сразу войди в тот же аккаунт, который уже используется в других клиентах."
-          accent="Один файл, один привычный маршрут, без ручной настройки."
+          title="Установка занимает один понятный шаг"
+          body="Скачайте APK, установите приложение и войдите в аккаунт. Android-версия не требует лишней подготовки и быстро приводит в рабочий сценарий."
+          accent="Один APK и привычный запуск без лишней подготовки."
           visual="android"
         />
         <StoryScene
           compact
-          title="История остаётся рядом"
-          body="Основные действия, вход и история проверок не отрезаны от остальных устройств. Телефон остаётся частью общего продукта, а не отдельным приложением в стороне."
-          accent="Тот же аккаунт и та же логика, но в мобильном формате."
+          title="Мобильный клиент остаётся частью общего продукта"
+          body="История, вход и основные действия остаются в том же аккаунте. Android-клиент работает как полноценная часть NeuralV, а не как отдельный продукт."
+          accent="Один аккаунт на сайте и в приложениях."
           visual="shield"
         />
       </div>

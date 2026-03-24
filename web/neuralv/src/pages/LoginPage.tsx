@@ -119,7 +119,6 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   return (
     <AuthPageLayout
       title="Вход в NeuralV"
-      description="Почта, пароль и короткое подтверждение по коду."
       aside={<LoginAside session={session} />}
       footer={<span className="hero-support-text">Код приходит на почту только после проверки пароля.</span>}
     >

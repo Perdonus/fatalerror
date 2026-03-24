@@ -25,18 +25,21 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
             <rect x="44" y="48" width="84" height="30" rx="15" className="story-chip-fill story-highlight-pill" />
             <rect x="232" y="52" width="76" height="20" rx="10" className="story-chip-fill story-chip-fill-faint" />
             <rect x="204" y="148" width="106" height="34" rx="17" className="story-panel-fill story-plate" />
+            <circle cx="296" cy="76" r="14" className="story-orbit-dot story-orbit-dot-soft" />
           </g>
           <g className="story-layer story-layer-mid">
             <path d="M60 162 C100 162 114 84 164 84 C216 84 226 174 286 174" className="story-route-line" />
             <path d="M60 162 C100 162 114 84 164 84 C216 84 226 174 286 174" className="story-route-glow" />
             <path d="M82 108 H134" className="story-grid-link story-grid-link-soft" />
             <path d="M214 108 H280" className="story-grid-link story-grid-link-soft" />
+            <path d="M58 196 C112 156 164 152 292 110" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-top">
             <circle cx="60" cy="162" r="16" className="story-node story-node-soft" />
             <circle cx="164" cy="84" r="16" className="story-node story-node-accent" />
             <circle cx="286" cy="174" r="16" className="story-node story-node-soft" />
             <circle cx="164" cy="84" r="28" className="story-beacon-ring" />
+            <circle cx="286" cy="174" r="34" className="story-beacon-ring story-beacon-ring-secondary" />
             <rect x="142" y="116" width="92" height="12" rx="6" className="story-sweep-bar" />
           </g>
         </svg>
@@ -48,6 +51,7 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
             <rect x="26" y="34" width="102" height="74" rx="24" className="story-panel-outline" />
             <rect x="146" y="34" width="188" height="74" rx="24" className="story-panel-outline story-panel-outline-accent" />
             <rect x="78" y="132" width="204" height="84" rx="28" className="story-panel-outline" />
+            <path d="M54 132 C108 112 174 110 288 124" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-mid">
             <path d="M128 70 H146" className="story-grid-link" />
@@ -61,6 +65,7 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
             <circle cx="146" cy="70" r="10" className="story-node story-node-soft" />
             <circle cx="214" cy="132" r="12" className="story-node story-node-accent" />
             <circle cx="214" cy="132" r="30" className="story-beacon-ring" />
+            <circle cx="214" cy="132" r="42" className="story-beacon-ring story-beacon-ring-secondary" />
             <path d="M122 188 H246" className="story-highlight-trace" />
           </g>
         </svg>
@@ -78,10 +83,12 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
             <path d="M180 62 L236 86 V124 C236 156 213 181 180 194 C147 181 124 156 124 124 V86 Z" className="story-shield" />
             <path d="M154 118 L172 138 L208 102" className="story-check-line" />
             <path d="M96 194 C128 168 144 156 180 156 C216 156 232 168 264 194" className="story-radar" />
+            <path d="M112 202 C142 150 210 138 264 102" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-top">
             <circle cx="180" cy="124" r="22" className="story-node story-node-accent" />
             <circle cx="180" cy="124" r="38" className="story-beacon-ring" />
+            <circle cx="180" cy="124" r="54" className="story-beacon-ring story-beacon-ring-secondary" />
             <rect x="144" y="176" width="72" height="10" rx="5" className="story-sweep-bar" />
           </g>
         </svg>
@@ -92,17 +99,20 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
           <g className="story-layer story-layer-base">
             <rect x="112" y="20" width="136" height="200" rx="38" className="story-panel-outline story-panel-outline-accent" />
             <rect x="136" y="48" width="88" height="8" rx="4" className="story-chip-fill story-chip-fill-faint" />
+            <circle cx="256" cy="56" r="12" className="story-orbit-dot story-orbit-dot-soft" />
           </g>
           <g className="story-layer story-layer-mid">
             <rect x="132" y="70" width="96" height="92" rx="26" className="story-panel-fill story-plate" />
             <path d="M144 98 H216" className="story-grid-link" />
             <path d="M144 124 H204" className="story-grid-link story-grid-link-soft" />
             <path d="M144 150 H188" className="story-grid-link story-grid-link-soft" />
+            <path d="M100 196 C136 148 198 138 252 110" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-top">
             <rect x="136" y="180" width="88" height="18" rx="9" className="story-chip-fill" />
             <rect x="142" y="84" width="76" height="16" rx="8" className="story-sweep-bar" />
             <circle cx="180" cy="116" r="32" className="story-beacon-ring" />
+            <circle cx="180" cy="116" r="46" className="story-beacon-ring story-beacon-ring-secondary" />
           </g>
         </svg>
       );
@@ -113,17 +123,20 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
             <rect x="30" y="38" width="300" height="170" rx="30" className="story-panel-outline story-panel-strong" />
             <rect x="56" y="64" width="76" height="118" rx="22" className="story-panel-fill story-plate" />
             <rect x="286" y="70" width="18" height="104" rx="9" className="story-chip-fill story-chip-fill-faint" />
+            <path d="M78 198 C142 144 218 132 312 148" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-mid">
             <path d="M92 88 H272" className="story-grid-link" />
             <path d="M92 122 H232" className="story-grid-link story-grid-link-soft" />
             <path d="M92 156 H248" className="story-grid-link story-grid-link-soft" />
             <rect x="160" y="76" width="96" height="14" rx="7" className="story-chip-fill" />
+            <path d="M140 172 H278" className="story-highlight-trace" />
           </g>
           <g className="story-layer story-layer-top">
             <rect x="156" y="140" width="108" height="14" rx="7" className="story-sweep-bar" />
             <circle cx="276" cy="170" r="12" className="story-node story-node-accent" />
             <circle cx="276" cy="170" r="28" className="story-beacon-ring" />
+            <circle cx="276" cy="170" r="42" className="story-beacon-ring story-beacon-ring-secondary" />
           </g>
         </svg>
       );
@@ -133,17 +146,20 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
           <g className="story-layer story-layer-base">
             <rect x="38" y="48" width="284" height="146" rx="32" className="story-panel-outline story-panel-strong" />
             <rect x="62" y="72" width="76" height="98" rx="22" className="story-panel-fill story-plate" />
+            <circle cx="286" cy="78" r="12" className="story-orbit-dot story-orbit-dot-soft" />
           </g>
           <g className="story-layer story-layer-mid">
             <path d="M84 96 H276" className="story-grid-link" />
             <path d="M84 128 H220" className="story-grid-link story-grid-link-soft" />
             <path d="M84 160 H250" className="story-grid-link story-grid-link-soft" />
             <path d="M168 86 H286" className="story-route-line" />
+            <path d="M74 184 C122 144 188 136 286 122" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-top">
             <rect x="170" y="150" width="84" height="14" rx="7" className="story-sweep-bar" />
             <circle cx="274" cy="160" r="14" className="story-node story-node-accent" />
             <circle cx="274" cy="160" r="32" className="story-beacon-ring" />
+            <circle cx="274" cy="160" r="46" className="story-beacon-ring story-beacon-ring-secondary" />
           </g>
         </svg>
       );
@@ -155,6 +171,7 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
             <circle cx="180" cy="120" r="78" className="story-ring story-ring-outer" />
             <circle cx="180" cy="120" r="56" className="story-ring story-ring-inner" />
             <path d="M108 120 H148 L164 92 L184 148 L202 110 H252" className="story-route-line" />
+            <path d="M82 184 C122 152 180 142 264 164" className="story-wave-trace" />
           </g>
           <g className="story-layer story-layer-mid">
             <path d="M180 52 L236 74 V118 C236 155 214 180 180 196 C146 180 124 155 124 118 V74 Z" className="story-shield" />
@@ -164,6 +181,7 @@ function StoryVisual({ kind }: { kind: StoryVisualKind }) {
           <g className="story-layer story-layer-top">
             <circle cx="180" cy="120" r="22" className="story-node story-node-accent" />
             <circle cx="180" cy="120" r="42" className="story-beacon-ring" />
+            <circle cx="180" cy="120" r="58" className="story-beacon-ring story-beacon-ring-secondary" />
             <rect x="140" y="82" width="80" height="14" rx="7" className="story-sweep-bar" />
           </g>
         </svg>
@@ -185,7 +203,10 @@ export function StoryScene({ title, body, kicker, accent, visual, aside, compact
             {accent ? <div className="story-scene-accent">{accent}</div> : null}
             {aside ? <div className="story-scene-aside">{aside}</div> : null}
           </div>
-          <div className="story-scene-visual-wrap">
+          <div className={`story-scene-visual-wrap story-scene-visual-wrap-${visual}`}>
+            <span className="story-visual-grid" aria-hidden="true" />
+            <span className="story-visual-glow" aria-hidden="true" />
+            <span className="story-visual-beam" aria-hidden="true" />
             <StoryVisual kind={visual} />
           </div>
         </article>

@@ -4,6 +4,13 @@ import '../styles/auth.css';
 
 type PlatformFilter = 'all' | 'android' | 'windows' | 'linux';
 
+const platformItems: Array<{ value: PlatformFilter; label: string }> = [
+  { value: 'all', label: 'Все' },
+  { value: 'windows', label: 'Windows' },
+  { value: 'android', label: 'Android' },
+  { value: 'linux', label: 'Linux' }
+];
+
 function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = app.verifiedAt ? new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' }).format(new Date(app.verifiedAt)) : null;
@@ -19,7 +26,7 @@ function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
             <strong>{app.appName}</strong>
             <span className="profile-status-pill is-active">Безопасно</span>
           </div>
-          <p>{app.authorName || 'Разработчик NeuralV'}</p>
+          <p>{app.authorName || 'Проверенный разработчик'}</p>
         </div>
       </div>
       {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
@@ -70,56 +77,63 @@ export function VerifiedAppsPage() {
   const title = useMemo(() => {
     switch (platform) {
       case 'android':
-        return 'Проверенные приложения для Android';
+        return 'Android';
       case 'windows':
-        return 'Проверенные приложения для Windows';
+        return 'Windows';
       case 'linux':
-        return 'Проверенные приложения для Linux';
+        return 'Linux';
       default:
-        return 'Проверенные приложения';
+        return 'Все платформы';
     }
   }, [platform]);
 
   return (
     <div className="page-stack profile-dashboard-shell verified-apps-shell">
-      <section className="hero-shell profile-hub-hero verified-apps-hero">
-        <div className="hero-copy profile-hub-copy">
-          <div className="profile-hub-heading">
-            <h1>{title}</h1>
-            <p>Здесь видны сборки, которые прошли серверную проверку по открытому исходнику и точному релизному файлу.</p>
+      <section className="profile-dashboard-grid verified-apps-layout">
+        <aside className="content-card profile-nav-card verified-apps-nav-card">
+          <div className="profile-nav-head">
+            <strong>Проверенные</strong>
           </div>
-          <div className="auth-segmented">
-            {(['all', 'android', 'windows', 'linux'] as PlatformFilter[]).map((item) => (
+          <div className="profile-nav-list" role="tablist" aria-label="Платформы">
+            {platformItems.map((item) => (
               <button
-                key={item}
+                key={item.value}
                 type="button"
-                className={`segment${platform === item ? ' is-active' : ''}`}
-                onClick={() => setPlatform(item)}
+                className={`profile-nav-button${platform === item.value ? ' is-active' : ''}`}
+                onClick={() => setPlatform(item.value)}
               >
-                {item === 'all' ? 'Все' : item.toUpperCase()}
+                <span>{item.label}</span>
               </button>
             ))}
           </div>
+        </aside>
+
+        <div className="profile-dashboard-main">
+          <article className="content-card profile-panel-card profile-panel-card-featured verified-apps-header-card">
+            <div className="profile-panel-head">
+              <h1>{title}</h1>
+            </div>
+          </article>
+
+          {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
+
+          {loading ? (
+            <div className="content-card profile-panel-card">
+              <div className="profile-empty-copy">Загружаем каталог...</div>
+            </div>
+          ) : apps.length > 0 ? (
+            <div className="developer-app-grid developer-app-grid-public">
+              {apps.map((app) => (
+                <VerifiedAppTile key={app.id || `${app.appName}-${app.platform}`} app={app} />
+              ))}
+            </div>
+          ) : (
+            <div className="content-card profile-panel-card">
+              <div className="profile-empty-copy">Для этой платформы пока нет опубликованных приложений.</div>
+            </div>
+          )}
         </div>
       </section>
-
-      {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
-
-      {loading ? (
-        <div className="content-card profile-panel-card">
-          <div className="profile-empty-copy">Загружаем каталог безопасных приложений...</div>
-        </div>
-      ) : apps.length > 0 ? (
-        <div className="developer-app-grid developer-app-grid-public">
-          {apps.map((app) => (
-            <VerifiedAppTile key={app.id || `${app.appName}-${app.platform}`} app={app} />
-          ))}
-        </div>
-      ) : (
-        <div className="content-card profile-panel-card">
-          <div className="profile-empty-copy">Пока нет опубликованных безопасных сборок для выбранной платформы.</div>
-        </div>
-      )}
     </div>
   );
 }

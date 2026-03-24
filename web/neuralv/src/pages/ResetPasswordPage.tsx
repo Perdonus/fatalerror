@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { NeuralVDecor } from '../components/NeuralVDecor';
+import { AuthPageLayout } from '../components/AuthPageLayout';
 import { PasswordStrength } from '../components/PasswordStrength';
 import {
   confirmPasswordReset,
@@ -9,6 +9,19 @@ import {
   requestPasswordReset,
   validatePasswordStrength
 } from '../lib/siteAuth';
+
+function ResetAside({ hasResetLink }: { hasResetLink: boolean }) {
+  return (
+    <article className="content-card auth-session-card auth-session-empty">
+      <h3>{hasResetLink ? 'Ссылка уже открыта' : 'Что произойдёт дальше'}</h3>
+      <p>
+        {hasResetLink
+          ? 'После сохранения новый пароль начнёт действовать сразу.'
+          : 'Мы отправим письмо со ссылкой. Новый пароль задаётся прямо на сайте.'}
+      </p>
+    </article>
+  );
+}
 
 export function ResetPasswordPage() {
   const [params] = useSearchParams();
@@ -63,7 +76,7 @@ export function ResetPasswordPage() {
       return;
     }
 
-    setMessage(result.data?.message || 'Письмо со ссылкой для сброса пароля отправлено.');
+    setMessage(result.data?.message || 'Письмо со ссылкой отправлено.');
   }
 
   async function handleConfirmSubmit(event: FormEvent) {
@@ -96,89 +109,81 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="page-stack auth-page-stack">
-      <section className="hero-shell auth-shell reset-shell reset-shell-rich">
-        <div className="hero-copy hero-copy-tight auth-hero-copy auth-hero-copy-rich">
-          <div className="auth-hero-heading">
-            <h1>{hasResetLink ? 'Новый пароль' : 'Сброс пароля'}</h1>
-            <p>{hasResetLink ? 'Пароль меняется прямо на сайте. Приложение здесь не участвует.' : 'Отправим письмо со ссылкой. Новый пароль задаётся прямо на сайте.'}</p>
+    <AuthPageLayout
+      title={hasResetLink ? 'Новый пароль' : 'Сброс пароля'}
+      description={hasResetLink ? 'Ссылка подтверждена. Осталось сохранить новый пароль.' : 'Отправим письмо со ссылкой и откроем финальный шаг на сайте.'}
+      aside={<ResetAside hasResetLink={hasResetLink} />}
+    >
+      {hasResetLink ? (
+        <form className="auth-form" onSubmit={handleConfirmSubmit}>
+          {pending ? <div className="form-message">Проверяем ссылку...</div> : null}
+
+          <label className="auth-field">
+            <span className="auth-field-label">Почта</span>
+            <input className="auth-input" type="email" value={email} readOnly />
+          </label>
+
+          <label className="auth-field">
+            <span className="auth-field-label">Новый пароль</span>
+            <input
+              className="auth-input"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              onFocus={() => setFocused(true)}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+          <PasswordStrength password={password} visible={focused || password.length > 0} />
+
+          <label className="auth-field">
+            <span className="auth-field-label">Повтор пароля</span>
+            <input
+              className="auth-input"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              autoComplete="new-password"
+              required
+            />
+          </label>
+
+          {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
+          {message ? <div className="form-message is-success">{message}</div> : null}
+
+          <div className="auth-actions auth-actions-wrap">
+            <button className="nv-button" type="submit" disabled={submitting || pending || !readyLink}>
+              {submitting ? 'Сохраняем...' : 'Обновить пароль'}
+            </button>
+            <Link className="shell-chip" to="/login">К входу</Link>
           </div>
-          <NeuralVDecor variant="account" className="page-decor auth-page-decor" />
-        </div>
+        </form>
+      ) : (
+        <form className="auth-form" onSubmit={handleRequestSubmit}>
+          <label className="auth-field">
+            <span className="auth-field-label">Почта аккаунта</span>
+            <input
+              className="auth-input"
+              type="email"
+              value={requestEmail}
+              onChange={(event) => setRequestEmail(event.target.value)}
+              autoComplete="email"
+              required
+            />
+          </label>
 
-        <article className="surface-card auth-card auth-card-wide">
-          {hasResetLink ? (
-            <form className="auth-form" onSubmit={handleConfirmSubmit}>
-              {pending ? <div className="form-message">Проверяем ссылку...</div> : null}
+          {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
+          {message ? <div className="form-message is-success">{message}</div> : null}
 
-              <label className="field-block">
-                <span className="field-label">Почта</span>
-                <input className="field-input" type="email" value={email} readOnly />
-              </label>
-
-              <label className="field-block">
-                <span className="field-label">Новый пароль</span>
-                <input
-                  className="field-input"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  onFocus={() => setFocused(true)}
-                  autoComplete="new-password"
-                  required
-                />
-              </label>
-              <PasswordStrength password={password} visible={focused || password.length > 0} />
-
-              <label className="field-block field-block-compact-gap">
-                <span className="field-label">Подтверждение</span>
-                <input
-                  className="field-input"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  autoComplete="new-password"
-                  required
-                />
-              </label>
-
-              {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
-              {message ? <div className="form-message is-success">{message}</div> : null}
-
-              <div className="auth-actions-row auth-actions-row-wrap">
-                <button className="nv-button" type="submit" disabled={submitting || pending || !readyLink}>
-                  {submitting ? 'Сохраняем...' : 'Обновить пароль'}
-                </button>
-                <Link className="shell-chip" to="/login">К входу</Link>
-              </div>
-            </form>
-          ) : (
-            <form className="auth-form" onSubmit={handleRequestSubmit}>
-              <label className="field-block">
-                <span className="field-label">Почта аккаунта</span>
-                <input
-                  className="field-input"
-                  type="email"
-                  value={requestEmail}
-                  onChange={(event) => setRequestEmail(event.target.value)}
-                  autoComplete="email"
-                  required
-                />
-              </label>
-
-              {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
-              {message ? <div className="form-message is-success">{message}</div> : null}
-
-              <div className="auth-actions-row auth-actions-row-wrap">
-                <button className="nv-button" type="submit" disabled={submitting}>
-                  {submitting ? 'Отправляем...' : 'Отправить письмо'}
-                </button>
-                <Link className="shell-chip" to="/login">Назад ко входу</Link>
-              </div>
-            </form>
-          )}
-        </article>
-      </section>
-    </div>
+          <div className="auth-actions auth-actions-wrap">
+            <button className="nv-button" type="submit" disabled={submitting}>
+              {submitting ? 'Отправляем...' : 'Отправить письмо'}
+            </button>
+            <Link className="shell-chip" to="/login">К входу</Link>
+          </div>
+        </form>
+      )}
+    </AuthPageLayout>
   );
 }

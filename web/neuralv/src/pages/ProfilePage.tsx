@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { NeuralVDecor } from '../components/NeuralVDecor';
+import { AuthPageLayout } from '../components/AuthPageLayout';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import { PasswordStrength } from '../components/PasswordStrength';
 import {
@@ -10,6 +10,25 @@ import {
   requestProfilePasswordChange,
   validatePasswordStrength
 } from '../lib/siteAuth';
+
+function ProfileAside({
+  name,
+  email,
+  isPremium
+}: {
+  name: string;
+  email: string;
+  isPremium: boolean;
+}) {
+  return (
+    <article className="content-card auth-session-card auth-session-empty">
+      <h3>Текущий аккаунт</h3>
+      <p>{name || 'Аккаунт NeuralV'}</p>
+      <p>{email || 'Почта недоступна'}</p>
+      <p>{isPremium ? 'Расширенный доступ активен.' : 'Обычный доступ активен.'}</p>
+    </article>
+  );
+}
 
 export function ProfilePage() {
   const { user, refresh, logout } = useSiteAuth();
@@ -39,10 +58,10 @@ export function ProfilePage() {
     const result = await requestProfileNameChange(name.trim());
     setPending(null);
     if (!result.ok) {
-      setError(result.error || 'Не удалось отправить письмо для смены юза.');
+      setError(result.error || 'Не удалось отправить письмо для смены имени.');
       return;
     }
-    setMessage(result.data?.message || 'Письмо для подтверждения нового юза отправлено.');
+    setMessage(result.data?.message || 'Письмо для подтверждения нового имени отправлено.');
   }
 
   async function handleEmailChange(event: FormEvent) {
@@ -78,7 +97,7 @@ export function ProfilePage() {
       setError(result.error || 'Не удалось отправить письмо для смены пароля.');
       return;
     }
-    setMessage(result.data?.message || 'Письмо для подтверждения смены пароля отправлено.');
+    setMessage(result.data?.message || 'Письмо для смены пароля отправлено.');
   }
 
   async function handleRefresh() {
@@ -87,9 +106,9 @@ export function ProfilePage() {
     setError('');
     try {
       await refresh();
-      setMessage('Профиль синхронизирован.');
+      setMessage('Профиль обновлён.');
     } catch (refreshError) {
-      setError(humanizeError(refreshError, 'Не удалось синхронизировать профиль.'));
+      setError(humanizeError(refreshError, 'Не удалось обновить профиль.'));
     } finally {
       setPending(null);
     }
@@ -101,7 +120,7 @@ export function ProfilePage() {
     setError('');
     try {
       await logout();
-      setMessage('Сессия очищена.');
+      setMessage('Сессия завершена.');
     } catch (logoutError) {
       setError(humanizeError(logoutError, 'Не удалось завершить сессию.'));
     } finally {
@@ -110,84 +129,80 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="page-stack profile-stack">
-      <section className="hero-shell profile-shell profile-shell-rich">
-        <div className="hero-copy hero-copy-tight profile-hero-copy">
-          <h1>Профиль</h1>
-          <p>Юз, почта и пароль подтверждаются через письмо и меняются уже на сайте, без ручной возни в клиенте.</p>
-          <div className="hero-actions">
-            <button className="nv-button" type="button" onClick={handleRefresh} disabled={pending !== null}>
-              {pending === 'refresh' ? 'Синхронизируем...' : 'Обновить'}
-            </button>
-            <button className="shell-chip" type="button" onClick={handleLogout} disabled={pending !== null}>
-              {pending === 'logout' ? 'Выходим...' : 'Выйти'}
-            </button>
+    <AuthPageLayout
+      title="Профиль"
+      description="Имя, почта и пароль меняются через письмо подтверждения."
+      aside={<ProfileAside name={user?.name || ''} email={user?.email || ''} isPremium={Boolean(user?.is_premium)} />}
+      footer={(
+        <div className="auth-actions auth-actions-wrap">
+          <button className="nv-button" type="button" onClick={handleRefresh} disabled={pending !== null}>
+            {pending === 'refresh' ? 'Обновляем...' : 'Обновить профиль'}
+          </button>
+          <button className="shell-chip" type="button" onClick={handleLogout} disabled={pending !== null}>
+            {pending === 'logout' ? 'Выходим...' : 'Выйти'}
+          </button>
+        </div>
+      )}
+    >
+      <div className="auth-profile-shell">
+        <section className="auth-copy-block">
+          <div>
+            <h3>Имя</h3>
+            <p className="hero-support-text">Отправим письмо, чтобы подтвердить новое имя.</p>
           </div>
-        </div>
-
-        <div className="platform-hero-aside">
-          <NeuralVDecor variant="account" className="page-decor page-decor-platform" />
-          <article className="surface-card profile-summary-card accent-card">
-            <div className="profile-copy-stack">
-              <span className="summary-kicker">Текущая сессия</span>
-              <strong>{user?.name || 'Аккаунт NeuralV'}</strong>
-              <span>{user?.email || 'Почта недоступна'}</span>
-              <span>{user?.is_premium ? 'Premium активен' : 'Обычный аккаунт'}</span>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className="section-grid section-grid-platform profile-form-grid">
-        <article className="surface-card platform-install-card platform-install-card-dense">
-          <div className="card-heading"><h2>Изменить юз</h2></div>
           <form className="auth-form" onSubmit={handleNameChange}>
-            <label className="field-block">
-              <span className="field-label">Новый юз</span>
-              <input className="field-input" type="text" value={name} onChange={(event) => setName(event.target.value)} />
+            <label className="auth-field">
+              <span className="auth-field-label">Новое имя</span>
+              <input className="auth-input" type="text" value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <button className="nv-button" type="submit" disabled={pending !== null}>Отправить письмо</button>
           </form>
-        </article>
+        </section>
 
-        <article className="surface-card platform-install-card platform-install-card-dense">
-          <div className="card-heading"><h2>Изменить почту</h2></div>
+        <section className="auth-copy-block">
+          <div>
+            <h3>Почта</h3>
+            <p className="hero-support-text">Новый адрес подтверждается по ссылке из письма.</p>
+          </div>
           <form className="auth-form" onSubmit={handleEmailChange}>
-            <label className="field-block">
-              <span className="field-label">Новая почта</span>
-              <input className="field-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+            <label className="auth-field">
+              <span className="auth-field-label">Новая почта</span>
+              <input className="auth-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
             </label>
             <button className="nv-button" type="submit" disabled={pending !== null}>Отправить письмо</button>
           </form>
-        </article>
+        </section>
 
-        <article className="surface-card platform-install-card platform-install-card-dense profile-password-card">
-          <div className="card-heading"><h2>Изменить пароль</h2></div>
+        <section className="auth-copy-block">
+          <div>
+            <h3>Пароль</h3>
+            <p className="hero-support-text">Новый пароль задаётся после перехода по ссылке из письма.</p>
+          </div>
           <form className="auth-form" onSubmit={handlePasswordChange}>
-            <label className="field-block">
-              <span className="field-label">Проверка требований</span>
+            <label className="auth-field">
+              <span className="auth-field-label">Проверить пароль заранее</span>
               <input
-                className="field-input"
+                className="auth-input"
                 type="password"
                 value={demoPassword}
                 onChange={(event) => setDemoPassword(event.target.value)}
                 onFocus={() => setFocused(true)}
-                placeholder="Проверь пароль заранее"
+                placeholder="Введите новый пароль"
               />
             </label>
             <PasswordStrength password={demoPassword} visible={focused || demoPassword.length > 0} />
-            {passwordHint ? <div className="form-message">Новый пароль задаётся после перехода по ссылке из письма.</div> : null}
+            {passwordHint ? <div className="hero-support-text">Ссылка из письма откроет финальный шаг смены пароля.</div> : null}
             <button className="nv-button" type="submit" disabled={pending !== null}>Отправить письмо</button>
           </form>
-        </article>
-      </section>
+        </section>
 
-      {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
-      {message ? <div className="form-message is-success">{message}</div> : null}
+        {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
+        {message ? <div className="form-message is-success">{message}</div> : null}
 
-      <div className="auth-footer-note">
-        Нужен сброс пароля без входа? <Link to="/reset-password">Открыть страницу сброса</Link>
+        <div className="auth-footer-note">
+          Нужен сброс без входа? <Link to="/reset-password">Открыть страницу сброса</Link>
+        </div>
       </div>
-    </div>
+    </AuthPageLayout>
   );
 }

@@ -1,47 +1,60 @@
 import { Link } from 'react-router-dom';
-import { NeuralVDecor } from '../components/NeuralVDecor';
+import { StoryScene } from '../components/StoryScene';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
 import { getArtifact, getArtifactSystemRequirements, getArtifactVersion } from '../lib/manifest';
+import '../styles/story.css';
 
-const signalCards = [
+const scenes = [
   {
-    title: 'Не одна кнопка',
-    text: 'Проверка не сводится к одному локальному вердикту. Клиент и сервер работают как разные слои.'
+    title: 'Проверка строится по этапам',
+    body: 'Сначала клиент быстро собирает локальную картину. Если этого мало, дальше подключается более глубокий маршрут, а не повтор той же кнопки под другим названием.',
+    accent: 'Быстрый старт и глубокая проверка не смешиваются в один шаг.',
+    visual: 'route' as const
   },
   {
-    title: 'Понятная установка',
-    text: 'У каждой платформы свой install flow, а не одна и та же оболочка под разными иконками.'
+    title: 'У каждой платформы свой нормальный клиент',
+    body: 'Android, Windows и Linux не обязаны выглядеть одинаково. Главное другое: чтобы на каждой системе был понятный сценарий установки, входа и проверки.',
+    accent: 'Один продукт, разные клиенты под реальные устройства.',
+    visual: 'platforms' as const
   },
   {
-    title: 'Нормальный продуктовый режим',
-    text: 'История, аккаунт, обновления и release-маршрут привязаны к конкретной платформе, а не к рекламной витрине.'
+    title: 'Нужна не витрина, а понятный маршрут',
+    body: 'Пользователь должен понимать, что происходит с файлом, где заканчивается локальная часть и когда начинается более тяжёлый анализ. Это важнее, чем лишний декоративный экран.',
+    accent: 'Чем сложнее проверка, тем важнее прозрачное описание.',
+    visual: 'privacy' as const
   }
 ] as const;
 
 const faqItems = [
   {
-    q: 'Что такое NeuralV?',
-    a: 'Это антивирус с отдельными клиентами под Android, Windows и Linux. У каждой платформы свой интерфейс, свой сценарий установки и свой маршрут проверки.'
+    question: 'Что такое NeuralV',
+    answer:
+      'Это антивирус с отдельными клиентами под Android, Windows и Linux. На каждой системе используется свой интерфейс и свой установочный путь, но аккаунт и базовая логика защиты остаются общими.'
   },
   {
-    q: 'Можно ли ему доверять?',
-    a: 'Да, если тебе важны прозрачная установка, понятная схема проверки и честные ограничения. Здесь нет обещания магического результата одной кнопкой.'
+    question: 'Можно ли ему доверять',
+    answer:
+      'Сайт и клиенты не обещают магию одной кнопкой. Проверка разбита на этапы, а способы установки и ограничения не прячутся в мелкий текст.'
   },
   {
-    q: 'Как проходит проверка?',
-    a: 'Сначала клиент быстро собирает базовую картину. Если локального сигнала мало, дальше включается более глубокий серверный маршрут и перепроверка результата.'
+    question: 'Как проходит проверка',
+    answer:
+      'Клиент начинает с более быстрой локальной части. Если этого мало, дальше подключается более глубокий маршрут. Из-за этого результаты не сводятся к одной мгновенной реакции на всё подряд.'
   },
   {
-    q: 'Что уходит на сервер?',
-    a: 'Это зависит от платформы и режима. Для глубоких маршрутов часть данных и артефактов уходит на серверный анализ. Локальная быстрая часть остаётся отдельным слоем.'
+    question: 'Что остаётся локально',
+    answer:
+      'Локальный клиент сначала собирает и показывает базовую картину на устройстве. Дальше всё зависит от выбранного режима и платформы.'
   },
   {
-    q: 'Чем отличаются платформы?',
-    a: 'Android, Windows и Linux не сводятся в одну и ту же оболочку. Разные клиенты решают похожую задачу, но делают это по-разному.'
+    question: 'Чем отличаются версии',
+    answer:
+      'Android идёт как один APK. Windows поддерживает setup, portable и установку через NV. На Linux основной поддерживаемый путь сейчас идёт через NV.'
   },
   {
-    q: 'С чего начать?',
-    a: 'Выбери платформу, проверь системные требования, установи клиент и уже потом решай, нужен ли тебе аккаунт и глубокая проверка.'
+    question: 'Зачем нужен сайт',
+    answer:
+      'Через сайт удобнее пройти вход, восстановить пароль, открыть профиль и сразу увидеть актуальные версии клиентов без длинных инструкций.'
   }
 ] as const;
 
@@ -50,7 +63,7 @@ function usePlatformSummary(platform: 'android' | 'windows' | 'linux' | 'shell')
   const artifact = getArtifact(manifestState.manifest, platform === 'shell' ? 'shell' : platform);
   return {
     version: getArtifactVersion(manifestState.manifest, platform) || 'pending',
-    requirement: getArtifactSystemRequirements(artifact, manifestState.manifest)[0] || 'ожидает manifest',
+    requirement: getArtifactSystemRequirements(artifact, manifestState.manifest)[0] || '',
     downloadUrl: artifact?.downloadUrl || manifestState.manifest.downloadUrl
   };
 }
@@ -61,117 +74,88 @@ export function HomePage() {
   const linux = usePlatformSummary('linux');
 
   return (
-    <div className="page-stack home-stack">
-      <section className="hero-shell home-hero-shell home-hero-shell-rich">
-        <div className="hero-copy hero-copy-wide home-hero-copy">
-          <div className="home-hero-title">
+    <div className="page-stack story-page-shell">
+      <section className="story-hero">
+        <div className="story-hero-center">
+          <article className="story-hero-card">
             <h1>NeuralV</h1>
-            <div className="hero-actions home-hero-actions">
+            <p>
+              Антивирус с отдельными клиентами под Android, Windows и Linux. Проверка идёт по этапам, установка
+              объясняется сразу, а важные вещи не прячутся за витриной из одинаковых карточек.
+            </p>
+            <div className="story-hero-actions">
               <a className="nv-button" href="#downloads">Скачать</a>
               <Link className="shell-chip" to="/register">Аккаунт</Link>
             </div>
+            <div className="story-meta-row">
+              <div className="story-meta-chip">Android {android.version}</div>
+              <div className="story-meta-chip">Windows {windows.version}</div>
+              <div className="story-meta-chip">Linux {linux.version}</div>
+            </div>
+          </article>
+
+          <div className="story-scroll-cue" aria-hidden="true">
+            <div className="story-scroll-arrow" />
           </div>
-
-          <div className="home-signal-grid">
-            {signalCards.map((item) => (
-              <article key={item.title} className="surface-card info-card info-card-compact">
-                <h2>{item.title}</h2>
-                <p>{item.text}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-
-        <NeuralVDecor variant="home" className="page-decor page-decor-home" />
-      </section>
-
-      <section className="section-block section-block-split">
-        <div className="section-heading">
-          <h2>Как это устроено</h2>
-        </div>
-        <div className="section-grid split-info-grid">
-          <article className="surface-card stage-card stage-card-wide">
-            <div className="stage-step">1</div>
-            <h3>Локальный старт</h3>
-            <p>Клиент быстро собирает базовую картину и даёт первичный сигнал без тяжёлой лишней нагрузки.</p>
-          </article>
-          <article className="surface-card stage-card stage-card-wide">
-            <div className="stage-step">2</div>
-            <h3>Глубокий маршрут</h3>
-            <p>Если случай сложный, часть проверки уходит на сервер. Там результат перепроверяется до того, как вернуться к пользователю.</p>
-          </article>
-          <article className="surface-card stage-card stage-card-wide">
-            <div className="stage-step">3</div>
-            <h3>Итог без лишнего шума</h3>
-            <p>На витрине и в интерфейсе остаётся только то, что реально помогает понять статус, угрозы и дальнейшее действие.</p>
-          </article>
         </div>
       </section>
 
-      <section className="section-block faq-section-shell">
-        <div className="section-heading">
-          <h2>Частые вопросы</h2>
-        </div>
+      <div className="story-track">
+        {scenes.map((scene) => (
+          <StoryScene
+            key={scene.title}
+            title={scene.title}
+            body={scene.body}
+            accent={scene.accent}
+            visual={scene.visual}
+          />
+        ))}
+      </div>
 
-        <div className="faq-shell-grid">
-          <div className="faq-list faq-list-expanded">
-            {faqItems.map((item, index) => (
-              <details key={item.q} className="faq-item" open={index === 0}>
-                <summary className="faq-question">{item.q}</summary>
-                <div className="faq-answer">
-                  <p>{item.a}</p>
+      <section className="story-faq-section">
+        <div className="story-faq-grid">
+          <article className="story-faq-intro">
+            <h2>Частые вопросы</h2>
+            <p>
+              Коротко о том, что обычно спрашивают перед установкой: как устроена проверка, что видно на сайте и
+              чем отличаются клиенты на разных системах.
+            </p>
+          </article>
+          <div className="story-faq-list">
+            {faqItems.map((item) => (
+              <details key={item.question} className="story-faq-item">
+                <summary className="story-faq-question">{item.question}</summary>
+                <div className="story-faq-answer">
+                  <p>{item.answer}</p>
                 </div>
               </details>
             ))}
           </div>
-
-          <div className="faq-side-stack">
-            <article className="surface-card info-card faq-side-card accent-card">
-              <h3>Android</h3>
-              <strong>{android.version}</strong>
-              <p>{android.requirement}</p>
-              <Link className="shell-chip" to="/android">Открыть</Link>
-            </article>
-            <article className="surface-card info-card faq-side-card accent-card">
-              <h3>Windows</h3>
-              <strong>{windows.version}</strong>
-              <p>{windows.requirement}</p>
-              <Link className="shell-chip" to="/windows">Открыть</Link>
-            </article>
-            <article className="surface-card info-card faq-side-card">
-              <h3>Linux</h3>
-              <strong>{linux.version}</strong>
-              <p>{linux.requirement}</p>
-              <Link className="shell-chip" to="/linux">Открыть</Link>
-            </article>
-          </div>
         </div>
       </section>
 
-      <section className="section-block downloads-section" id="downloads">
-        <div className="section-heading">
-          <h2>Загрузки</h2>
-        </div>
-        <div className="download-grid download-grid-dense">
-          <article className="surface-card download-card download-card-large">
-            <div className="download-head"><h3>Android</h3><span>{android.version}</span></div>
-            <p className="download-requirement">{android.requirement}</p>
-            <div className="download-actions">
-              <Link className="nv-button" to="/android">Перейти</Link>
+      <section className="story-download-section" id="downloads">
+        <h2>Загрузки</h2>
+        <div className="story-download-grid">
+          <article className="story-download-card">
+            <h3>Android</h3>
+            <p>{android.requirement || 'Android 8.0+ (API 26)'}</p>
+            <div className="story-download-actions">
+              <Link className="nv-button" to="/android">Открыть страницу</Link>
             </div>
           </article>
-          <article className="surface-card download-card download-card-large accent-card">
-            <div className="download-head"><h3>Windows</h3><span>{windows.version}</span></div>
-            <p className="download-requirement">{windows.requirement}</p>
-            <div className="download-actions">
-              <Link className="nv-button" to="/windows">Перейти</Link>
+          <article className="story-download-card">
+            <h3>Windows</h3>
+            <p>{windows.requirement || 'Windows 10/11 x64'}</p>
+            <div className="story-download-actions">
+              <Link className="nv-button" to="/windows">Открыть страницу</Link>
             </div>
           </article>
-          <article className="surface-card download-card download-card-large">
-            <div className="download-head"><h3>Linux</h3><span>{linux.version}</span></div>
-            <p className="download-requirement">{linux.requirement}</p>
-            <div className="download-actions">
-              <Link className="nv-button" to="/linux">Перейти</Link>
+          <article className="story-download-card">
+            <h3>Linux</h3>
+            <p>{linux.requirement || 'x86_64 Linux'}</p>
+            <div className="story-download-actions">
+              <Link className="nv-button" to="/linux">Открыть страницу</Link>
             </div>
           </article>
         </div>

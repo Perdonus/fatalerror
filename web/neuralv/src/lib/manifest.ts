@@ -284,9 +284,20 @@ export function getArtifactSystemRequirements(
     ? (artifact.metadata as Record<string, unknown>)
     : undefined;
 
-  const candidates: unknown[] = [
-    metadata?.systemRequirements,
+  const preferredCandidates: unknown[] = [
     metadata?.system_requirements,
+    metadata?.systemRequirements
+  ];
+  const preferred = preferredCandidates
+    .flatMap((candidate) => readRequirementCandidate(candidate))
+    .map((entry) => entry.trim())
+    .filter((entry): entry is string => entry.length > 0);
+
+  if (preferred.length > 0) {
+    return preferred.filter((entry, index, list) => list.indexOf(entry) === index);
+  }
+
+  const candidates: unknown[] = [
     metadata?.requirements,
     metadata?.minimumRequirements,
     metadata?.minimum_requirements,

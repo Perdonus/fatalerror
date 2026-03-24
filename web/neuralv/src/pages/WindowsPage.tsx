@@ -1,81 +1,71 @@
 import { useMemo } from 'react';
-import { NeuralVDecor } from '../components/NeuralVDecor';
+import { StoryScene } from '../components/StoryScene';
 import { getArtifact, getArtifactSystemRequirements, getArtifactVersion } from '../lib/manifest';
 import { useReleaseManifest } from '../hooks/useReleaseManifest';
-
-const installModes = [
-  {
-    title: 'Setup',
-    text: 'Обычная установка с ярлыками, launcher/updater цепочкой и привязкой к install root.',
-    button: 'Скачать setup',
-    key: 'setup'
-  },
-  {
-    title: 'Portable',
-    text: 'Запуск без инсталляции, если ты сам контролируешь директорию клиента и способ обновления.',
-    button: 'Скачать portable',
-    key: 'portable'
-  },
-  {
-    title: 'NV',
-    text: 'Установка и дальнейшее обновление через NV одним и тем же путём, без ручного обхода пакета.',
-    button: 'Открыть команды',
-    key: 'nv'
-  }
-] as const;
+import '../styles/story.css';
 
 export function WindowsPage() {
   const manifestState = useReleaseManifest('windows');
   const artifact = useMemo(() => getArtifact(manifestState.manifest, 'windows'), [manifestState.manifest]);
   const version = getArtifactVersion(manifestState.manifest, 'windows') || 'pending';
-  const requirements = getArtifactSystemRequirements(artifact, manifestState.manifest);
+  const requirement = getArtifactSystemRequirements(artifact, manifestState.manifest)[0] || 'Windows 10/11 x64';
   const setupUrl = manifestState.manifest.setupUrl || artifact?.downloadUrl || manifestState.manifest.downloadUrl;
   const portableUrl = manifestState.manifest.portableUrl || artifact?.downloadUrl || manifestState.manifest.downloadUrl;
 
   return (
-    <div className="page-stack platform-page-stack">
-      <section className="hero-shell platform-shell platform-shell-rich">
-        <div className="hero-copy hero-copy-tight platform-hero-copy">
-          <h1>NeuralV для Windows</h1>
-          <div className="hero-actions">
-            {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать setup</a> : null}
-            <a className="shell-chip" href="#windows-install">Установка</a>
+    <div className="page-stack platform-story-shell">
+      <section className="platform-hero">
+        <article className="platform-hero-card">
+          <div className="platform-hero-copy">
+            <h1>NeuralV для Windows</h1>
+            <p>Нативный клиент для обычной установки, portable-режима и обновления через NV.</p>
+            <div className="platform-hero-actions">
+              {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать setup</a> : null}
+              {portableUrl ? <a className="shell-chip" href={portableUrl} target="_blank" rel="noreferrer">Скачать portable</a> : null}
+            </div>
           </div>
-
-          <div className="platform-card-grid platform-card-grid-two">
-            <article className="surface-card platform-mini-card accent-card">
-              <h2>Версия</h2>
+          <div className="platform-hero-grid">
+            <div className="platform-main-stat">
+              <span className="story-scene-kicker">Версия и требования</span>
               <strong>{version}</strong>
-              <p>{requirements[0] || 'Требования ещё не дошли в manifest.'}</p>
-            </article>
-            <article className="surface-card platform-mini-card">
-              <h2>Bundle</h2>
-              <p>Windows-клиент живёт как нормальный desktop bundle: launcher, updater, GUI и CLI не свалены в одну случайную папку.</p>
-            </article>
+              <p>{requirement}</p>
+            </div>
+            <div className="platform-meta-chip">Setup</div>
+            <div className="platform-meta-chip">Portable</div>
+            <div className="platform-meta-chip">Установка через NV</div>
           </div>
-        </div>
-
-        <div className="platform-hero-side">
-          <NeuralVDecor variant="windows" className="page-decor" />
-        </div>
+        </article>
       </section>
 
-      <section className="section-grid section-grid-platform platform-install-grid" id="windows-install">
-        {installModes.map((item) => (
-          <article key={item.key} className="surface-card platform-install-card platform-install-card-rich">
-            <div className="card-heading">
-              <h2>{item.title}</h2>
-            </div>
-            <p>{item.text}</p>
-            {item.key === 'setup' ? (
-              setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">{item.button}</a> : <button className="nv-button is-disabled" type="button" disabled>{item.button}</button>
-            ) : item.key === 'portable' ? (
-              portableUrl ? <a className="nv-button" href={portableUrl} target="_blank" rel="noreferrer">{item.button}</a> : <button className="nv-button is-disabled" type="button" disabled>{item.button}</button>
-            ) : (
-              <div className="command-card"><pre>irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
-            )}
+      <div className="story-track">
+        <StoryScene
+          compact
+          title="Один клиент, несколько понятных путей"
+          body="Setup подходит для обычной установки. Portable удобен, если директорию ты контролируешь сам. NV остаётся коротким путём для установки и обновления."
+          accent="Выбирай тот способ, который подходит именно твоей машине."
+          visual="windows"
+        />
+      </div>
+
+      <section className="platform-install-shell" id="windows-install">
+        <h2>Установка</h2>
+        <div className="platform-install-grid">
+          <article className="platform-install-card">
+            <h3>Setup</h3>
+            <p>Обычная установка с ярлыками и дальнейшими обновлениями.</p>
+            {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать setup</a> : null}
           </article>
-        ))}
+          <article className="platform-install-card">
+            <h3>Portable</h3>
+            <p>Подходит, если ты сам управляешь директорией и не хочешь стандартную установку.</p>
+            {portableUrl ? <a className="nv-button" href={portableUrl} target="_blank" rel="noreferrer">Скачать portable</a> : null}
+          </article>
+          <article className="platform-command-card">
+            <h3>Через NV</h3>
+            <p>Если удобно ставить и обновлять клиент одной командой.</p>
+            <div className="command-card"><pre>irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
+          </article>
+        </div>
       </section>
     </div>
   );

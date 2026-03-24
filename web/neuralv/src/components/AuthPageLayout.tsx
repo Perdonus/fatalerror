@@ -19,7 +19,7 @@ export function AuthPageLayout({ title, description, aside, footer, children }: 
           {description ? <p>{description}</p> : null}
           {footer ? <div className="auth-hero-footer">{footer}</div> : null}
         </div>
-        <div className="auth-page-decor-wrap">
+        <div className="auth-page-decor-wrap" aria-hidden="true">
           <NeuralVDecor variant="account" className="page-decor auth-page-decor" />
         </div>
         <article className="content-card auth-card auth-form-card">{children}</article>

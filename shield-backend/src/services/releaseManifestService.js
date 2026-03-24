@@ -20,6 +20,14 @@ const PLATFORM_FALLBACK_VERSIONS = Object.freeze({
     linux: loadVersionFile('linux-gui.txt'),
     shell: loadVersionFile('linux-cli.txt')
 });
+const DEFAULT_SYSTEM_REQUIREMENTS = Object.freeze({
+    android: ['Android 8.0+ (API 26)'],
+    windows: ['Windows 10/11 x64'],
+    linux: ['x86_64 Linux'],
+    shell: ['x86_64 Linux', 'Терминал и доступ к сети'],
+    site: ['Современный браузер с поддержкой JavaScript']
+});
+const PLATFORM_SYSTEM_REQUIREMENTS = loadConfiguredSystemRequirements();
 const PACKAGE_REGISTRY_URL = String(process.env.PACKAGE_REGISTRY_URL || '/api/packages').trim() || '/api/packages';
 const GITHUB_API_HEADERS = {
     Accept: 'application/vnd.github.raw+json',
@@ -123,6 +131,68 @@ function loadVersionFile(fileName) {
         console.warn(`Release version file ${fileName} load failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     return 'pending';
+}
+
+function normalizeSystemRequirementEntry(value) {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const normalized = value.trim().replace(/\s+/g, ' ');
+    return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeSystemRequirementList(value, fallback = []) {
+    const source = Array.isArray(value) ? value : fallback;
+    const lines = source
+        .map((entry) => normalizeSystemRequirementEntry(entry))
+        .filter(Boolean);
+
+    return lines.filter((entry, index) => lines.indexOf(entry) === index);
+}
+
+function loadConfiguredSystemRequirements() {
+    const filePath = path.resolve(__dirname, '../../../versions/system-requirements.json');
+    let parsed = {};
+
+    try {
+        parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (error) {
+        console.warn(`Release system requirements load failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return Object.freeze(Object.fromEntries(
+        Object.entries(DEFAULT_SYSTEM_REQUIREMENTS).map(([platform, fallback]) => {
+            const configured = parsed && typeof parsed === 'object' ? parsed[platform] : undefined;
+            return [platform, normalizeSystemRequirementList(configured, fallback)];
+        })
+    ));
+}
+
+function ensureArtifactSystemRequirements(artifact) {
+    if (!artifact || typeof artifact !== 'object') {
+        return artifact;
+    }
+
+    const platform = normalizeReleasePlatform(artifact.platform);
+    const metadata = artifact.metadata && typeof artifact.metadata === 'object' ? artifact.metadata : {};
+    const preferred = normalizeSystemRequirementList(
+        metadata.system_requirements,
+        normalizeSystemRequirementList(metadata.systemRequirements)
+    );
+    const fallback = PLATFORM_SYSTEM_REQUIREMENTS[platform] || [];
+    const requirements = preferred.length > 0 ? preferred : fallback;
+
+    if (!requirements.length) {
+        return artifact;
+    }
+
+    return {
+        ...artifact,
+        metadata: {
+            ...metadata,
+            system_requirements: [...requirements]
+        }
+    };
 }
 
 function buildBranchSources(registryPackages) {
@@ -340,7 +410,7 @@ function fallbackArtifacts() {
                 available: false
             }
         }
-    ];
+    ].map((artifact) => ensureArtifactSystemRequirements(artifact));
 }
 
 function normalizeArtifact(item, source) {
@@ -689,7 +759,7 @@ async function getReleaseManifest() {
                 continue;
             }
             const registryMatch = registryIndex.get(`${source.repo}::${source.branch}::${normalized.platform}`);
-            const withRegistry = attachRegistryMetadata(normalized, registryMatch);
+            const withRegistry = ensureArtifactSystemRequirements(attachRegistryMetadata(normalized, registryMatch));
             const current = merged.get(withRegistry.platform);
             merged.set(withRegistry.platform, current ? mergeArtifact(current, withRegistry) : withRegistry);
         }
@@ -698,7 +768,7 @@ async function getReleaseManifest() {
     for (const [platform, artifact] of Array.from(merged.entries())) {
         const registryMatch = registryIndex.get(`${artifact.metadata?.source_repo || ''}::${artifact.metadata?.source_branch || ''}::${platform}`);
         if (registryMatch) {
-            merged.set(platform, attachRegistryMetadata(artifact, registryMatch));
+            merged.set(platform, ensureArtifactSystemRequirements(attachRegistryMetadata(artifact, registryMatch)));
         }
     }
 
@@ -713,6 +783,7 @@ async function getReleaseManifest() {
         sources,
         artifacts: PLATFORM_ORDER
             .map((platform) => merged.get(platform))
+            .map((artifact) => ensureArtifactSystemRequirements(artifact))
             .filter(Boolean)
     };
 

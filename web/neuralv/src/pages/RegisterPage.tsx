@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AuthCodeStep } from '../components/AuthCodeStep';
 import { AuthPageLayout } from '../components/AuthPageLayout';
 import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter';
-import { SessionSummaryCard } from '../components/SessionSummaryCard';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
   resendRegisterCode,
@@ -16,6 +15,24 @@ import type { SiteAuthChallenge, SiteAuthSession } from '../lib/siteAuth';
 type RegisterPageProps = {
   onAuthenticated?: (session: SiteAuthSession) => void;
 };
+
+function RegisterAside({ session }: { session: SiteAuthSession | null }) {
+  if (session) {
+    return (
+      <article className="content-card auth-session-card auth-session-empty">
+        <h3>Аккаунт готов</h3>
+        <p>{session.user.email} подтверждён. Теперь можно перейти в профиль и продолжить настройку.</p>
+      </article>
+    );
+  }
+
+  return (
+    <article className="content-card auth-session-card auth-session-empty">
+      <h3>Что понадобится</h3>
+      <p>Имя, почта и пароль. После этого останется подтвердить адрес кодом из письма.</p>
+    </article>
+  );
+}
 
 export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   const { setSession: setAuthSession } = useSiteAuth();
@@ -103,9 +120,9 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   return (
     <AuthPageLayout
       title="Регистрация"
-      description="Новый аккаунт создаётся через письмо и подтверждение кодом."
-      aside={<SessionSummaryCard session={session} title="После подтверждения" />}
-      footer={<span className="hero-support-text">Пароль проверяется до отправки письма, чтобы не терять шаг позже.</span>}
+      description="Новый аккаунт подтверждается письмом и коротким кодом."
+      aside={<RegisterAside session={session} />}
+      footer={<span className="hero-support-text">Пароль проверяется сразу, чтобы письмо пришло уже на готовый сценарий.</span>}
     >
       {challenge ? (
         <AuthCodeStep
@@ -121,7 +138,8 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
             setError(null);
             setInfo(null);
           }}
-          helper={info ? <p className="hero-support-text">{info}</p> : null}
+          submitLabel="Создать аккаунт"
+          helper={<p className="hero-support-text">{info || 'Письмо уже в пути. Если его нет, можно отправить код ещё раз.'}</p>}
         />
       ) : (
         <form className="auth-form auth-form-register" onSubmit={handleStart}>
@@ -170,7 +188,7 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
 
           <div className="auth-actions auth-actions-primary">
             <button className="nv-button" type="submit" disabled={!ready || loading}>
-              {loading ? 'Отправляем код...' : 'Создать аккаунт'}
+              {loading ? 'Проверяем...' : 'Отправить код'}
             </button>
           </div>
 

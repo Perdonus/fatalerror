@@ -2,7 +2,6 @@ import { FormEvent, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthCodeStep } from '../components/AuthCodeStep';
 import { AuthPageLayout } from '../components/AuthPageLayout';
-import { SessionSummaryCard } from '../components/SessionSummaryCard';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
   resendLoginCode,
@@ -16,6 +15,24 @@ type LoginPageProps = {
 };
 
 const initialChallenge: SiteAuthChallenge | null = null;
+
+function LoginAside({ session }: { session: SiteAuthSession | null }) {
+  if (session) {
+    return (
+      <article className="content-card auth-session-card auth-session-empty">
+        <h3>Вход подтверждён</h3>
+        <p>{session.user.name || 'Аккаунт NeuralV'} подключён. Теперь можно перейти к профилю и настройкам.</p>
+      </article>
+    );
+  }
+
+  return (
+    <article className="content-card auth-session-card auth-session-empty">
+      <h3>Как это работает</h3>
+      <p>Сначала проверяется пароль, потом на почту приходит короткий код подтверждения.</p>
+    </article>
+  );
+}
 
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const { setSession: setAuthSession } = useSiteAuth();
@@ -101,9 +118,9 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
 
   return (
     <AuthPageLayout
-      title="Вход"
-      description="Тот же аккаунт NeuralV и тот же код подтверждения по почте."
-      aside={<SessionSummaryCard session={session} title="После входа" />}
+      title="Вход в NeuralV"
+      description="Почта, пароль и короткое подтверждение по коду."
+      aside={<LoginAside session={session} />}
       footer={<span className="hero-support-text">Код приходит на почту только после проверки пароля.</span>}
     >
       {challenge ? (
@@ -120,7 +137,8 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
             setError(null);
             setInfo(null);
           }}
-          helper={info ? <p className="hero-support-text">{info}</p> : null}
+          submitLabel="Войти"
+          helper={<p className="hero-support-text">{info || 'Код обычно приходит быстро. Если письмо задержалось, его можно отправить ещё раз.'}</p>}
         />
       ) : (
         <form className="auth-form auth-form-login" onSubmit={handleStart}>
@@ -156,13 +174,13 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
 
           <div className="auth-actions auth-actions-primary">
             <button className="nv-button" type="submit" disabled={!ready || loading}>
-              {loading ? 'Отправляем код...' : 'Получить код'}
+              {loading ? 'Проверяем...' : 'Продолжить'}
             </button>
           </div>
 
           <div className="auth-actions auth-actions-secondary auth-actions-wrap">
             <Link className="shell-chip" to="/reset-password">Сбросить пароль</Link>
-            <Link className="shell-link auth-inline-link" to="/register">Нет аккаунта? Регистрация</Link>
+            <Link className="shell-link auth-inline-link" to="/register">Создать аккаунт</Link>
           </div>
         </form>
       )}

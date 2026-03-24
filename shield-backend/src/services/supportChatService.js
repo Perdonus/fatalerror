@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const { fetchUserById } = require('./accountEntitlementsService');
@@ -12,6 +14,7 @@ let schemaReady = false;
 let schemaReadyPromise = null;
 let syncPromise = null;
 let cachedBotIdentity = null;
+const execFileAsync = promisify(execFile);
 
 function createHttpError(status, message, code) {
     const error = new Error(message);
@@ -157,22 +160,49 @@ async function callTelegram(method, payload) {
         throw createHttpError(503, config.message, 'SUPPORT_TELEGRAM_UNAVAILABLE');
     }
 
-    const response = await fetch(`${SUPPORT_TELEGRAM_API_BASE}/bot${config.token}/${method}`, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json'
-        },
-        body: JSON.stringify(payload || {}),
-        signal: AbortSignal.timeout(20000)
-    });
+    const url = `${SUPPORT_TELEGRAM_API_BASE}/bot${config.token}/${method}`;
+    const requestBody = JSON.stringify(payload || {});
 
-    const json = await response.json().catch(() => null);
-    if (!response.ok || !json || json.ok !== true) {
-        const description = String(json?.description || `Telegram API ${response.status}`);
-        throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json'
+            },
+            body: requestBody,
+            signal: AbortSignal.timeout(20000)
+        });
+
+        const json = await response.json().catch(() => null);
+        if (!response.ok || !json || json.ok !== true) {
+            const description = String(json?.description || `Telegram API ${response.status}`);
+            throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
+        }
+
+        return json.result;
+    } catch (error) {
+        const { stdout } = await execFileAsync('curl', [
+            '-sS',
+            '--connect-timeout', '10',
+            '--max-time', '30',
+            '-X', 'POST',
+            '-H', 'content-type: application/json',
+            '--data', requestBody,
+            url
+        ], {
+            maxBuffer: 4 * 1024 * 1024
+        }).catch((curlError) => {
+            throw createHttpError(502, curlError?.message || error?.message || 'Telegram API unavailable', 'SUPPORT_TELEGRAM_API_ERROR');
+        });
+
+        const json = JSON.parse(String(stdout || 'null'));
+        if (!json || json.ok !== true) {
+            const description = String(json?.description || 'Telegram API unavailable');
+            throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
+        }
+
+        return json.result;
     }
-
-    return json.result;
 }
 
 async function getBotIdentity() {
@@ -386,6 +416,7 @@ async function createSupportChat(userId, db = pool) {
     }
 
     let created = null;
+    let chatId = null;
     try {
         const existing = await findOpenChatForUser(userId, db);
         if (existing) {
@@ -411,7 +442,7 @@ async function createSupportChat(userId, db = pool) {
             };
         }
 
-        const chatId = uuidv4();
+        chatId = uuidv4();
         const timestamp = nowMs();
         await db.query(
             `INSERT INTO support_chats (id, user_id, status, last_message_from, created_at, updated_at)

@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const pool = require('../db/pool');
 
 const RELEASE_NOTIFIER_TELEGRAM_API_BASE = String(process.env.RELEASE_NOTIFIER_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
@@ -9,6 +11,7 @@ const RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH = Math.max(512, Math.min(3900, Number(
 let schemaReady = false;
 let schemaReadyPromise = null;
 let cachedBotIdentity = null;
+const execFileAsync = promisify(execFile);
 
 function nowMs() {
     return Date.now();
@@ -195,22 +198,49 @@ async function callReleaseNotifierTelegram(method, payload) {
         throw createHttpError(503, config.message, 'RELEASE_NOTIFIER_UNAVAILABLE');
     }
 
-    const response = await fetch(`${RELEASE_NOTIFIER_TELEGRAM_API_BASE}/bot${config.token}/${method}`, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json'
-        },
-        body: JSON.stringify(payload || {}),
-        signal: AbortSignal.timeout(20000)
-    });
+    const url = `${RELEASE_NOTIFIER_TELEGRAM_API_BASE}/bot${config.token}/${method}`;
+    const requestBody = JSON.stringify(payload || {});
 
-    const json = await response.json().catch(() => null);
-    if (!response.ok || !json || json.ok !== true) {
-        const description = String(json?.description || `Telegram API ${response.status}`);
-        throw createHttpError(502, description, 'RELEASE_NOTIFIER_TELEGRAM_API_ERROR');
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json'
+            },
+            body: requestBody,
+            signal: AbortSignal.timeout(20000)
+        });
+
+        const json = await response.json().catch(() => null);
+        if (!response.ok || !json || json.ok !== true) {
+            const description = String(json?.description || `Telegram API ${response.status}`);
+            throw createHttpError(502, description, 'RELEASE_NOTIFIER_TELEGRAM_API_ERROR');
+        }
+
+        return json.result;
+    } catch (error) {
+        const { stdout } = await execFileAsync('curl', [
+            '-sS',
+            '--connect-timeout', '10',
+            '--max-time', '30',
+            '-X', 'POST',
+            '-H', 'content-type: application/json',
+            '--data', requestBody,
+            url
+        ], {
+            maxBuffer: 4 * 1024 * 1024
+        }).catch((curlError) => {
+            throw createHttpError(502, curlError?.message || error?.message || 'Telegram API unavailable', 'RELEASE_NOTIFIER_TELEGRAM_API_ERROR');
+        });
+
+        const json = JSON.parse(String(stdout || 'null'));
+        if (!json || json.ok !== true) {
+            const description = String(json?.description || 'Telegram API unavailable');
+            throw createHttpError(502, description, 'RELEASE_NOTIFIER_TELEGRAM_API_ERROR');
+        }
+
+        return json.result;
     }
-
-    return json.result;
 }
 
 async function getBotIdentity() {

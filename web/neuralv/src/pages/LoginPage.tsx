@@ -101,10 +101,10 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
 
   return (
     <AuthPageLayout
-      title="Вход в NeuralV"
-      description="Web-клиент использует тот же аккаунт и ту же двухшаговую авторизацию с кодом из почты."
-      aside={<SessionSummaryCard session={session} title="Что получится после входа" />}
-      footer={<span className="hero-support-text">Готовый hook для parent routing и protected pages.</span>}
+      title="Вход"
+      description="Тот же аккаунт NeuralV и тот же код подтверждения по почте."
+      aside={<SessionSummaryCard session={session} title="После входа" />}
+      footer={<span className="hero-support-text">Код приходит на почту только после проверки пароля.</span>}
     >
       {challenge ? (
         <AuthCodeStep
@@ -160,7 +160,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
             </button>
           </div>
 
-          <div className="auth-actions auth-actions-secondary">
+          <div className="auth-actions auth-actions-secondary auth-actions-wrap">
             <Link className="shell-chip" to="/reset-password">Сбросить пароль</Link>
             <Link className="shell-link auth-inline-link" to="/register">Нет аккаунта? Регистрация</Link>
           </div>

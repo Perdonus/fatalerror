@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { NeuralVDecor } from '../components/NeuralVDecor';
 import { PasswordStrength } from '../components/PasswordStrength';
 import {
   confirmPasswordReset,
@@ -96,11 +97,13 @@ export function ResetPasswordPage() {
 
   return (
     <div className="page-stack auth-page-stack">
-      <section className="hero-shell auth-shell reset-shell">
-        <div className="hero-copy hero-copy-tight">
-          <span className="eyebrow">NeuralV account</span>
-          <h1>{hasResetLink ? 'Новый пароль' : 'Сброс пароля'}</h1>
-          <p>{hasResetLink ? 'Пароль меняется прямо на сайте. Приложение здесь не участвует.' : 'Отправим письмо со ссылкой. Новый пароль задаётся прямо на сайте.'}</p>
+      <section className="hero-shell auth-shell reset-shell reset-shell-rich">
+        <div className="hero-copy hero-copy-tight auth-hero-copy auth-hero-copy-rich">
+          <div className="auth-hero-heading">
+            <h1>{hasResetLink ? 'Новый пароль' : 'Сброс пароля'}</h1>
+            <p>{hasResetLink ? 'Пароль меняется прямо на сайте. Приложение здесь не участвует.' : 'Отправим письмо со ссылкой. Новый пароль задаётся прямо на сайте.'}</p>
+          </div>
+          <NeuralVDecor variant="account" className="page-decor auth-page-decor" />
         </div>
 
         <article className="surface-card auth-card auth-card-wide">
@@ -142,7 +145,7 @@ export function ResetPasswordPage() {
               {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
               {message ? <div className="form-message is-success">{message}</div> : null}
 
-              <div className="auth-actions-row">
+              <div className="auth-actions-row auth-actions-row-wrap">
                 <button className="nv-button" type="submit" disabled={submitting || pending || !readyLink}>
                   {submitting ? 'Сохраняем...' : 'Обновить пароль'}
                 </button>
@@ -166,7 +169,7 @@ export function ResetPasswordPage() {
               {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
               {message ? <div className="form-message is-success">{message}</div> : null}
 
-              <div className="auth-actions-row">
+              <div className="auth-actions-row auth-actions-row-wrap">
                 <button className="nv-button" type="submit" disabled={submitting}>
                   {submitting ? 'Отправляем...' : 'Отправить письмо'}
                 </button>

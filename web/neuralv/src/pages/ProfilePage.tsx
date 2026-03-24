@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { NeuralVDecor } from '../components/NeuralVDecor';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import { PasswordStrength } from '../components/PasswordStrength';
 import {
@@ -110,14 +111,13 @@ export function ProfilePage() {
 
   return (
     <div className="page-stack profile-stack">
-      <section className="hero-shell profile-shell">
-        <div className="hero-copy hero-copy-tight">
-          <span className="eyebrow">NeuralV account</span>
+      <section className="hero-shell profile-shell profile-shell-rich">
+        <div className="hero-copy hero-copy-tight profile-hero-copy">
           <h1>Профиль</h1>
-          <p>Юз, почта и пароль меняются через письмо со ссылкой. Само изменение подтверждается уже на сайте.</p>
+          <p>Юз, почта и пароль подтверждаются через письмо и меняются уже на сайте, без ручной возни в клиенте.</p>
           <div className="hero-actions">
             <button className="nv-button" type="button" onClick={handleRefresh} disabled={pending !== null}>
-              {pending === 'refresh' ? 'Синхронизируем...' : 'Обновить профиль'}
+              {pending === 'refresh' ? 'Синхронизируем...' : 'Обновить'}
             </button>
             <button className="shell-chip" type="button" onClick={handleLogout} disabled={pending !== null}>
               {pending === 'logout' ? 'Выходим...' : 'Выйти'}
@@ -125,18 +125,21 @@ export function ProfilePage() {
           </div>
         </div>
 
-        <article className="surface-card profile-summary-card">
-          <div className="profile-copy-stack">
-            <span className="summary-kicker">Текущая сессия</span>
-            <strong>{user?.name || 'Аккаунт NeuralV'}</strong>
-            <span>{user?.email || 'Почта недоступна'}</span>
-            <span>{user?.is_premium ? 'Premium активен' : 'Обычный аккаунт'}</span>
-          </div>
-        </article>
+        <div className="platform-hero-aside">
+          <NeuralVDecor variant="account" className="page-decor page-decor-platform" />
+          <article className="surface-card profile-summary-card accent-card">
+            <div className="profile-copy-stack">
+              <span className="summary-kicker">Текущая сессия</span>
+              <strong>{user?.name || 'Аккаунт NeuralV'}</strong>
+              <span>{user?.email || 'Почта недоступна'}</span>
+              <span>{user?.is_premium ? 'Premium активен' : 'Обычный аккаунт'}</span>
+            </div>
+          </article>
+        </div>
       </section>
 
       <section className="section-grid section-grid-platform profile-form-grid">
-        <article className="surface-card platform-install-card">
+        <article className="surface-card platform-install-card platform-install-card-dense">
           <div className="card-heading"><h2>Изменить юз</h2></div>
           <form className="auth-form" onSubmit={handleNameChange}>
             <label className="field-block">
@@ -147,7 +150,7 @@ export function ProfilePage() {
           </form>
         </article>
 
-        <article className="surface-card platform-install-card">
+        <article className="surface-card platform-install-card platform-install-card-dense">
           <div className="card-heading"><h2>Изменить почту</h2></div>
           <form className="auth-form" onSubmit={handleEmailChange}>
             <label className="field-block">
@@ -158,22 +161,22 @@ export function ProfilePage() {
           </form>
         </article>
 
-        <article className="surface-card platform-install-card profile-password-card">
+        <article className="surface-card platform-install-card platform-install-card-dense profile-password-card">
           <div className="card-heading"><h2>Изменить пароль</h2></div>
           <form className="auth-form" onSubmit={handlePasswordChange}>
             <label className="field-block">
-              <span className="field-label">Требования к паролю</span>
+              <span className="field-label">Проверка требований</span>
               <input
                 className="field-input"
                 type="password"
                 value={demoPassword}
                 onChange={(event) => setDemoPassword(event.target.value)}
                 onFocus={() => setFocused(true)}
-                placeholder="Проверь требования заранее"
+                placeholder="Проверь пароль заранее"
               />
             </label>
             <PasswordStrength password={demoPassword} visible={focused || demoPassword.length > 0} />
-            {passwordHint ? <div className="form-message">Новый пароль задаётся уже после перехода по ссылке из письма.</div> : null}
+            {passwordHint ? <div className="form-message">Новый пароль задаётся после перехода по ссылке из письма.</div> : null}
             <button className="nv-button" type="submit" disabled={pending !== null}>Отправить письмо</button>
           </form>
         </article>

@@ -6,7 +6,6 @@ import { PasswordStrengthMeter } from '../components/PasswordStrengthMeter';
 import { SessionSummaryCard } from '../components/SessionSummaryCard';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
-  evaluatePasswordStrength,
   resendRegisterCode,
   startRegister,
   validatePasswordStrength,
@@ -32,7 +31,6 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   const [info, setInfo] = useState<string | null>(null);
   const [session, setSession] = useState<SiteAuthSession | null>(null);
 
-  const strength = useMemo(() => evaluatePasswordStrength(password), [password]);
   const passwordError = useMemo(() => validatePasswordStrength(password), [password]);
   const passwordsMatch = confirmPassword.length > 0 && confirmPassword === password;
   const ready = useMemo(() => {
@@ -104,9 +102,10 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
 
   return (
     <AuthPageLayout
-      title="Регистрация в NeuralV"
-      description="Новый web-auth flow уже готов под существующий backend challenge/verify цикл."
+      title="Регистрация"
+      description="Новый аккаунт создаётся через письмо и подтверждение кодом."
       aside={<SessionSummaryCard session={session} title="После подтверждения" />}
+      footer={<span className="hero-support-text">Пароль проверяется до отправки письма, чтобы не терять шаг позже.</span>}
     >
       {challenge ? (
         <AuthCodeStep
@@ -175,7 +174,7 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
             </button>
           </div>
 
-          <div className="auth-actions auth-actions-secondary">
+          <div className="auth-actions auth-actions-secondary auth-actions-wrap">
             <Link className="shell-link auth-inline-link" to="/login">Уже есть аккаунт? Войти</Link>
           </div>
         </form>

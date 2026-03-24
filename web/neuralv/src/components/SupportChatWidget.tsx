@@ -104,16 +104,13 @@ export function SupportChatWidget({
   open,
   defaultOpen = false,
   onOpenChange,
-  title = 'Поддержка',
-  subtitle = '',
-  launcherLabel = 'Поддержка',
+  title = 'Чат поддержки',
+  launcherLabel = 'Чат поддержки',
   launcherUnreadCount = 0,
   launcherPending = false,
   statusLabel,
-  nextPollLabel,
   messages = [],
   loading = false,
-  refreshing = false,
   sending = false,
   unavailable,
   placeholder = 'Опиши вопрос…',
@@ -123,13 +120,10 @@ export function SupportChatWidget({
   inputDisabled = false,
   onValueChange,
   onSend,
-  onRefresh,
   onRetryMessage,
   emptyTitle = DEFAULT_EMPTY_TITLE,
   emptyDescription = DEFAULT_EMPTY_DESCRIPTION,
-  closeLabel = 'Закрыть',
-  sendLabel = 'Отправить',
-  refreshLabel = 'Обновить'
+  sendLabel = 'Отправить'
 }: SupportChatWidgetProps) {
   const [isOpen, setIsOpen] = useControllableState(open, defaultOpen, onOpenChange);
   const [draft, setDraft] = useControllableState(value, defaultValue, onValueChange);
@@ -148,11 +142,8 @@ export function SupportChatWidget({
     if (sending || isSubmitting) {
       return 'Отправка';
     }
-    if (refreshing) {
-      return statusLabel || 'Обновляется';
-    }
     return statusLabel || 'Онлайн';
-  }, [isSubmitting, isUnavailable, refreshing, sending, statusLabel]);
+  }, [isSubmitting, isUnavailable, sending, statusLabel]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -268,23 +259,6 @@ export function SupportChatWidget({
           <header className="support-chat__header">
             <div className="support-chat__title-block">
               <h2>{title}</h2>
-              {subtitle ? <p>{subtitle}</p> : null}
-            </div>
-
-            <div className="support-chat__header-actions">
-              <div className={`support-chat__status${refreshing ? ' is-refreshing' : ''}`}>
-                <span className="support-chat__status-dot" />
-                <span>{surfaceStatus}</span>
-              </div>
-              {nextPollLabel ? <div className="support-chat__meta">{nextPollLabel}</div> : null}
-              {onRefresh ? (
-                <button className="support-chat__ghost" type="button" onClick={() => void onRefresh()} disabled={refreshing}>
-                  {refreshLabel}
-                </button>
-              ) : null}
-              <button className="support-chat__ghost" type="button" onClick={handleClose}>
-                {closeLabel}
-              </button>
             </div>
           </header>
 
@@ -356,14 +330,29 @@ export function SupportChatWidget({
                       onKeyDown={(event) => void handleKeyDown(event)}
                       disabled={inputDisabled || isSubmitting || sending}
                     />
-                  </label>
-
-                  <div className="support-chat__composer-actions">
-                    <div className="support-chat__hint">Enter отправляет, Shift+Enter переносит строку.</div>
-                    <button className="nv-button" type="button" onClick={() => void handleSubmit()} disabled={sendDisabled}>
-                      {isSubmitting || sending ? 'Отправка…' : sendLabel}
+                    <button
+                      className="support-chat__send"
+                      type="button"
+                      onClick={() => void handleSubmit()}
+                      disabled={sendDisabled}
+                      aria-label={isSubmitting || sending ? 'Отправка сообщения' : sendLabel}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M4 11.75 19.5 4.5l-3.55 15-4.95-5.1L4 11.75Z"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M10.8 14.3 19.5 4.5"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          strokeLinecap="round"
+                        />
+                      </svg>
                     </button>
-                  </div>
+                  </label>
                 </div>
               </>
             )}

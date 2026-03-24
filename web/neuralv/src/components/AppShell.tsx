@@ -29,22 +29,6 @@ function parseTimestamp(value: string | number | Date | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatPollLabel(ms: number | undefined) {
-  const safe = Math.max(0, Number(ms || 0) || 0);
-  if (!safe) {
-    return '';
-  }
-  if (safe < 1000) {
-    return 'Обновление сейчас';
-  }
-  const seconds = Math.round(safe / 1000);
-  if (seconds < 60) {
-    return `Обновление каждые ${seconds} сек`;
-  }
-  const minutes = Math.round(seconds / 60);
-  return `Обновление каждые ${minutes} мин`;
-}
-
 function mapSupportMessages(state: SiteSupportChatState | null): WidgetSupportChatMessage[] {
   if (!state?.messages?.length) {
     return [];
@@ -340,20 +324,11 @@ export function AppShell() {
       <SupportChatWidget
         open={supportOpen}
         onOpenChange={setSupportOpen}
-        title="Поддержка"
-        launcherLabel="Поддержка"
+        title="Чат поддержки"
+        launcherLabel="Чат поддержки"
         launcherUnreadCount={launcherUnreadCount}
         launcherPending={supportLoading || supportSending}
-        statusLabel={
-          !session
-            ? 'Нужен вход'
-            : supportState?.chat?.ticketNumber
-              ? `Заявка #${supportState.chat.ticketNumber}`
-              : supportState?.availability === false
-                ? 'Не активна'
-                : 'Готова'
-        }
-        nextPollLabel={formatPollLabel(supportState?.pollAfterMs)}
+        statusLabel="Нужна помощь?"
         messages={mapSupportMessages(supportState)}
         loading={supportLoading}
         refreshing={supportLoading && Boolean(supportState)}
@@ -361,9 +336,6 @@ export function AppShell() {
         unavailable={widgetUnavailable}
         emptyTitle="Напишите в поддержку"
         emptyDescription="Откройте диалог и отправьте первое сообщение."
-        onRefresh={async () => {
-          await loadSupportState();
-        }}
         onSend={handleSupportSend}
       />
 

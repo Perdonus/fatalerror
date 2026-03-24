@@ -2496,13 +2496,13 @@ body {
 }
 
 .shell-burger {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
   display: inline-grid;
   place-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 0;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   box-shadow: var(--nv-shadow-inset);
@@ -2517,7 +2517,7 @@ body {
 }
 
 .shell-burger-line {
-  width: 18px;
+  width: 16px;
   height: 2px;
   border-radius: 999px;
   background: var(--nv-text);
@@ -2525,7 +2525,7 @@ body {
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(1) {
-  transform: translateY(7px) rotate(45deg);
+  transform: translateY(6px) rotate(45deg);
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(2) {
@@ -2533,7 +2533,7 @@ body {
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(3) {
-  transform: translateY(-7px) rotate(-45deg);
+  transform: translateY(-6px) rotate(-45deg);
 }
 
 .shell-overlay-scrim,
@@ -2620,17 +2620,21 @@ body {
 .shell-drawer-list {
   display: grid;
   gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
 }
 
 .shell-drawer-link {
-  min-height: 48px;
-  padding: 0 16px;
+  min-height: clamp(44px, 5.2vw, 52px);
+  padding: 0 clamp(13px, 1.6vw, 16px);
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
   color: var(--nv-text-soft);
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  font-size: clamp(0.92rem, 1vw + 0.7rem, 1rem);
+  line-height: 1.2;
   transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease, transform 180ms ease;
 }
 
@@ -2702,13 +2706,50 @@ body {
     top: 12px;
   }
 
+  .shell-burger {
+    width: 40px;
+    height: 40px;
+  }
+
+  .shell-burger-line {
+    width: 15px;
+  }
+
   .shell-drawer {
     width: calc(100vw - 12px);
     padding-right: 0;
   }
 
+  .shell-drawer-panel {
+    gap: 16px;
+    padding: 18px;
+  }
+
+  .shell-drawer-list {
+    grid-template-columns: 1fr;
+  }
+
+  .shell-drawer-link {
+    min-height: 46px;
+    border-radius: 16px;
+  }
+
   .support-launcher {
     right: 12px;
     bottom: 12px;
+  }
+}
+
+@media (min-width: 1080px) {
+  .shell-drawer {
+    width: min(420px, calc(100vw - 40px));
+  }
+
+  .shell-drawer-panel {
+    padding: 22px;
+  }
+
+  .shell-drawer-link {
+    min-height: 50px;
   }
 }

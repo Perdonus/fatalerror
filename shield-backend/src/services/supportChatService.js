@@ -282,6 +282,31 @@ async function callTelegram(method, payload) {
     const requestBody = JSON.stringify(payload || {});
 
     try {
+        const { stdout } = await execFileAsync('curl', [
+            '--noproxy', '*',
+            '--ipv4',
+            '-sS',
+            '--retry', '1',
+            '--retry-all-errors',
+            '--retry-delay', '1',
+            '--connect-timeout', '6',
+            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
+            '-X', 'POST',
+            '-H', 'content-type: application/json',
+            '--data', requestBody,
+            url
+        ], {
+            maxBuffer: 4 * 1024 * 1024
+        });
+
+        const json = JSON.parse(String(stdout || 'null'));
+        if (!json || json.ok !== true) {
+            const description = String(json?.description || 'Telegram API unavailable');
+            throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
+        }
+
+        return json.result;
+    } catch (error) {
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -298,32 +323,6 @@ async function callTelegram(method, payload) {
         }
 
         return json.result;
-    } catch (error) {
-        const { stdout } = await execFileAsync('curl', [
-            '--ipv4',
-            '-sS',
-            '--retry', '1',
-            '--retry-all-errors',
-            '--retry-delay', '1',
-            '--connect-timeout', '10',
-            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
-            '-X', 'POST',
-            '-H', 'content-type: application/json',
-            '--data', requestBody,
-            url
-        ], {
-            maxBuffer: 4 * 1024 * 1024
-        }).catch((curlError) => {
-            throw createHttpError(502, curlError?.message || error?.message || 'Telegram API unavailable', 'SUPPORT_TELEGRAM_API_ERROR');
-        });
-
-        const json = JSON.parse(String(stdout || 'null'));
-        if (!json || json.ok !== true) {
-            const description = String(json?.description || 'Telegram API unavailable');
-            throw createHttpError(502, description, 'SUPPORT_TELEGRAM_API_ERROR');
-        }
-
-        return json.result;
     }
 }
 
@@ -335,12 +334,13 @@ async function callTelegramMultipart(method, fields, fileField) {
 
     const url = `${SUPPORT_TELEGRAM_API_BASE}/bot${config.token}/${method}`;
     const args = [
+        '--noproxy', '*',
         '--ipv4',
         '-sS',
         '--retry', '1',
         '--retry-all-errors',
         '--retry-delay', '1',
-        '--connect-timeout', '10',
+        '--connect-timeout', '6',
         '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
         '-X', 'POST'
     ];
@@ -379,6 +379,22 @@ async function downloadTelegramFile(filePath, targetPath) {
     fs.mkdirSync(directory, { recursive: true });
 
     try {
+        await execFileAsync('curl', [
+            '--noproxy', '*',
+            '--ipv4',
+            '-sS',
+            '--retry', '1',
+            '--retry-all-errors',
+            '--retry-delay', '1',
+            '--connect-timeout', '6',
+            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
+            '-o', targetPath,
+            url
+        ], {
+            maxBuffer: 8 * 1024 * 1024
+        });
+        return;
+    } catch (error) {
         const response = await fetch(url, {
             method: 'GET',
             signal: AbortSignal.timeout(SUPPORT_TELEGRAM_FETCH_TIMEOUT_MS)
@@ -389,22 +405,6 @@ async function downloadTelegramFile(filePath, targetPath) {
         const buffer = Buffer.from(await response.arrayBuffer());
         fs.writeFileSync(targetPath, buffer);
         return;
-    } catch (error) {
-        await execFileAsync('curl', [
-            '--ipv4',
-            '-sS',
-            '--retry', '1',
-            '--retry-all-errors',
-            '--retry-delay', '1',
-            '--connect-timeout', '10',
-            '--max-time', String(SUPPORT_TELEGRAM_CURL_MAX_TIME_SEC),
-            '-o', targetPath,
-            url
-        ], {
-            maxBuffer: 8 * 1024 * 1024
-        }).catch((curlError) => {
-            throw createHttpError(502, curlError?.message || error?.message || 'Не удалось скачать вложение из Telegram.', 'SUPPORT_ATTACHMENT_DOWNLOAD_FAILED');
-        });
     }
 }
 

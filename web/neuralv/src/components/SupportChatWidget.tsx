@@ -63,7 +63,6 @@ export type SupportChatWidgetProps = {
   launcherLabel?: string;
   launcherUnreadCount?: number;
   messages?: SupportChatMessage[];
-  sending?: boolean;
   unavailable?: SupportChatUnavailableState | null;
   placeholder?: string;
   canSend?: boolean;
@@ -150,7 +149,6 @@ export function SupportChatWidget({
   launcherLabel = 'Чат поддержки',
   launcherUnreadCount = 0,
   messages = [],
-  sending = false,
   unavailable,
   placeholder = 'Напишите в поддержку…',
   canSend = true,
@@ -164,7 +162,6 @@ export function SupportChatWidget({
 }: SupportChatWidgetProps) {
   const [isOpen, setIsOpen] = useControllableState(open, defaultOpen, onOpenChange);
   const [draft, setDraft] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [draftAttachment, setDraftAttachment] = useState<SupportChatDraftAttachment | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<SupportChatAttachment | null>(null);
   const [attachmentError, setAttachmentError] = useState<string>('');
@@ -176,7 +173,7 @@ export function SupportChatWidget({
   const unreadBadge = launcherUnreadCount > 99 ? '99+' : launcherUnreadCount > 0 ? String(launcherUnreadCount) : null;
   const unavailableState = unavailable ?? null;
   const isUnavailable = Boolean(unavailableState);
-  const sendDisabled = inputDisabled || !canSend || !onSend || (!draft.trim() && !draftAttachment) || isSubmitting || sending || isUnavailable;
+  const sendDisabled = inputDisabled || !canSend || !onSend || (!draft.trim() && !draftAttachment) || isUnavailable;
 
   useEffect(() => {
     if (!isOpen) {
@@ -193,9 +190,8 @@ export function SupportChatWidget({
     if (!node) {
       return;
     }
-    const maxHeight = Math.max(176, Math.round(window.innerHeight * 0.28));
     node.style.height = '0px';
-    node.style.height = `${Math.min(node.scrollHeight, maxHeight)}px`;
+    node.style.height = `${Math.max(node.scrollHeight, 54)}px`;
     node.style.overflow = 'hidden';
   }, [draft, isOpen]);
 
@@ -275,16 +271,9 @@ export function SupportChatWidget({
       fileInputRef.current.value = '';
     }
 
-    try {
-      setIsSubmitting(true);
-      await onSend(payload);
-    } catch (error) {
-      setDraft(text);
-      setDraftAttachment(payload.attachment || null);
-      setAttachmentError(error instanceof Error ? error.message : 'Не удалось отправить сообщение.');
-    } finally {
-      setIsSubmitting(false);
-    }
+    void Promise.resolve(onSend(payload)).catch((error) => {
+      console.error('Support chat send failed:', error);
+    });
   }, [draft, draftAttachment, onSend, sendDisabled]);
 
   const handleKeyDown = useCallback(
@@ -435,10 +424,10 @@ export function SupportChatWidget({
                                 ))}
                               </div>
                             ) : null}
-                            {message.meta || message.pending || message.failed ? (
+                            {message.meta || message.failed ? (
                               <div className="support-chat__message-meta-row">
                                 <span className="support-chat__message-meta">
-                                  {message.failed ? 'Не отправилось' : message.pending ? 'Отправляется…' : message.meta}
+                                  {message.failed ? 'Не отправилось' : message.meta}
                                 </span>
                                 {message.failed && onRetryMessage ? (
                                   <button className="support-chat__text-button" type="button" onClick={() => void onRetryMessage(message)}>
@@ -475,13 +464,13 @@ export function SupportChatWidget({
                         value={draft}
                         onChange={(event) => setDraft(event.target.value)}
                         onKeyDown={(event) => void handleKeyDown(event)}
-                        disabled={inputDisabled || isSubmitting || sending}
+                        disabled={inputDisabled}
                       />
                       <button
                         className="support-chat__attach"
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        disabled={inputDisabled || isSubmitting || sending}
+                        disabled={inputDisabled}
                         aria-label="Добавить фото или видео"
                       >
                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -493,7 +482,7 @@ export function SupportChatWidget({
                         type="button"
                         onClick={() => void handleSubmit()}
                         disabled={sendDisabled}
-                        aria-label={isSubmitting || sending ? 'Отправка сообщения' : sendLabel}
+                        aria-label={sendLabel}
                       >
                         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                           <path d="M4 11.75 19.5 4.5l-3.55 15-4.95-5.1L4 11.75Z" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />

@@ -132,7 +132,6 @@ export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportState, setSupportState] = useState<SiteSupportChatState | null>(null);
-  const [supportSending, setSupportSending] = useState(false);
   const [supportOptimisticMessages, setSupportOptimisticMessages] = useState<OptimisticSupportMessage[]>([]);
   const [supportSeenAt, setSupportSeenAt] = useState(0);
   const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
@@ -274,7 +273,6 @@ export function AppShell() {
     };
 
     setSupportOptimisticMessages((current) => [...current, optimisticMessage]);
-    setSupportSending(true);
     const result = await sendSupportChatMessage(
       {
         text: payload.text,
@@ -301,7 +299,6 @@ export function AppShell() {
         )
       );
     }
-    setSupportSending(false);
   }
 
   const handleSupportRetry = useCallback(async (message: WidgetSupportChatMessage) => {
@@ -461,7 +458,6 @@ export function AppShell() {
         launcherLabel="Нужна помощь?"
         launcherUnreadCount={launcherUnreadCount}
         messages={widgetMessages}
-        sending={supportSending}
         unavailable={widgetUnavailable}
         emptyTitle="Напишите в поддержку"
         emptyDescription=""

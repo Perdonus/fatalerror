@@ -1144,7 +1144,7 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
 export async function fetchDeveloperPortalState(): Promise<SiteAuthResult<SiteDeveloperPortalState>> {
   const sessionResult = await getAuthorizedSession();
   if (!sessionResult.ok || !sessionResult.data) {
-    return sessionResult as SiteAuthResult<SiteDeveloperPortalState>;
+    return sessionResult as unknown as SiteAuthResult<SiteDeveloperPortalState>;
   }
 
   const result = await requestJson<Record<string, unknown>>('/profile/developer/status', {
@@ -1168,7 +1168,7 @@ export async function submitDeveloperApplication(
 ): Promise<SiteAuthResult<{ message?: string; queued?: boolean; alreadyPending?: boolean }>> {
   const sessionResult = await getAuthorizedSession();
   if (!sessionResult.ok || !sessionResult.data) {
-    return sessionResult as SiteAuthResult<{ message?: string; queued?: boolean; alreadyPending?: boolean }>;
+    return sessionResult as unknown as SiteAuthResult<{ message?: string; queued?: boolean; alreadyPending?: boolean }>;
   }
 
   const result = await requestJson<Record<string, unknown>>('/profile/developer/apply', {
@@ -1197,7 +1197,7 @@ export async function submitVerifiedAppReview(
 ): Promise<SiteAuthResult<{ message?: string }>> {
   const sessionResult = await getAuthorizedSession();
   if (!sessionResult.ok || !sessionResult.data) {
-    return sessionResult as SiteAuthResult<{ message?: string }>;
+    return sessionResult as unknown as SiteAuthResult<{ message?: string }>;
   }
 
   const result = await requestJson<Record<string, unknown>>('/profile/developer/apps/verify', {
@@ -1228,7 +1228,7 @@ export async function submitVerifiedAppReview(
 export async function fetchOwnVerifiedApps(): Promise<SiteAuthResult<SiteVerifiedApp[]>> {
   const sessionResult = await getAuthorizedSession();
   if (!sessionResult.ok || !sessionResult.data) {
-    return sessionResult as SiteAuthResult<SiteVerifiedApp[]>;
+    return sessionResult as unknown as SiteAuthResult<SiteVerifiedApp[]>;
   }
 
   const result = await requestJson<{ apps?: Record<string, unknown>[] }>('/profile/developer/apps', {

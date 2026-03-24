@@ -16,7 +16,8 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
 
   useEffect(() => {
     let frame = 0;
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const mobileQuery = window.matchMedia('(max-width: 760px)');
     const state = { current: 0, target: 0 };
 
     const animate = () => {
@@ -35,7 +36,9 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
         return;
       }
 
-      if (reducedMotion) {
+      if (reducedMotionQuery.matches || mobileQuery.matches) {
+        state.current = 1;
+        state.target = 1;
         setProgress(1);
         return;
       }
@@ -57,6 +60,8 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
     requestUpdate();
     window.addEventListener('scroll', requestUpdate, { passive: true });
     window.addEventListener('resize', requestUpdate);
+    reducedMotionQuery.addEventListener('change', requestUpdate);
+    mobileQuery.addEventListener('change', requestUpdate);
 
     return () => {
       if (frame) {
@@ -64,6 +69,8 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
       }
       window.removeEventListener('scroll', requestUpdate);
       window.removeEventListener('resize', requestUpdate);
+      reducedMotionQuery.removeEventListener('change', requestUpdate);
+      mobileQuery.removeEventListener('change', requestUpdate);
     };
   }, []);
 

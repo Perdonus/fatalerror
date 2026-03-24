@@ -65,8 +65,8 @@ function mapDraftAttachment(attachment: WidgetSupportChatDraftAttachment | undef
     {
       id: `draft-${Math.random().toString(36).slice(2)}`,
       kind: attachment.kind,
-      url: attachment.previewUrl || attachment.dataUrl,
-      thumbnailUrl: attachment.previewUrl || undefined,
+      url: attachment.dataUrl,
+      thumbnailUrl: attachment.dataUrl,
       mimeType: attachment.mimeType,
       fileName: attachment.fileName,
       fileSizeBytes: attachment.fileSizeBytes,

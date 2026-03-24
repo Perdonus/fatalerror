@@ -928,11 +928,13 @@ async function ingestTelegramUpdate(update, db = pool) {
     let attachments = [];
     let messageKind = 'TEXT';
     if (inboundAttachment) {
-        attachments = [await persistTelegramAttachment(existingRows[0]?.id || uuidv4(), chat.id, inboundAttachment)];
         messageKind = inboundAttachment.type === 'video' ? 'VIDEO' : 'PHOTO';
     }
 
     if (existingRows.length > 0) {
+        if (inboundAttachment) {
+            attachments = [await persistTelegramAttachment(existingRows[0].id, chat.id, inboundAttachment)];
+        }
         await db.query(
             `UPDATE support_chat_messages
              SET message_text = ?, sender_name = ?, message_kind = ?, attachments_json = ?, delivery_status = 'SENT', delivery_error = NULL, updated_at = ?

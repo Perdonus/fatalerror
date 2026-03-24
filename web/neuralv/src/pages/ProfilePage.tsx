@@ -2,11 +2,14 @@ import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState, type
 import { PasswordStrength } from '../components/PasswordStrength';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
+  VERIFIED_APP_GROUPS,
+  VERIFIED_APP_PLATFORM_OPTIONS,
   fetchDeveloperPortalState,
   fetchOwnVerifiedApps,
   fetchProfileOverview,
   formatVerifiedAppPlatform,
   humanizeError,
+  normalizeVerifiedAppPlatform,
   requestProfileEmailChange,
   requestProfileNameChange,
   requestProfilePasswordChange,
@@ -19,6 +22,7 @@ import {
   type SiteProfileScan,
   type SiteProfileSystem,
   type SiteVerifiedApp,
+  type SiteVerifiedAppFilter,
   type SiteVerifiedAppPlatform,
 } from '../lib/siteAuth';
 import '../styles/auth.css';
@@ -27,7 +31,7 @@ type ProfileTab = 'profile' | 'developer' | 'security';
 type AccountPending = 'name' | 'email' | 'password' | 'logout' | null;
 type DeveloperPending = 'load' | 'apply' | 'verify' | null;
 type PlatformOption = SiteVerifiedAppPlatform;
-type VerifiedAppsFilter = 'all' | PlatformOption;
+type DraftStatus = 'idle' | 'saved';
 
 type ReviewFormState = {
   appName: string;
@@ -56,6 +60,7 @@ type VerifiedDeveloperWorkspaceProps = {
   apps: SiteVerifiedApp[];
   pending: DeveloperPending;
   reviewForm: ReviewFormState;
+  reviewDraftStatus: DraftStatus;
   setReviewForm: Dispatch<SetStateAction<ReviewFormState>>;
   onVerify: (event: FormEvent) => Promise<void>;
 };
@@ -65,43 +70,10 @@ type DeveloperApplicationCardProps = {
   setProjectName: (value: string) => void;
   message: string;
   setMessage: (value: string) => void;
+  draftStatus: DraftStatus;
   pending: DeveloperPending;
   onApply: (event: FormEvent) => Promise<void>;
 };
-
-type VerifiedAppsGroup = {
-  id: string;
-  label: string;
-  items: Array<{
-    value: VerifiedAppsFilter;
-    label: string;
-  }>;
-};
-
-const verifiedAppsGroups: VerifiedAppsGroup[] = [
-  {
-    id: 'catalog',
-    label: 'Каталог',
-    items: [{ value: 'all', label: 'Все' }]
-  },
-  {
-    id: 'apps',
-    label: 'Приложения',
-    items: [
-      { value: 'windows', label: 'Windows' },
-      { value: 'android', label: 'Android' },
-      { value: 'linux', label: 'Linux' }
-    ]
-  },
-  {
-    id: 'integrations',
-    label: 'Интеграции',
-    items: [
-      { value: 'plugin', label: 'Plugins' },
-      { value: 'heroku', label: 'Heroku' }
-    ]
-  }
-];
 
 const navGroupLabelStyle = {
   padding: '2px 4px 0',
@@ -112,7 +84,7 @@ const navGroupLabelStyle = {
   textTransform: 'uppercase' as const
 };
 
-function getVerifiedAppsTitle(platform: VerifiedAppsFilter) {
+function getVerifiedAppsTitle(platform: SiteVerifiedAppFilter) {
   return platform === 'all' ? 'Все проверенные' : formatVerifiedAppPlatform(platform);
 }
 
@@ -125,6 +97,46 @@ function formatDate(value: string | number | null | undefined) {
     return null;
   }
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(parsed);
+}
+
+const DEVELOPER_APPLICATION_DRAFT_KEY = 'neuralv-profile-developer-application-draft';
+const VERIFIED_REVIEW_DRAFT_KEY = 'neuralv-profile-verified-review-draft';
+
+function loadDraft<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return fallback;
+    }
+    return { ...fallback, ...(JSON.parse(raw) as Partial<T>) };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveDraft<T>(key: string, value: T) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore local draft failures
+  }
+}
+
+function clearDraft(key: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore local draft failures
+  }
 }
 
 function formatScanMode(mode: string) {
@@ -261,6 +273,8 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = formatDate(app.verifiedAt || app.createdAt);
   const safe = String(app.status || '').toUpperCase() === 'SAFE';
+  const platformLabel = formatVerifiedAppPlatform(String(app.platform || ''));
+  const authorLabel = app.authorName || 'Ваш профиль';
 
   return (
     <article className="content-card developer-app-card">
@@ -275,13 +289,16 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
               {safe ? 'Безопасно' : (app.status || 'В проверке')}
             </span>
           </div>
-          <p>{app.authorName || 'Проверенный разработчик'}</p>
         </div>
       </div>
       {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
       <div className="developer-app-row">
-        <span>Категория</span>
-        <strong>{formatVerifiedAppPlatform(app.platform)}</strong>
+        <span>Раздел</span>
+        <strong>{platformLabel}</strong>
+      </div>
+      <div className="developer-app-row">
+        <span>Автор</span>
+        <strong>{authorLabel}</strong>
       </div>
       <div className="developer-app-links">
         {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
@@ -367,6 +384,7 @@ function DeveloperApplicationCard({
   setProjectName,
   message,
   setMessage,
+  draftStatus,
   pending,
   onApply
 }: DeveloperApplicationCardProps) {
@@ -393,6 +411,9 @@ function DeveloperApplicationCard({
             rows={5}
           />
         </label>
+        <div className="profile-draft-note" aria-live="polite">
+          {draftStatus === 'saved' ? 'Черновик сохранён.' : 'Черновик сохраняется автоматически.'}
+        </div>
         <button className="nv-button" type="submit" disabled={pending !== null}>
           {pending === 'apply' ? 'Отправляем...' : 'Подать заявку'}
         </button>
@@ -405,12 +426,17 @@ function VerifiedDeveloperWorkspace({
   apps,
   pending,
   reviewForm,
+  reviewDraftStatus,
   setReviewForm,
   onVerify
 }: VerifiedDeveloperWorkspaceProps) {
-  const [activePlatform, setActivePlatform] = useState<VerifiedAppsFilter>('all');
+  const [activePlatform, setActivePlatform] = useState<SiteVerifiedAppFilter>('all');
   const filteredApps = useMemo(
-    () => (activePlatform === 'all' ? apps : apps.filter((app) => String(app.platform || '').trim().toLowerCase() === activePlatform)),
+    () => (
+      activePlatform === 'all'
+        ? apps
+        : apps.filter((app) => normalizeVerifiedAppPlatform(String(app.platform || '')) === activePlatform)
+    ),
     [activePlatform, apps]
   );
   const catalogTitle = useMemo(() => getVerifiedAppsTitle(activePlatform), [activePlatform]);
@@ -418,9 +444,6 @@ function VerifiedDeveloperWorkspace({
   return (
     <div className="profile-panel-stack">
       <section className="content-card profile-panel-card profile-form-card">
-        <div className="profile-panel-head">
-          <h2>Отправить на проверку</h2>
-        </div>
         <form className="auth-form" onSubmit={onVerify}>
           <div className="profile-security-grid">
             <label className="auth-field">
@@ -439,11 +462,9 @@ function VerifiedDeveloperWorkspace({
                 value={reviewForm.platform}
                 onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
               >
-                <option value="windows">Windows</option>
-                <option value="android">Android</option>
-                <option value="linux">Linux</option>
-                <option value="plugin">Plugins</option>
-                <option value="heroku">Heroku</option>
+                {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
               </select>
             </label>
           </div>
@@ -481,6 +502,9 @@ function VerifiedDeveloperWorkspace({
             />
           </label>
 
+          <div className="profile-draft-note" aria-live="polite">
+            {reviewDraftStatus === 'saved' ? 'Черновик сохранён.' : 'Черновик сохраняется автоматически.'}
+          </div>
           <button className="nv-button" type="submit" disabled={pending !== null}>
             {pending === 'verify' ? 'Отправляем...' : 'Запустить проверку'}
           </button>
@@ -493,7 +517,7 @@ function VerifiedDeveloperWorkspace({
             <strong>Мои проверенные</strong>
           </div>
           <div className="profile-nav-list" role="tablist" aria-label="Категории моих проверенных приложений">
-            {verifiedAppsGroups.map((group, index) => (
+            {VERIFIED_APP_GROUPS.map((group, index) => (
               <div key={group.id} className="profile-panel-stack">
                 {index > 0 ? <div className="profile-nav-divider" /> : null}
                 <div style={navGroupLabelStyle}>{group.label}</div>
@@ -525,7 +549,7 @@ function VerifiedDeveloperWorkspace({
           {filteredApps.length > 0 ? (
             <div className="developer-app-grid">
               {filteredApps.map((app) => (
-                <ProfileVerifiedAppCard key={app.id || `${app.appName}-${app.platform}`} app={app} />
+                <ProfileVerifiedAppCard key={app.id || `${app.appName}-${normalizeVerifiedAppPlatform(String(app.platform || ''))}`} app={app} />
               ))}
             </div>
           ) : (
@@ -548,7 +572,7 @@ function RejectedDeveloperCard({
 }) {
   return (
     <section className="content-card profile-panel-card profile-panel-card-rejected profile-panel-card-centered">
-      <h2>Заявка отклонена</h2>
+      <strong className="profile-state-title">Заявка отклонена</strong>
       {application?.reviewNote ? <div className="profile-inline-note profile-inline-note-danger">{application.reviewNote}</div> : null}
       <button className="nv-button" type="button" onClick={onRetry}>Подать повторную заявку</button>
     </section>
@@ -557,10 +581,14 @@ function RejectedDeveloperCard({
 
 function ProfileOverviewPanel({
   overview,
-  loading
+  loading,
+  name,
+  email
 }: {
   overview: SiteProfileOverview | null;
   loading: boolean;
+  name: string;
+  email: string;
 }) {
   if (loading) {
     return (
@@ -574,6 +602,13 @@ function ProfileOverviewPanel({
 
   return (
     <div className="profile-panel-stack">
+      <section className="content-card profile-panel-card profile-panel-card-featured profile-account-card">
+        <div className="profile-account-copy">
+          <strong>{name}</strong>
+          <span>{email}</span>
+        </div>
+      </section>
+
       <section className="content-card profile-panel-card">
         <div className="profile-panel-head">
           <h2>Системы</h2>
@@ -618,21 +653,51 @@ export function ProfilePage() {
   const [portal, setPortal] = useState<SiteDeveloperPortalState | null>(null);
   const [overview, setOverview] = useState<SiteProfileOverview | null>(null);
   const [verifiedApps, setVerifiedApps] = useState<SiteVerifiedApp[]>([]);
-  const [applyProject, setApplyProject] = useState('');
-  const [applyMessage, setApplyMessage] = useState('');
+  const [applyProject, setApplyProject] = useState(() => loadDraft(DEVELOPER_APPLICATION_DRAFT_KEY, { project: '' }).project);
+  const [applyMessage, setApplyMessage] = useState(() => loadDraft(DEVELOPER_APPLICATION_DRAFT_KEY, { message: '' }).message);
+  const [applicationDraftStatus, setApplicationDraftStatus] = useState<DraftStatus>('idle');
   const [showRetryForm, setShowRetryForm] = useState(false);
-  const [reviewForm, setReviewForm] = useState<ReviewFormState>({
+  const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => loadDraft(VERIFIED_REVIEW_DRAFT_KEY, {
     appName: '',
-    platform: 'windows',
+    platform: 'windows' as PlatformOption,
     repositoryUrl: '',
     releaseArtifactUrl: '',
     officialSiteUrl: ''
-  });
+  }));
+  const [reviewDraftStatus, setReviewDraftStatus] = useState<DraftStatus>('idle');
 
   useEffect(() => {
     setName(user?.name || '');
     setEmail(user?.email || '');
   }, [user?.email, user?.name]);
+
+  useEffect(() => {
+    setReviewForm((current) => {
+      const normalizedPlatform = normalizeVerifiedAppPlatform(String(current.platform || 'windows'));
+      if (normalizedPlatform === current.platform) {
+        return current;
+      }
+      return {
+        ...current,
+        platform: (normalizedPlatform === 'android' || normalizedPlatform === 'windows' || normalizedPlatform === 'linux' || normalizedPlatform === 'plugins' || normalizedPlatform === 'heroku'
+          ? normalizedPlatform
+          : 'windows') as PlatformOption
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    saveDraft(DEVELOPER_APPLICATION_DRAFT_KEY, {
+      project: applyProject,
+      message: applyMessage
+    });
+    setApplicationDraftStatus('saved');
+  }, [applyMessage, applyProject]);
+
+  useEffect(() => {
+    saveDraft(VERIFIED_REVIEW_DRAFT_KEY, reviewForm);
+    setReviewDraftStatus('saved');
+  }, [reviewForm]);
 
   async function loadOverview() {
     setOverviewLoading(true);
@@ -755,6 +820,8 @@ export function ProfilePage() {
     }
     setApplyProject('');
     setApplyMessage('');
+    clearDraft(DEVELOPER_APPLICATION_DRAFT_KEY);
+    setApplicationDraftStatus('idle');
     setShowRetryForm(false);
     setMessage(result.data?.message || 'Заявка отправлена.');
     await loadDeveloperData();
@@ -771,7 +838,7 @@ export function ProfilePage() {
     setError('');
     const result = await submitVerifiedAppReview({
       appName: reviewForm.appName,
-      platform: reviewForm.platform,
+      platform: normalizeVerifiedAppPlatform(reviewForm.platform) as PlatformOption,
       repositoryUrl: reviewForm.repositoryUrl,
       releaseArtifactUrl: reviewForm.releaseArtifactUrl,
       officialSiteUrl: reviewForm.officialSiteUrl
@@ -789,6 +856,8 @@ export function ProfilePage() {
       releaseArtifactUrl: '',
       officialSiteUrl: ''
     });
+    clearDraft(VERIFIED_REVIEW_DRAFT_KEY);
+    setReviewDraftStatus('idle');
     await loadDeveloperData();
     setDeveloperPending(null);
   }
@@ -840,7 +909,12 @@ export function ProfilePage() {
           {message ? <div className="form-message is-success">{message}</div> : null}
 
           {activeTab === 'profile' ? (
-            <ProfileOverviewPanel overview={overview} loading={overviewLoading} />
+            <ProfileOverviewPanel
+              overview={overview}
+              loading={overviewLoading}
+              name={displayName}
+              email={displayEmail}
+            />
           ) : null}
 
           {activeTab === 'security' ? (
@@ -863,19 +937,20 @@ export function ProfilePage() {
           {activeTab === 'developer' ? (
             developerPending === 'load' ? (
               <article className="content-card profile-panel-card profile-panel-card-centered">
-                <h2>Загружаем раздел разработчика...</h2>
+                <strong className="profile-state-title">Загружаем...</strong>
               </article>
             ) : verifiedDeveloper ? (
               <VerifiedDeveloperWorkspace
                 apps={verifiedApps}
                 pending={developerPending}
                 reviewForm={reviewForm}
+                reviewDraftStatus={reviewDraftStatus}
                 setReviewForm={setReviewForm}
                 onVerify={handleDeveloperVerify}
               />
             ) : applicationState === 'pending' ? (
               <article className="content-card profile-panel-card profile-panel-card-featured profile-panel-card-centered">
-                <h2>Заявка на рассмотрении</h2>
+                <strong className="profile-state-title">Заявка на рассмотрении</strong>
               </article>
             ) : applicationState === 'rejected' && !showRetryForm ? (
               <RejectedDeveloperCard application={portal?.latestApplication} onRetry={() => setShowRetryForm(true)} />
@@ -885,6 +960,7 @@ export function ProfilePage() {
                 setProjectName={setApplyProject}
                 message={applyMessage}
                 setMessage={setApplyMessage}
+                draftStatus={applicationDraftStatus}
                 pending={developerPending}
                 onApply={handleDeveloperApply}
               />

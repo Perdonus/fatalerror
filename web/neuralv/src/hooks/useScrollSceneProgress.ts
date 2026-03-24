@@ -16,6 +16,7 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
 
   useEffect(() => {
     let frame = 0;
+    const staticProgress = 0.66;
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const mobileQuery = window.matchMedia('(max-width: 760px)');
     const state = { current: 0, target: 0 };
@@ -37,9 +38,9 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
       }
 
       if (reducedMotionQuery.matches || mobileQuery.matches) {
-        state.current = 1;
-        state.target = 1;
-        setProgress(1);
+        state.current = staticProgress;
+        state.target = staticProgress;
+        setProgress(staticProgress);
         return;
       }
 
@@ -57,11 +58,21 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
       updateTarget();
     };
 
+    const bindMediaListener = (query: MediaQueryList, listener: () => void) => {
+      if (typeof query.addEventListener === 'function') {
+        query.addEventListener('change', listener);
+        return () => query.removeEventListener('change', listener);
+      }
+
+      query.addListener(listener);
+      return () => query.removeListener(listener);
+    };
+
     requestUpdate();
     window.addEventListener('scroll', requestUpdate, { passive: true });
     window.addEventListener('resize', requestUpdate);
-    reducedMotionQuery.addEventListener('change', requestUpdate);
-    mobileQuery.addEventListener('change', requestUpdate);
+    const unbindReducedMotion = bindMediaListener(reducedMotionQuery, requestUpdate);
+    const unbindMobile = bindMediaListener(mobileQuery, requestUpdate);
 
     return () => {
       if (frame) {
@@ -69,8 +80,8 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
       }
       window.removeEventListener('scroll', requestUpdate);
       window.removeEventListener('resize', requestUpdate);
-      reducedMotionQuery.removeEventListener('change', requestUpdate);
-      mobileQuery.removeEventListener('change', requestUpdate);
+      unbindReducedMotion();
+      unbindMobile();
     };
   }, []);
 

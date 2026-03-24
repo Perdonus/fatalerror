@@ -130,7 +130,17 @@ export type SiteDeveloperPortalState = {
 
 export type SiteDeveloperApplicationState = 'none' | 'pending' | 'rejected' | 'approved';
 
-export type SiteVerifiedAppPlatform = 'android' | 'windows' | 'linux' | 'plugin' | 'heroku';
+export type SiteVerifiedAppPlatform = 'android' | 'windows' | 'linux' | 'plugins' | 'heroku';
+export type SiteVerifiedAppFilter = 'all' | SiteVerifiedAppPlatform;
+
+export type SiteVerifiedAppGroup = {
+  id: string;
+  label: string;
+  items: Array<{
+    value: SiteVerifiedAppFilter;
+    label: string;
+  }>;
+};
 
 export type SiteVerifiedApp = {
   id?: string;
@@ -152,6 +162,35 @@ export type SiteVerifiedApp = {
   createdAt?: string | number | null;
   updatedAt?: string | number | null;
 };
+
+export const VERIFIED_APP_PLATFORM_OPTIONS: Array<{
+  value: SiteVerifiedAppPlatform;
+  label: string;
+}> = [
+  { value: 'windows', label: 'Windows' },
+  { value: 'android', label: 'Android' },
+  { value: 'linux', label: 'Linux' },
+  { value: 'plugins', label: 'Plugins' },
+  { value: 'heroku', label: 'Heroku' }
+];
+
+export const VERIFIED_APP_GROUPS: SiteVerifiedAppGroup[] = [
+  {
+    id: 'catalog',
+    label: 'Каталог',
+    items: [{ value: 'all', label: 'Все' }]
+  },
+  {
+    id: 'apps',
+    label: 'Приложения',
+    items: VERIFIED_APP_PLATFORM_OPTIONS.filter((item) => item.value === 'windows' || item.value === 'android' || item.value === 'linux')
+  },
+  {
+    id: 'integrations',
+    label: 'Интеграции',
+    items: VERIFIED_APP_PLATFORM_OPTIONS.filter((item) => item.value === 'plugins' || item.value === 'heroku')
+  }
+];
 
 export type SiteVerifiedAppReviewRequest = {
   appName: string;
@@ -1225,7 +1264,7 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
 
   return {
     id: typeof value.id === 'string' ? value.id : undefined,
-    platform: typeof value.platform === 'string' ? value.platform.toLowerCase() : 'windows',
+    platform: normalizeVerifiedAppPlatform(typeof value.platform === 'string' ? value.platform : 'windows'),
     appName: typeof value.app_name === 'string'
       ? value.app_name
       : (typeof value.name === 'string' ? value.name : 'Без названия'),
@@ -1250,12 +1289,12 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
 }
 
 export function formatVerifiedAppPlatform(platform: string): string {
-  switch (String(platform || '').trim().toLowerCase()) {
+  switch (normalizeVerifiedAppPlatform(platform)) {
     case 'android':
       return 'Android';
     case 'linux':
       return 'Linux';
-    case 'plugin':
+    case 'plugins':
       return 'Plugins';
     case 'heroku':
       return 'Heroku';
@@ -1263,6 +1302,33 @@ export function formatVerifiedAppPlatform(platform: string): string {
       return 'Windows';
     default:
       return String(platform || '').trim() || 'Неизвестно';
+  }
+}
+
+export function normalizeVerifiedAppPlatform(platform: string): SiteVerifiedAppPlatform | string {
+  const normalized = String(platform || '').trim().toLowerCase();
+  switch (normalized) {
+    case 'android':
+    case 'apk':
+      return 'android';
+    case 'linux':
+    case 'shell':
+      return 'linux';
+    case 'plugin':
+    case 'plugins':
+    case 'extension':
+    case 'extensions':
+    case 'telegram-plugin':
+      return 'plugins';
+    case 'heroku':
+    case 'heroku-app':
+    case 'heroku-addon':
+      return 'heroku';
+    case 'windows':
+    case 'win':
+      return 'windows';
+    default:
+      return normalized || 'windows';
   }
 }
 
@@ -1478,7 +1544,7 @@ export async function fetchPublicVerifiedApps(
 ): Promise<SiteAuthResult<SiteVerifiedApp[]>> {
   const query = new URLSearchParams();
   if (options.platform) {
-    query.set('platform', options.platform);
+    query.set('platform', String(normalizeVerifiedAppPlatform(options.platform)));
   }
   if (options.limit) {
     query.set('limit', String(options.limit));

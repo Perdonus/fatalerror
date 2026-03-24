@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS verified_apps (
     repository_default_branch VARCHAR(120) DEFAULT NULL,
     release_artifact_url VARCHAR(700) NOT NULL,
     official_site_url VARCHAR(700) DEFAULT NULL,
-    platform ENUM('android','windows','linux','plugin','heroku') NOT NULL,
+    platform ENUM('android','windows','linux','plugins','heroku') NOT NULL,
     app_name VARCHAR(120) NOT NULL,
     author_name VARCHAR(120) NOT NULL,
     avatar_url VARCHAR(700) DEFAULT NULL,
@@ -59,4 +59,4 @@ CREATE TABLE IF NOT EXISTS verified_apps (
 );
 
 ALTER TABLE verified_apps
-    MODIFY COLUMN platform ENUM('android','windows','linux','plugin','heroku') NOT NULL;
+    MODIFY COLUMN platform ENUM('android','windows','linux','plugins','heroku') NOT NULL;

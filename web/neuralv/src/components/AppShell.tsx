@@ -5,6 +5,7 @@ import { SupportChatWidget, type SupportChatMessage as WidgetSupportChatMessage 
 import {
   fetchSupportChatState,
   humanizeError,
+  openSupportChat,
   sendSupportChatMessage,
   type SiteSupportChatState
 } from '../lib/siteAuth';
@@ -112,7 +113,16 @@ export function AppShell() {
     setSupportLoading(true);
     const result = await fetchSupportChatState({ limit: 80 });
     if (result.ok && result.data) {
-      setSupportState(result.data);
+      if (result.data.availability && !result.data.chat) {
+        const opened = await openSupportChat();
+        if (opened.ok && opened.data) {
+          setSupportState(opened.data);
+        } else {
+          setSupportState(result.data);
+        }
+      } else {
+        setSupportState(result.data);
+      }
     } else {
       setSupportState({
         availability: false,
@@ -328,14 +338,15 @@ export function AppShell() {
         launcherLabel="Чат поддержки"
         launcherUnreadCount={launcherUnreadCount}
         launcherPending={supportLoading || supportSending}
-        statusLabel="Нужна помощь?"
+        statusLabel="Просто Нужна помощь?"
         messages={mapSupportMessages(supportState)}
         loading={supportLoading}
         refreshing={supportLoading && Boolean(supportState)}
         sending={supportSending}
         unavailable={widgetUnavailable}
         emptyTitle="Напишите в поддержку"
-        emptyDescription="Откройте диалог и отправьте первое сообщение."
+        emptyDescription=""
+        helperText="Просто Нужна помощь?"
         onSend={handleSupportSend}
       />
 

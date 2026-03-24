@@ -18,8 +18,8 @@ const VERIFIED_APP_SUBMIT_COOLDOWN_MS = parseInt(process.env.VERIFIED_APP_SUBMIT
 const DEVELOPER_APPLICATION_COOLDOWN_MS = parseInt(process.env.DEVELOPER_APPLICATION_COOLDOWN_MS || String(24 * 60 * 60 * 1000), 10);
 const VERIFIED_APP_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.VERIFIED_APP_QUEUE_CONCURRENCY || '1', 10));
 
-const VERIFIED_APPS_PLATFORM_ENUM = "ENUM('android','windows','linux','plugin','heroku')";
-const ALLOWED_PLATFORMS = new Set(['android', 'windows', 'linux', 'plugin', 'heroku']);
+const VERIFIED_APPS_PLATFORM_ENUM = "ENUM('android','windows','linux','plugins','heroku')";
+const ALLOWED_PLATFORMS = new Set(['android', 'windows', 'linux', 'plugins', 'heroku']);
 const TEXT_EXTENSIONS = new Set([
     '.md', '.txt', '.json', '.yaml', '.yml', '.toml', '.xml', '.gradle', '.properties',
     '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.py', '.java', '.kt', '.kts', '.go',
@@ -148,7 +148,25 @@ function adminDeveloperApplicationsEmail() {
 
 function normalizePlatform(value) {
     const normalized = String(value || '').trim().toLowerCase();
-    return normalized === 'plugins' ? 'plugin' : normalized;
+    switch (normalized) {
+        case 'plugin':
+        case 'extension':
+        case 'extensions':
+        case 'telegram-plugin':
+            return 'plugins';
+        case 'heroku-app':
+        case 'heroku-addon':
+            return 'heroku';
+        case 'apk':
+            return 'android';
+        case 'shell':
+        case 'cli':
+            return 'linux';
+        case 'win':
+            return 'windows';
+        default:
+            return normalized;
+    }
 }
 
 function normalizeUrl(value) {

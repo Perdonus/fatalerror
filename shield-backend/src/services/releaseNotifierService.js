@@ -4,6 +4,7 @@ const pool = require('../db/pool');
 const RELEASE_NOTIFIER_TELEGRAM_API_BASE = String(process.env.RELEASE_NOTIFIER_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 const RELEASE_NOTIFIER_BOT_USERNAME = String(process.env.RELEASE_NOTIFIER_TELEGRAM_BOT_USERNAME || '').trim();
 const RELEASE_NOTIFIER_ALLOWED_USER_IDS = parseCsvSet(process.env.RELEASE_NOTIFIER_TELEGRAM_ALLOWED_USER_IDS);
+const RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH = Math.max(512, Math.min(3900, Number(process.env.RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH || 3600) || 3600));
 
 let schemaReady = false;
 let schemaReadyPromise = null;
@@ -84,6 +85,7 @@ function getReleaseNotifierConfig() {
         webhookSecret,
         announceSecret,
         allowedUserIds: RELEASE_NOTIFIER_ALLOWED_USER_IDS,
+        command_list: ['/setchat'],
         message: available
             ? 'Бот анонсов релизов готов.'
             : 'Бот анонсов релизов временно не настроен. Нужен RELEASE_NOTIFIER_TELEGRAM_BOT_TOKEN.'
@@ -229,7 +231,9 @@ async function loadReleaseNotifierTarget(db = pool) {
          WHERE meta_key IN (
              'target_chat_id',
              'target_thread_id',
+             'target_chat_type',
              'target_chat_title',
+             'target_is_topic_message',
              'target_set_by_user_id',
              'target_set_by_username',
              'target_updated_at'
@@ -245,7 +249,9 @@ async function loadReleaseNotifierTarget(db = pool) {
         configured: Boolean(chatId),
         chat_id: chatId,
         thread_id: threadId,
+        chat_type: normalizeOptionalText(meta.get('target_chat_type'), 32),
         chat_title: normalizeOptionalText(meta.get('target_chat_title'), 255),
+        is_topic_message: String(meta.get('target_is_topic_message') || '').trim() === '1',
         set_by_user_id: normalizeOptionalText(meta.get('target_set_by_user_id'), 64),
         set_by_username: normalizeOptionalText(meta.get('target_set_by_username'), 120),
         updated_at: updatedAt
@@ -257,7 +263,9 @@ async function saveReleaseNotifierTarget(target, db = pool) {
     await Promise.all([
         setMeta('target_chat_id', String(target.chatId), db),
         setMeta('target_thread_id', target.threadId ? String(target.threadId) : '', db),
+        setMeta('target_chat_type', String(target.chatType || ''), db),
         setMeta('target_chat_title', String(target.chatTitle || ''), db),
+        setMeta('target_is_topic_message', target.isTopicMessage ? '1' : '0', db),
         setMeta('target_set_by_user_id', String(target.setByUserId || ''), db),
         setMeta('target_set_by_username', String(target.setByUsername || ''), db),
         setMeta('target_updated_at', String(updatedAt), db)
@@ -272,11 +280,12 @@ async function getReleaseNotifierState(db = pool) {
         availability: config.available,
         message: config.message,
         bot_username: config.botUsername || null,
+        command_list: config.command_list,
         target
     };
 }
 
-function buildReleaseAnnouncementMessage(payload) {
+function buildReleaseAnnouncementLines(payload) {
     const platformName = normalizeOptionalText(payload.platform_name || payload.platform || 'платформы', 80) || 'платформы';
     const oldVersion = normalizeVersion(payload.old_version || payload.previous_version || payload.from_version);
     const newVersion = normalizeVersion(payload.new_version || payload.version || payload.to_version);
@@ -288,7 +297,7 @@ function buildReleaseAnnouncementMessage(payload) {
 
     const lines = [`<b>Обновилась ${escapeHtml(platformName)} версия</b>`];
     if (oldVersion) {
-        lines.push(`с <s>${escapeHtml(oldVersion)}</s> на <b>${escapeHtml(newVersion)}</b>`);
+        lines.push(`с <s>${escapeHtml(oldVersion)}</s>, на <b>${escapeHtml(newVersion)}</b>`);
     } else {
         lines.push(`Новая версия: <b>${escapeHtml(newVersion)}</b>`);
     }
@@ -300,7 +309,43 @@ function buildReleaseAnnouncementMessage(payload) {
         }
     }
 
-    return lines.join('\n');
+    return lines;
+}
+
+function splitAnnouncementLines(lines) {
+    const chunks = [];
+    let current = '';
+
+    for (const line of lines) {
+        const candidate = current ? `${current}\n${line}` : String(line || '');
+        if (candidate.length <= RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH) {
+            current = candidate;
+            continue;
+        }
+
+        if (current) {
+            chunks.push(current);
+            current = '';
+        }
+
+        if (String(line || '').length <= RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH) {
+            current = String(line || '');
+            continue;
+        }
+
+        let rest = String(line || '');
+        while (rest.length > RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH) {
+            chunks.push(rest.slice(0, RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH));
+            rest = rest.slice(RELEASE_NOTIFIER_MESSAGE_MAX_LENGTH);
+        }
+        current = rest;
+    }
+
+    if (current) {
+        chunks.push(current);
+    }
+
+    return chunks.filter(Boolean);
 }
 
 async function sendReleaseAnnouncement(payload = {}, db = pool) {
@@ -315,22 +360,33 @@ async function sendReleaseAnnouncement(payload = {}, db = pool) {
         throw createHttpError(400, 'Сначала выполните /setchat в нужной группе или теме.', 'RELEASE_NOTIFIER_TARGET_MISSING');
     }
 
-    const text = buildReleaseAnnouncementMessage(payload);
-    const telegramPayload = {
-        chat_id: target.chat_id,
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-    };
-    if (target.thread_id) {
-        telegramPayload.message_thread_id = Number(target.thread_id);
+    const messageChunks = splitAnnouncementLines(buildReleaseAnnouncementLines(payload));
+    if (messageChunks.length === 0) {
+        throw createHttpError(400, 'Ченджлог для анонса пустой.', 'RELEASE_NOTIFIER_CHANGELOG_EMPTY');
     }
 
-    const result = await callReleaseNotifierTelegram('sendMessage', telegramPayload);
+    const messageIds = [];
+    for (const text of messageChunks) {
+        const telegramPayload = {
+            chat_id: target.chat_id,
+            text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true
+        };
+        if (target.thread_id) {
+            telegramPayload.message_thread_id = Number(target.thread_id);
+        }
+
+        const result = await callReleaseNotifierTelegram('sendMessage', telegramPayload);
+        messageIds.push(Number(result?.message_id || 0) || null);
+    }
+
     return {
         sent: true,
         target,
-        message_id: Number(result?.message_id || 0) || null
+        message_id: messageIds[0] || null,
+        message_ids: messageIds,
+        chunk_count: messageIds.length
     };
 }
 
@@ -348,6 +404,7 @@ async function handleSetChatCommand(message, updateId, db = pool) {
     const threadId = Number(message?.message_thread_id || 0) || null;
     const chatTitle = normalizeOptionalText(message?.chat?.title || message?.chat?.username || '', 255);
     const username = normalizeOptionalText(message?.from?.username || '', 120);
+    const isTopicMessage = message?.is_topic_message === true;
 
     if (!isAuthorizedSetChatUser(fromId)) {
         await callReleaseNotifierTelegram('sendMessage', {
@@ -380,7 +437,9 @@ async function handleSetChatCommand(message, updateId, db = pool) {
     const target = await saveReleaseNotifierTarget({
         chatId,
         threadId,
+        chatType,
         chatTitle,
+        isTopicMessage,
         setByUserId: fromId,
         setByUsername: username
     }, db);

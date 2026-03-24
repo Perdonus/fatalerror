@@ -767,6 +767,18 @@
   letter-spacing: -0.02em;
 }
 
+.verified-apps-nav-section {
+  display: grid;
+  gap: 10px;
+}
+
+.verified-apps-nav-section > span {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--nv-text-faint);
+}
+
 .profile-nav-button:hover,
 .profile-nav-button.is-active {
   border-color: rgba(201, 96, 108, 0.28);
@@ -899,6 +911,28 @@
   border-color: rgba(201, 96, 108, 0.2);
 }
 
+.profile-account-card {
+  min-height: 132px;
+  padding: 22px 24px;
+}
+
+.profile-account-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-account-copy strong,
+.profile-state-title {
+  font-size: clamp(1.36rem, 2vw, 1.72rem);
+  letter-spacing: -0.04em;
+}
+
+.profile-account-copy span,
+.profile-draft-note {
+  color: var(--nv-text-soft);
+  line-height: 1.6;
+}
+
 .profile-panel-card-emphasis {
   background: linear-gradient(180deg, rgba(24, 27, 34, 0.96), rgba(18, 20, 25, 0.98));
 }
@@ -981,6 +1015,10 @@
 
 .profile-form-card .auth-form {
   gap: 14px;
+}
+
+.profile-form-card .nv-button {
+  justify-self: start;
 }
 
 .profile-form-card .auth-footer-note {
@@ -1176,10 +1214,8 @@
   text-align: center;
 }
 
-.profile-panel-card-centered h2 {
+.profile-panel-card-centered .profile-state-title {
   margin: 0;
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  letter-spacing: -0.04em;
 }
 
 .profile-panel-card-rejected {

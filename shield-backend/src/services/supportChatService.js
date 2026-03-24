@@ -48,6 +48,8 @@ function getAvailabilityState() {
         availability: config.available,
         message: config.message,
         support_bot_username: config.botUsername,
+        configured_group_chat_id: config.chatId || null,
+        forum_topics_required: true,
         poll_after_ms: SUPPORT_CHAT_POLL_INTERVAL_MS
     };
 }

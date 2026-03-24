@@ -1,48 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  VERIFIED_APP_GROUPS,
   fetchPublicVerifiedApps,
   formatVerifiedAppPlatform,
   humanizeError,
+  normalizeVerifiedAppPlatform,
   type SiteVerifiedApp,
-  type SiteVerifiedAppPlatform
+  type SiteVerifiedAppFilter
 } from '../lib/siteAuth';
 import '../styles/auth.css';
-
-type PlatformFilter = 'all' | SiteVerifiedAppPlatform;
-
-type PlatformGroup = {
-  id: string;
-  label: string;
-  items: Array<{
-    value: PlatformFilter;
-    label: string;
-  }>;
-};
-
-const platformGroups: PlatformGroup[] = [
-  {
-    id: 'catalog',
-    label: 'Каталог',
-    items: [{ value: 'all', label: 'Все проверенные' }]
-  },
-  {
-    id: 'apps',
-    label: 'Приложения',
-    items: [
-      { value: 'windows', label: 'Windows' },
-      { value: 'android', label: 'Android' },
-      { value: 'linux', label: 'Linux' }
-    ]
-  },
-  {
-    id: 'integrations',
-    label: 'Интеграции',
-    items: [
-      { value: 'plugin', label: 'Plugins' },
-      { value: 'heroku', label: 'Heroku' }
-    ]
-  }
-];
 
 const navGroupLabelStyle = {
   padding: '2px 4px 0',
@@ -53,13 +19,15 @@ const navGroupLabelStyle = {
   textTransform: 'uppercase' as const
 };
 
-function getFilterTitle(platform: PlatformFilter) {
+function getFilterTitle(platform: SiteVerifiedAppFilter) {
   return platform === 'all' ? 'Все проверенные' : formatVerifiedAppPlatform(platform);
 }
 
 function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = app.verifiedAt ? new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium' }).format(new Date(app.verifiedAt)) : null;
+  const platformLabel = formatVerifiedAppPlatform(String(app.platform || ''));
+  const authorLabel = app.authorName || 'Проверенный разработчик';
 
   return (
     <article className="content-card developer-app-card developer-app-card-public">
@@ -72,13 +40,16 @@ function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
             <strong>{app.appName}</strong>
             <span className="profile-status-pill is-active">Безопасно</span>
           </div>
-          <p>{app.authorName || 'Проверенный разработчик'}</p>
         </div>
       </div>
       {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
       <div className="developer-app-row">
-        <span>Категория</span>
-        <strong>{formatVerifiedAppPlatform(app.platform)}</strong>
+        <span>Раздел</span>
+        <strong>{platformLabel}</strong>
+      </div>
+      <div className="developer-app-row">
+        <span>Автор</span>
+        <strong>{authorLabel}</strong>
       </div>
       <div className="developer-app-links">
         {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
@@ -90,7 +61,7 @@ function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
 }
 
 export function VerifiedAppsPage() {
-  const [platform, setPlatform] = useState<PlatformFilter>('all');
+  const [platform, setPlatform] = useState<SiteVerifiedAppFilter>('all');
   const [apps, setApps] = useState<SiteVerifiedApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -128,11 +99,10 @@ export function VerifiedAppsPage() {
       <section className="profile-dashboard-grid verified-apps-layout">
         <aside className="content-card profile-nav-card verified-apps-nav-card">
           <div className="profile-nav-head">
-            <strong>Проверенные apps</strong>
-            <span>Каталог опубликованных безопасных приложений, плагинов и Heroku-интеграций.</span>
+            <strong>Проверенные</strong>
           </div>
           <div className="profile-nav-list" role="tablist" aria-label="Категории проверенных приложений">
-            {platformGroups.map((group, index) => (
+            {VERIFIED_APP_GROUPS.map((group, index) => (
               <div key={group.id} className="profile-panel-stack">
                 {index > 0 ? <div className="profile-nav-divider" /> : null}
                 <div style={navGroupLabelStyle}>{group.label}</div>
@@ -170,7 +140,7 @@ export function VerifiedAppsPage() {
           ) : apps.length > 0 ? (
             <div className="developer-app-grid developer-app-grid-public">
               {apps.map((app) => (
-                <VerifiedAppTile key={app.id || `${app.appName}-${app.platform}`} app={app} />
+                <VerifiedAppTile key={app.id || `${app.appName}-${normalizeVerifiedAppPlatform(String(app.platform || ''))}`} app={app} />
               ))}
             </div>
           ) : (

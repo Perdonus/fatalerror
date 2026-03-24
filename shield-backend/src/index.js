@@ -18,9 +18,11 @@ const purchasesRoutes = require('./routes/purchases');
 const logsRoutes = require('./routes/logs');
 const verifiedAppsRoutes = require('./routes/verifiedApps');
 const profileOverviewRoutes = require('./routes/profileOverview');
+const supportChatRoutes = require('./routes/supportChat');
 const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
 const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
+const { ensureSupportChatSchema } = require('./services/supportChatService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -95,6 +97,7 @@ app.use('/api/logs', logsRoutes);
 app.use('/api/network-protection', networkProtectionRoutes);
 app.use('/api/releases', releasesRoutes);
 app.use('/api/profile', profileOverviewRoutes);
+app.use('/api', supportChatRoutes);
 app.use('/api', verifiedAppsRoutes);
 
 function buildHealthPayload() {
@@ -137,6 +140,9 @@ app.listen(PORT, '0.0.0.0', () => {
     resumePendingDesktopScans();
     resumePendingVerifiedAppsJobs().catch((error) => {
         console.error('Failed to resume verified app jobs:', error);
+    });
+    ensureSupportChatSchema().catch((error) => {
+        console.error('Failed to ensure support chat schema:', error);
     });
 });
 

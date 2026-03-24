@@ -353,6 +353,14 @@ export function StoryScene({ title, body, kicker, accent, visual, aside, compact
             <span className="story-visual-grid" aria-hidden="true" />
             <span className="story-visual-glow" aria-hidden="true" />
             <span className="story-visual-beam" aria-hidden="true" />
+            <span className="story-visual-frame" aria-hidden="true" />
+            <span className="story-visual-frame story-visual-frame-inner" aria-hidden="true" />
+            <span className="story-visual-contour story-visual-contour-a" aria-hidden="true" />
+            <span className="story-visual-contour story-visual-contour-b" aria-hidden="true" />
+            <span className="story-visual-orbit story-visual-orbit-a" aria-hidden="true" />
+            <span className="story-visual-orbit story-visual-orbit-b" aria-hidden="true" />
+            <span className="story-visual-tracker" aria-hidden="true" />
+            <span className="story-visual-scanline" aria-hidden="true" />
             <StoryVisual kind={visual} />
           </div>
         </article>

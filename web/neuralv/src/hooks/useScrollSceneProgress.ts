@@ -13,10 +13,11 @@ function clamp(value: number) {
 export function useScrollSceneProgress<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [progress, setProgress] = useState(0);
+  const [viewportMode, setViewportMode] = useState({ mobile: false, reduced: false });
 
   useEffect(() => {
     let frame = 0;
-    const staticProgress = 0.66;
+    const staticProgress = 0.62;
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const mobileQuery = window.matchMedia('(max-width: 760px)');
     const state = { current: 0, target: 0 };
@@ -37,7 +38,15 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
         return;
       }
 
-      if (reducedMotionQuery.matches || mobileQuery.matches) {
+      const reduced = reducedMotionQuery.matches;
+      const mobile = mobileQuery.matches;
+      setViewportMode((current) => (
+        current.mobile === mobile && current.reduced === reduced
+          ? current
+          : { mobile, reduced }
+      ));
+
+      if (reduced) {
         state.current = staticProgress;
         state.target = staticProgress;
         setProgress(staticProgress);
@@ -46,8 +55,8 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
 
       const rect = node.getBoundingClientRect();
       const viewport = window.innerHeight || 1;
-      const start = viewport * 0.88;
-      const end = -rect.height * 0.34;
+      const start = viewport * (mobile ? 0.94 : 0.88);
+      const end = -rect.height * (mobile ? 0.18 : 0.34);
       state.target = clamp((start - rect.top) / (start - end));
       if (!frame) {
         frame = window.requestAnimationFrame(animate);
@@ -86,18 +95,30 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
   }, []);
 
   const style = useMemo(() => {
+    const { mobile, reduced } = viewportMode;
     const eased = progress * progress * (3 - 2 * progress);
     const enter = clamp((eased - 0.04) / 0.96);
-    const focus = 1 - Math.abs(eased - 0.5) * 2;
+    const rawFocus = 1 - Math.abs(eased - 0.5) * 2;
+    const motionScale = reduced ? 0.08 : mobile ? 0.42 : 1;
+    const revealScale = reduced ? 0.36 : mobile ? 0.72 : 1;
+    const depthScale = reduced ? 0.22 : mobile ? 0.56 : 1;
+    const beamScale = reduced ? 0.24 : mobile ? 0.68 : 1;
+    const rawDrift = (eased - 0.5) * 2;
+    const rawRise = (1 - enter) * 58;
+    const rawOrbit = Math.sin(eased * Math.PI * 1.4);
+    const rawSwing = Math.sin((eased - 0.08) * Math.PI * 1.08);
+    const rawPulse = 0.5 + Math.sin(eased * Math.PI * 2.2 - Math.PI / 6) * 0.5;
+    const focus = reduced ? 0.42 + rawFocus * 0.18 : mobile ? 0.24 + rawFocus * 0.76 : rawFocus;
     const depth = 0.22 + focus * 0.78;
-    const drift = (eased - 0.5) * 2;
-    const rise = (1 - enter) * 58;
-    const orbit = Math.sin(eased * Math.PI * 1.4);
-    const swing = Math.sin((eased - 0.08) * Math.PI * 1.08);
-    const pulse = 0.5 + Math.sin(eased * Math.PI * 2.2 - Math.PI / 6) * 0.5;
-    const tilt = drift * 6.5 + orbit * 1.6;
-    const beam = clamp((eased - 0.14) / 0.86);
-    const flare = 0.18 + focus * 0.82;
+    const drift = rawDrift * motionScale;
+    const rise = rawRise * revealScale;
+    const orbit = rawOrbit * motionScale;
+    const swing = rawSwing * motionScale;
+    const pulse = 0.5 + (rawPulse - 0.5) * (reduced ? 0.1 : mobile ? 0.38 : 1);
+    const tilt = (rawDrift * 6.5 + rawOrbit * 1.6) * depthScale;
+    const beam = clamp((eased - 0.14) / 0.86) * beamScale;
+    const flare = reduced ? 0.24 + rawFocus * 0.16 : mobile ? 0.16 + rawFocus * 0.6 : 0.18 + rawFocus * 0.82;
+    const parallax = 0.24 + focus * 0.76;
 
     return {
       '--scene-progress': progress,
@@ -112,9 +133,13 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
       '--scene-pulse': pulse,
       '--scene-tilt': tilt,
       '--scene-beam': beam,
-      '--scene-flare': flare
+      '--scene-flare': flare,
+      '--scene-motion-scale': motionScale,
+      '--scene-reveal-scale': revealScale,
+      '--scene-depth-scale': depthScale,
+      '--scene-parallax': parallax
     } as CSSProperties;
-  }, [progress]);
+  }, [progress, viewportMode]);
 
   return { ref, progress, style };
 }

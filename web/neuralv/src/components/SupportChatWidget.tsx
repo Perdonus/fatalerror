@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import '../styles/support-chat.css';
 
 export type SupportChatRole = 'user' | 'agent' | 'system';
@@ -124,7 +124,7 @@ export function SupportChatWidget({
   onRetryMessage,
   emptyTitle = DEFAULT_EMPTY_TITLE,
   emptyDescription = DEFAULT_EMPTY_DESCRIPTION,
-  helperText = 'Просто Нужна помощь?',
+  helperText = '',
   sendLabel = 'Отправить'
 }: SupportChatWidgetProps) {
   const [isOpen, setIsOpen] = useControllableState(open, defaultOpen, onOpenChange);
@@ -137,16 +137,6 @@ export function SupportChatWidget({
   const unavailableState = unavailable ?? null;
   const isUnavailable = Boolean(unavailableState);
   const sendDisabled = inputDisabled || !canSend || !onSend || !draft.trim() || isSubmitting || sending || isUnavailable;
-  const surfaceStatus = useMemo(() => {
-    if (isUnavailable) {
-      return 'Недоступно';
-    }
-    if (sending || isSubmitting) {
-      return 'Отправка';
-    }
-    return statusLabel || 'Онлайн';
-  }, [isSubmitting, isUnavailable, sending, statusLabel]);
-
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -248,9 +238,8 @@ export function SupportChatWidget({
               <path d="M8 9.25h8M8 12h5.5" />
             </svg>
           </span>
-          <span className="support-chat__launcher-copy">
+          <span className="support-chat__launcher-copy support-chat__launcher-copy--single">
             <strong>{launcherLabel}</strong>
-            <span>{surfaceStatus}</span>
           </span>
           {unreadBadge ? <span className="support-chat__badge">{unreadBadge}</span> : null}
         </button>
@@ -358,7 +347,7 @@ export function SupportChatWidget({
                         </svg>
                       </button>
                     </label>
-                    <div className="support-chat__composer-note">{helperText}</div>
+                    {helperText ? <div className="support-chat__composer-note">{helperText}</div> : null}
                   </div>
                 </>
               )}

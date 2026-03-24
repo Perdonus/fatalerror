@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSiteAuth } from './SiteAuthProvider';
 import { SupportChatWidget, type SupportChatMessage as WidgetSupportChatMessage } from './SupportChatWidget';
@@ -69,7 +69,20 @@ export function AppShell() {
   const [supportRefreshNonce, setSupportRefreshNonce] = useState(0);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !('scrollRestoration' in window.history)) {
+      return;
+    }
+
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+    return () => {
+      window.history.scrollRestoration = previous;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
     setMenuOpen(false);
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [location.pathname, location.search]);
 
   useEffect(() => {
@@ -335,10 +348,9 @@ export function AppShell() {
         open={supportOpen}
         onOpenChange={setSupportOpen}
         title="Чат поддержки"
-        launcherLabel="Чат поддержки"
+        launcherLabel="Нужна помощь?"
         launcherUnreadCount={launcherUnreadCount}
         launcherPending={supportLoading || supportSending}
-        statusLabel="Просто Нужна помощь?"
         messages={mapSupportMessages(supportState)}
         loading={supportLoading}
         refreshing={supportLoading && Boolean(supportState)}
@@ -346,7 +358,6 @@ export function AppShell() {
         unavailable={widgetUnavailable}
         emptyTitle="Напишите в поддержку"
         emptyDescription=""
-        helperText="Просто Нужна помощь?"
         onSend={handleSupportSend}
       />
 

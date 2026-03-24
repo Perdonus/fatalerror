@@ -319,6 +319,49 @@ async function updateTopicIndicator(chatRow, db = pool) {
     );
 }
 
+async function ensureForumTopicForChat(chatRow, user, db = pool) {
+    const config = getSupportConfig();
+    if (!config.available || !chatRow) {
+        return chatRow;
+    }
+    if (chatRow.telegram_thread_id) {
+        return chatRow;
+    }
+
+    const topic = await callTelegram('createForumTopic', {
+        chat_id: config.chatId,
+        name: formatTopicName(chatRow.ticket_number, chatRow.last_message_from || 'client')
+    });
+    const threadId = Number(topic.message_thread_id || 0) || null;
+    if (!threadId) {
+        throw createHttpError(502, 'Telegram не вернул id темы форума.', 'SUPPORT_TELEGRAM_TOPIC_FAILED');
+    }
+
+    const topicName = String(topic.name || formatTopicName(chatRow.ticket_number, chatRow.last_message_from || 'client'));
+    await db.query(
+        `UPDATE support_chats
+         SET telegram_chat_id = ?, telegram_thread_id = ?, telegram_topic_name = ?, updated_at = ?
+         WHERE id = ?`,
+        [config.chatId, threadId, topicName, nowMs(), chatRow.id]
+    );
+
+    if (user) {
+        await callTelegram('sendMessage', {
+            chat_id: config.chatId,
+            message_thread_id: threadId,
+            text: `Новая заявка с сайта\nЗаявка #${chatRow.ticket_number}\n${user.name} <${user.email}>`
+        }).catch(() => {});
+    }
+
+    const [rows] = await db.query('SELECT * FROM support_chats WHERE id = ? LIMIT 1', [chatRow.id]);
+    return rows[0] || {
+        ...chatRow,
+        telegram_chat_id: config.chatId,
+        telegram_thread_id: threadId,
+        telegram_topic_name: topicName
+    };
+}
+
 async function createSupportChat(userId, db = pool) {
     await ensureSupportChatSchema(db);
     const availability = getAvailabilityState();
@@ -346,11 +389,25 @@ async function createSupportChat(userId, db = pool) {
     try {
         const existing = await findOpenChatForUser(userId, db);
         if (existing) {
+            let existingChat = existing;
+            if (!existingChat.telegram_thread_id) {
+                try {
+                    existingChat = await ensureForumTopicForChat(existingChat, user, db);
+                } catch (error) {
+                    return {
+                        ...availability,
+                        availability: false,
+                        message: 'Не удалось восстановить тему поддержки. Проверьте forum chat, права бота и SUPPORT_TELEGRAM_CHAT_ID.',
+                        chat: shapeChatRow(existingChat),
+                        messages: await loadChatMessages(existingChat.id, {}, db)
+                    };
+                }
+            }
             return {
                 ...availability,
                 message: 'Диалог уже открыт.',
-                chat: shapeChatRow(existing),
-                messages: await loadChatMessages(existing.id, {}, db)
+                chat: shapeChatRow(existingChat),
+                messages: await loadChatMessages(existingChat.id, {}, db)
             };
         }
 
@@ -372,34 +429,13 @@ async function createSupportChat(userId, db = pool) {
     }
 
     try {
-        const config = getSupportConfig();
-        const topic = await callTelegram('createForumTopic', {
-            chat_id: config.chatId,
-            name: formatTopicName(created.ticket_number, 'client')
-        });
-        const threadId = Number(topic.message_thread_id || 0) || null;
-        if (!threadId) {
-            throw createHttpError(502, 'Telegram не вернул id темы форума.', 'SUPPORT_TELEGRAM_TOPIC_FAILED');
-        }
-        const topicName = String(topic.name || formatTopicName(created.ticket_number, 'client'));
-        await db.query(
-            `UPDATE support_chats
-             SET telegram_chat_id = ?, telegram_thread_id = ?, telegram_topic_name = ?, updated_at = ?
-             WHERE id = ?`,
-            [config.chatId, threadId, topicName, nowMs(), chatId]
-        );
-
-        await callTelegram('sendMessage', {
-            chat_id: config.chatId,
-            message_thread_id: threadId,
-            text: `Новая заявка с сайта\nЗаявка #${created.ticket_number}\n${user.name} <${user.email}>`
-        }).catch(() => {});
+        await ensureForumTopicForChat(created, user, db);
     } catch (error) {
         await db.query('DELETE FROM support_chats WHERE id = ?', [chatId]).catch(() => {});
         return {
             ...availability,
             availability: false,
-            message: 'Не удалось открыть диалог поддержки. Проверьте Telegram forum chat, права бота и SUPPORT_TELEGRAM_CHAT_ID.',
+            message: 'Не удалось открыть диалог поддержки. Проверьте forum chat, права бота и SUPPORT_TELEGRAM_CHAT_ID.',
             chat: null,
             messages: []
         };
@@ -591,7 +627,7 @@ async function getSupportChatState(userId, options = {}, db = pool) {
         await syncSupportUpdates(db).catch(() => null);
     }
 
-    const chat = await findOpenChatForUser(userId, db);
+    let chat = await findOpenChatForUser(userId, db);
     if (!chat) {
         return {
             ...availability,
@@ -599,6 +635,11 @@ async function getSupportChatState(userId, options = {}, db = pool) {
             chat: null,
             messages: []
         };
+    }
+
+    if (!chat.telegram_thread_id) {
+        const user = await fetchUserById(userId, { db, includeCreatedAt: true }).catch(() => null);
+        chat = await ensureForumTopicForChat(chat, user, db).catch(() => chat);
     }
 
     const messages = await loadChatMessages(chat.id, {
@@ -645,13 +686,17 @@ async function sendSupportChatMessage(userId, payload = {}, db = pool) {
         throw createHttpError(500, 'Не удалось подготовить чат поддержки.', 'SUPPORT_CHAT_UNAVAILABLE');
     }
     if (!chat.telegram_thread_id) {
-        return {
-            ...availability,
-            availability: false,
-            message: 'У Telegram-чата нет темы форума. Проверьте SUPPORT_TELEGRAM_CHAT_ID и права бота.',
-            chat: shapeChatRow(chat),
-            messages: await loadChatMessages(chat.id, {}, db)
-        };
+        try {
+            chat = await ensureForumTopicForChat(chat, user, db);
+        } catch (error) {
+            return {
+                ...availability,
+                availability: false,
+                message: 'Не удалось открыть тему поддержки. Проверьте forum chat, права бота и SUPPORT_TELEGRAM_CHAT_ID.',
+                chat: shapeChatRow(chat),
+                messages: await loadChatMessages(chat.id, {}, db)
+            };
+        }
     }
 
     const config = getSupportConfig();

@@ -76,6 +76,22 @@ function getReleaseNotifierConfig() {
     const token = String(process.env.RELEASE_NOTIFIER_TELEGRAM_BOT_TOKEN || '').trim();
     const webhookSecret = String(process.env.RELEASE_NOTIFIER_TELEGRAM_WEBHOOK_SECRET || '').trim();
     const announceSecret = String(process.env.RELEASE_NOTIFIER_ANNOUNCE_SECRET || '').trim();
+    const fallbackChatId = normalizeOptionalText(
+        process.env.RELEASE_NOTIFIER_TELEGRAM_CHAT_ID
+            || process.env.RELEASE_NOTIFIER_TARGET_CHAT_ID,
+        64
+    );
+    const fallbackThreadId = Number(
+        process.env.RELEASE_NOTIFIER_TELEGRAM_THREAD_ID
+        || process.env.RELEASE_NOTIFIER_TELEGRAM_TOPIC_ID
+        || process.env.RELEASE_NOTIFIER_TARGET_THREAD_ID
+        || 0
+    ) || null;
+    const fallbackChatTitle = normalizeOptionalText(
+        process.env.RELEASE_NOTIFIER_TELEGRAM_CHAT_TITLE
+            || process.env.RELEASE_NOTIFIER_TARGET_CHAT_TITLE,
+        255
+    );
     const available = Boolean(token);
 
     return {
@@ -86,6 +102,18 @@ function getReleaseNotifierConfig() {
         announceSecret,
         allowedUserIds: RELEASE_NOTIFIER_ALLOWED_USER_IDS,
         command_list: ['/setchat'],
+        fallbackTarget: fallbackChatId ? {
+            configured: true,
+            source: 'env',
+            chat_id: fallbackChatId,
+            thread_id: fallbackThreadId,
+            chat_type: null,
+            chat_title: fallbackChatTitle,
+            is_topic_message: Boolean(fallbackThreadId),
+            set_by_user_id: null,
+            set_by_username: null,
+            updated_at: null
+        } : null,
         message: available
             ? 'Бот анонсов релизов готов.'
             : 'Бот анонсов релизов временно не настроен. Нужен RELEASE_NOTIFIER_TELEGRAM_BOT_TOKEN.'
@@ -224,6 +252,7 @@ function isSetChatCommand(text, botUsername) {
 }
 
 async function loadReleaseNotifierTarget(db = pool) {
+    const config = getReleaseNotifierConfig();
     await ensureReleaseNotifierSchema(db);
     const [rows] = await db.query(
         `SELECT meta_key, meta_value, updated_at
@@ -245,8 +274,15 @@ async function loadReleaseNotifierTarget(db = pool) {
     const threadId = Number(meta.get('target_thread_id') || 0) || null;
     const updatedAt = Number(meta.get('target_updated_at') || 0) || null;
 
+    if (!chatId && config.fallbackTarget) {
+        return {
+            ...config.fallbackTarget
+        };
+    }
+
     return {
         configured: Boolean(chatId),
+        source: chatId ? 'stored' : null,
         chat_id: chatId,
         thread_id: threadId,
         chat_type: normalizeOptionalText(meta.get('target_chat_type'), 32),
@@ -276,12 +312,26 @@ async function saveReleaseNotifierTarget(target, db = pool) {
 async function getReleaseNotifierState(db = pool) {
     const config = getReleaseNotifierConfig();
     const target = await loadReleaseNotifierTarget(db);
+    const fallbackTarget = config.fallbackTarget || {
+        configured: false,
+        source: 'env',
+        chat_id: null,
+        thread_id: null,
+        chat_type: null,
+        chat_title: null,
+        is_topic_message: false,
+        set_by_user_id: null,
+        set_by_username: null,
+        updated_at: null
+    };
     return {
         availability: config.available,
         message: config.message,
         bot_username: config.botUsername || null,
         command_list: config.command_list,
-        target
+        target,
+        fallback_target: fallbackTarget,
+        active_target_source: target.source || (fallbackTarget.configured ? 'env' : null)
     };
 }
 
@@ -383,6 +433,7 @@ async function sendReleaseAnnouncement(payload = {}, db = pool) {
 
     return {
         sent: true,
+        target_source: target.source || null,
         target,
         message_id: messageIds[0] || null,
         message_ids: messageIds,
@@ -453,7 +504,7 @@ async function handleSetChatCommand(message, updateId, db = pool) {
     await callReleaseNotifierTelegram('sendMessage', {
         chat_id: chatId,
         message_thread_id: threadId || undefined,
-        text: `Чат для анонсов сохранён: ${targetLabel}.`
+        text: `Бот живой. Анонсы релизов теперь будут приходить сюда: ${targetLabel}.`
     }).catch(() => {});
 
     return {

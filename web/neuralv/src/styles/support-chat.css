@@ -3,9 +3,14 @@
   right: 20px;
   bottom: 20px;
   z-index: 70;
-  width: max-content;
+  width: fit-content;
   max-width: calc(100vw - 24px);
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
   pointer-events: none;
+  contain: layout paint;
+  isolation: isolate;
 }
 
 .support-chat__launcher,
@@ -14,13 +19,13 @@
 }
 
 .support-chat__launcher {
-  min-width: 162px;
-  max-width: min(252px, calc(100vw - 24px));
-  padding: 9px 11px;
+  min-width: 0;
+  max-width: min(212px, calc(100vw - 24px));
+  padding: 8px 12px;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(180deg, rgba(25, 28, 35, 0.96), rgba(13, 15, 20, 0.98));
@@ -82,10 +87,20 @@
   text-align: left;
 }
 
+.support-chat__launcher-copy--single {
+  display: flex;
+  align-items: center;
+  min-height: 100%;
+}
+
 .support-chat__launcher-copy strong {
-  font-size: 0.93rem;
+  display: block;
+  font-size: 0.9rem;
   font-weight: 780;
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .support-chat__launcher-copy span {
@@ -462,12 +477,12 @@
   .support-chat__launcher {
     min-width: 0;
     width: auto;
-    max-width: min(216px, calc(100vw - 16px));
+    max-width: min(196px, calc(100vw - 16px));
     padding: 8px 10px;
   }
 
-  .support-chat__launcher-copy span {
-    font-size: 0.7rem;
+  .support-chat__launcher-copy strong {
+    font-size: 0.84rem;
   }
 
   .support-chat__panel {

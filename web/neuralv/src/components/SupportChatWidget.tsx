@@ -193,8 +193,10 @@ export function SupportChatWidget({
     if (!node) {
       return;
     }
+    const maxHeight = Math.max(176, Math.round(window.innerHeight * 0.28));
     node.style.height = '0px';
-    node.style.height = `${Math.min(node.scrollHeight, 192)}px`;
+    node.style.height = `${Math.min(node.scrollHeight, maxHeight)}px`;
+    node.style.overflow = 'hidden';
   }, [draft, isOpen]);
 
   useEffect(() => {

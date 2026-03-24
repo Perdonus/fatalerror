@@ -53,6 +53,7 @@ router.get('/profile/support-chat', auth, async (req, res) => {
             limit: req.query.limit,
             sync: req.query.sync
         });
+        res.setHeader('Cache-Control', 'no-store');
         return res.json({ success: true, ...state });
     } catch (error) {
         console.error('Profile support chat state error:', error);
@@ -63,6 +64,7 @@ router.get('/profile/support-chat', auth, async (req, res) => {
 router.post('/profile/support-chat/open', auth, async (req, res) => {
     try {
         const state = await createSupportChat(req.userId);
+        res.setHeader('Cache-Control', 'no-store');
         return res.status(state.availability ? 201 : 200).json({ success: true, ...state });
     } catch (error) {
         console.error('Profile support chat open error:', error);
@@ -73,6 +75,7 @@ router.post('/profile/support-chat/open', auth, async (req, res) => {
 router.post('/profile/support-chat/messages', auth, async (req, res) => {
     try {
         const state = await sendSupportChatMessage(req.userId, req.body || {});
+        res.setHeader('Cache-Control', 'no-store');
         return res.json({ success: true, ...state });
     } catch (error) {
         console.error('Profile support chat message error:', error);

@@ -135,7 +135,7 @@ function shouldUseReleaseNotifierPolling() {
     if (forced === '0' || forced === 'false') {
         return false;
     }
-    return !String(process.env.RELEASE_NOTIFIER_TELEGRAM_WEBHOOK_SECRET || '').trim();
+    return true;
 }
 
 async function ensureReleaseNotifierSchema(db = pool) {
@@ -728,6 +728,12 @@ function startReleaseNotifierPolling() {
             console.error('Release notifier background sync failed:', error);
         });
     };
+
+    callReleaseNotifierTelegram('deleteWebhook', {
+        drop_pending_updates: false
+    }).catch((error) => {
+        console.error('Failed to switch release notifier bot to polling mode:', error);
+    });
 
     pollerTimer = setInterval(run, RELEASE_NOTIFIER_POLL_INTERVAL_MS);
     if (typeof pollerTimer?.unref === 'function') {

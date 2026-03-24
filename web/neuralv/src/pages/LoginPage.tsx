@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthCodeStep } from '../components/AuthCodeStep';
 import { AuthPageLayout } from '../components/AuthPageLayout';
@@ -17,7 +17,7 @@ type LoginPageProps = {
 const initialChallenge: SiteAuthChallenge | null = null;
 
 export function LoginPage({ onAuthenticated }: LoginPageProps) {
-  const { setSession: setAuthSession } = useSiteAuth();
+  const { ready: authReady, session, setSession: setAuthSession } = useSiteAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -30,6 +30,13 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   const [info, setInfo] = useState<string | null>(null);
 
   const ready = useMemo(() => email.trim().length > 0 && password.trim().length > 0, [email, password]);
+
+  useEffect(() => {
+    if (!authReady || !session) {
+      return;
+    }
+    navigate('/profile', { replace: true });
+  }, [authReady, navigate, session]);
 
   async function handleStart(event: FormEvent) {
     event.preventDefault();

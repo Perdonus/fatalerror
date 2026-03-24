@@ -2499,11 +2499,11 @@ body {
 }
 
 .shell-burger {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   display: inline-grid;
   place-items: center;
-  gap: 1.5px;
+  gap: 1px;
   padding: 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2520,15 +2520,15 @@ body {
 }
 
 .shell-burger-line {
-  width: 10px;
-  height: 1.5px;
+  width: 8px;
+  height: 1.4px;
   border-radius: 999px;
   background: var(--nv-text);
   transition: transform 180ms ease, opacity 180ms ease;
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(1) {
-  transform: translateY(3.5px) rotate(45deg);
+  transform: translateY(2.4px) rotate(45deg);
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(2) {
@@ -2536,7 +2536,7 @@ body {
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(3) {
-  transform: translateY(-3.5px) rotate(-45deg);
+  transform: translateY(-2.4px) rotate(-45deg);
 }
 
 .shell-overlay-scrim,
@@ -2760,12 +2760,12 @@ body {
   }
 
   .shell-burger {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
   .shell-burger-line {
-    width: 9px;
+    width: 7px;
   }
 
   .shell-drawer {

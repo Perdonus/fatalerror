@@ -512,42 +512,58 @@ function buildSupportEnvelope(messageText, user, chat) {
 }
 
 
-async function extractTelegramAttachment(message) {
+async function extractTelegramAttachments(message) {
+    const attachments = [];
     const photo = Array.isArray(message?.photo) ? message.photo[message.photo.length - 1] : null;
     if (photo?.file_id) {
         const file = await callTelegram('getFile', { file_id: photo.file_id });
-        if (!file?.file_path) {
-            return null;
+        if (file?.file_path) {
+            attachments.push({
+                type: 'photo',
+                telegramFilePath: file.file_path,
+                fileName: path.basename(String(file.file_path || 'photo.jpg')) || 'photo.jpg',
+                mimeType: 'image/jpeg',
+                width: Number(photo.width || 0) || null,
+                height: Number(photo.height || 0) || null,
+                durationSeconds: null
+            });
         }
-        return {
-            type: 'photo',
-            telegramFilePath: file.file_path,
-            fileName: path.basename(String(file.file_path || 'photo.jpg')) || 'photo.jpg',
-            mimeType: 'image/jpeg',
-            width: Number(photo.width || 0) || null,
-            height: Number(photo.height || 0) || null,
-            durationSeconds: null
-        };
     }
 
     const video = message?.video;
     if (video?.file_id) {
         const file = await callTelegram('getFile', { file_id: video.file_id });
-        if (!file?.file_path) {
-            return null;
+        if (file?.file_path) {
+            attachments.push({
+                type: 'video',
+                telegramFilePath: file.file_path,
+                fileName: path.basename(String(file.file_path || video.file_name || 'video.mp4')) || 'video.mp4',
+                mimeType: String(video.mime_type || 'video/mp4'),
+                width: Number(video.width || 0) || null,
+                height: Number(video.height || 0) || null,
+                durationSeconds: Number(video.duration || 0) || null
+            });
         }
-        return {
-            type: 'video',
-            telegramFilePath: file.file_path,
-            fileName: path.basename(String(file.file_path || video.file_name || 'video.mp4')) || 'video.mp4',
-            mimeType: String(video.mime_type || 'video/mp4'),
-            width: Number(video.width || 0) || null,
-            height: Number(video.height || 0) || null,
-            durationSeconds: Number(video.duration || 0) || null
-        };
     }
 
-    return null;
+    const document = message?.document;
+    const documentType = coerceAttachmentType(document?.mime_type, document?.mime_type);
+    if (document?.file_id && documentType && SUPPORT_CHAT_ALLOWED_ATTACHMENT_TYPES.has(documentType)) {
+        const file = await callTelegram('getFile', { file_id: document.file_id });
+        if (file?.file_path) {
+            attachments.push({
+                type: documentType,
+                telegramFilePath: file.file_path,
+                fileName: sanitizeFileName(document.file_name || path.basename(String(file.file_path || 'attachment')) || `${documentType}${getAttachmentExtension(documentType, document.mime_type, document.file_name)}`),
+                mimeType: String(document.mime_type || (documentType === 'video' ? 'video/mp4' : 'image/jpeg')),
+                width: Number(document.thumb?.width || 0) || null,
+                height: Number(document.thumb?.height || 0) || null,
+                durationSeconds: documentType === 'video' ? (Number(message?.video?.duration || 0) || null) : null
+            });
+        }
+    }
+
+    return attachments.slice(0, SUPPORT_CHAT_ATTACHMENT_LIMIT);
 }
 
 async function findOpenChatForUser(userId, db = pool) {
@@ -597,8 +613,8 @@ async function loadChatMessages(chatId, options = {}, db = pool) {
                 telegram_message_id, created_at, updated_at
          FROM support_chat_messages
          WHERE chat_id = ?
-           AND created_at > ?
-         ORDER BY created_at ASC
+           AND GREATEST(created_at, updated_at) > ?
+         ORDER BY GREATEST(created_at, updated_at) ASC, created_at ASC, id ASC
          LIMIT ?`,
         [chatId, after, limit]
     );
@@ -882,7 +898,7 @@ async function ingestTelegramUpdate(update, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
-    const message = update?.message || update?.edited_message;
+    const message = update?.message || update?.edited_message || update?.channel_post || update?.edited_channel_post;
     if (!message || String(message.chat?.id || '') !== String(config.chatId)) {
         return { accepted: false, reason: 'wrong-chat' };
     }
@@ -902,8 +918,8 @@ async function ingestTelegramUpdate(update, db = pool) {
     }
 
     const text = extractInboundText(message);
-    const inboundAttachment = await extractTelegramAttachment(message).catch(() => null);
-    if (!text && !inboundAttachment) {
+    const inboundAttachments = await extractTelegramAttachments(message).catch(() => []);
+    if (!text && inboundAttachments.length === 0) {
         return { accepted: false, reason: 'empty' };
     }
 
@@ -913,7 +929,7 @@ async function ingestTelegramUpdate(update, db = pool) {
     }
 
     const [existingRows] = await db.query(
-        `SELECT id, message_text
+        `SELECT id, message_text, message_kind, attachments_json
          FROM support_chat_messages
          WHERE telegram_chat_id = ? AND telegram_message_id = ?
          LIMIT 1`,
@@ -923,17 +939,22 @@ async function ingestTelegramUpdate(update, db = pool) {
     const senderName = [message.from?.first_name, message.from?.last_name]
         .filter(Boolean)
         .join(' ')
-        .trim() || message.from?.username || 'Поддержка';
+        .trim() || message.from?.username || message.sender_chat?.title || 'Поддержка';
     const createdAt = Number(message.date || 0) > 0 ? Number(message.date) * 1000 : nowMs();
     let attachments = [];
     let messageKind = 'TEXT';
-    if (inboundAttachment) {
-        messageKind = inboundAttachment.type === 'video' ? 'VIDEO' : 'PHOTO';
+    if (inboundAttachments.length > 0) {
+        messageKind = inboundAttachments.some((attachment) => attachment.type === 'video') ? 'VIDEO' : 'PHOTO';
     }
 
     if (existingRows.length > 0) {
-        if (inboundAttachment) {
-            attachments = [await persistTelegramAttachment(existingRows[0].id, chat.id, inboundAttachment)];
+        if (inboundAttachments.length > 0) {
+            attachments = await Promise.all(inboundAttachments.map((attachment) => persistTelegramAttachment(existingRows[0].id, chat.id, attachment)));
+        } else {
+            attachments = parseAttachmentsJson(existingRows[0]?.attachments_json);
+            if (attachments.length > 0) {
+                messageKind = String(existingRows[0]?.message_kind || '').toUpperCase() || messageKind;
+            }
         }
         await db.query(
             `UPDATE support_chat_messages
@@ -943,8 +964,8 @@ async function ingestTelegramUpdate(update, db = pool) {
         );
     } else {
         const messageId = uuidv4();
-        if (inboundAttachment) {
-            attachments = [await persistTelegramAttachment(messageId, chat.id, inboundAttachment)];
+        if (inboundAttachments.length > 0) {
+            attachments = await Promise.all(inboundAttachments.map((attachment) => persistTelegramAttachment(messageId, chat.id, attachment)));
         }
         await db.query(
             `INSERT INTO support_chat_messages
@@ -1009,7 +1030,7 @@ async function syncSupportUpdates(db = pool) {
             offset,
             limit: 100,
             timeout: 0,
-            allowed_updates: ['message', 'edited_message']
+            allowed_updates: ['message', 'edited_message', 'channel_post', 'edited_channel_post']
         });
 
         if (!Array.isArray(updates) || updates.length === 0) {
@@ -1068,8 +1089,8 @@ async function getSupportChatState(userId, options = {}, db = pool) {
     }
 
     await ensureSupportChatSchema(db);
-    if ((options.sync === 'poll' || shouldUseSupportPolling()) && shouldUseSupportPolling()) {
-        syncSupportUpdates(db).catch(() => null);
+    if (options.sync === 'force') {
+        await syncSupportUpdates(db).catch(() => null);
     }
 
     let chat = await findOpenChatForUser(userId, db);

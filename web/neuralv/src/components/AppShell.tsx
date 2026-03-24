@@ -183,6 +183,10 @@ export function AppShell() {
       return Math.max(latest, parseTimestamp(message.createdAt));
     }, 0);
   }, [supportState]);
+  const latestSupportMessageStamp = useMemo(() => {
+    const lastMessage = supportState?.messages?.[supportState.messages.length - 1];
+    return parseTimestamp(lastMessage?.updatedAt || lastMessage?.createdAt || supportState?.chat?.updatedAt || supportState?.chat?.lastMessageAt || 0);
+  }, [supportState]);
 
   const launcherUnreadCount = latestSupportReplyAt > supportSeenAt ? 1 : 0;
   const widgetMessages = useMemo<WidgetSupportChatMessage[]>(() => {
@@ -234,7 +238,7 @@ export function AppShell() {
       void loadSupportState({ openIfMissing: false });
     }, pollAfterMs);
     return () => window.clearTimeout(timer);
-  }, [loadSupportState, session, supportOpen, supportState?.pollAfterMs, supportState?.messages]);
+  }, [latestSupportMessageStamp, loadSupportState, session, supportOpen, supportState?.pollAfterMs]);
 
   useEffect(() => {
     if (!supportOpen) {

@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthCodeStep } from '../components/AuthCodeStep';
 import { AuthPageLayout } from '../components/AuthPageLayout';
@@ -17,7 +17,7 @@ type RegisterPageProps = {
 };
 
 export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
-  const { setSession: setAuthSession } = useSiteAuth();
+  const { ready: authReady, session, setSession: setAuthSession } = useSiteAuth();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -34,6 +34,13 @@ export function RegisterPage({ onAuthenticated }: RegisterPageProps) {
   const ready = useMemo(() => {
     return name.trim().length > 0 && email.trim().length > 0 && !passwordError && confirmPassword === password;
   }, [confirmPassword, email, name, passwordError]);
+
+  useEffect(() => {
+    if (!authReady || !session) {
+      return;
+    }
+    navigate('/profile', { replace: true });
+  }, [authReady, navigate, session]);
 
   async function handleStart(event: FormEvent) {
     event.preventDefault();

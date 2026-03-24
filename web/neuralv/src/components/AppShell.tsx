@@ -23,10 +23,7 @@ export function AppShell() {
             <span className="brand-badge" aria-hidden="true">
               <span className="brand-badge-core" />
             </span>
-            <span className="brand-text">
-              <span className="brand-name">NeuralV</span>
-              <span className="brand-tag">Антивирус для Android, Windows и Linux</span>
-            </span>
+            <span className="brand-name">NeuralV</span>
           </a>
 
           <nav className="shell-nav" aria-label="Навигация NeuralV">
@@ -67,10 +64,7 @@ export function AppShell() {
 
       <footer className="site-footer">
         <div className="site-footer-grid">
-          <div>
-            <div className="footer-title">NeuralV</div>
-            <p className="footer-copy">Один аккаунт, несколько степеней проверки, отдельные клиенты под Android, Windows и Linux.</p>
-          </div>
+          <div className="footer-title">NeuralV</div>
           <nav className="site-footer-links" aria-label="Навигация внизу сайта">
             {navItems.map((item) => (
               <a key={item.to} className="footer-link" href={`/neuralv${item.to === '/' ? '/' : item.to}`}>

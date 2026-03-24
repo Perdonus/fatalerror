@@ -68,6 +68,31 @@ export type SiteAuthResult<T> = {
   retryAfterMs?: number;
 };
 
+function isTerminalSiteAuthFailure<T>(result: SiteAuthResult<T>) {
+  if (!result || result.ok) {
+    return false;
+  }
+
+  if (result.status === 401 || result.status === 403) {
+    return true;
+  }
+
+  const error = String(result.error || '').toLowerCase();
+  return (
+    error.includes('session not found') ||
+    error.includes('session revoked') ||
+    error.includes('refresh token expired') ||
+    error.includes('refresh token invalid') ||
+    error.includes('device mismatch') ||
+    error.includes('token expired or invalid') ||
+    error.includes('сессия истекла')
+  );
+}
+
+export function shouldDiscardStoredSiteSession<T>(result: SiteAuthResult<T>) {
+  return isTerminalSiteAuthFailure(result);
+}
+
 export type PasswordStrength = {
   score: number;
   label: 'weak' | 'fair' | 'good' | 'strong';
@@ -674,6 +699,7 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
         });
         return parseResponse<T>(retryResponse);
       }
+      return refreshed as SiteAuthResult<T>;
     }
 
     return parsed;
@@ -848,7 +874,9 @@ export async function refreshStoredSiteSession(): Promise<SiteAuthResult<SiteAut
   });
 
   if (!result.ok || !result.data) {
-    clearStoredSiteSession();
+    if (shouldDiscardStoredSiteSession(result)) {
+      clearStoredSiteSession();
+    }
     return forwardFailure<SiteAuthSession>(result, 'Не удалось обновить сессию.');
   }
 

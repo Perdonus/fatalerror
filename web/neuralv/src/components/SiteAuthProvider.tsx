@@ -5,6 +5,7 @@ import {
   fetchCurrentSiteUser,
   logoutSiteSession,
   readStoredSiteSession,
+  shouldDiscardStoredSiteSession,
   storeSiteSession,
   subscribeToSiteAuthSession
 } from '../lib/siteAuth';
@@ -40,7 +41,9 @@ export function SiteAuthProvider({ children }: { children: ReactNode }) {
       setSession(result.data);
       return;
     }
-    setSession(null);
+    if (shouldDiscardStoredSiteSession(result)) {
+      setSession(null);
+    }
   }, [setSession]);
 
   const logout = useCallback(async () => {
@@ -59,7 +62,7 @@ export function SiteAuthProvider({ children }: { children: ReactNode }) {
       .then((result) => {
         if (result.ok && result.data) {
           setSession(result.data);
-        } else {
+        } else if (shouldDiscardStoredSiteSession(result)) {
           setSession(null);
         }
       })

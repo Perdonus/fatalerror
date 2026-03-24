@@ -58,6 +58,58 @@ function normalizeVersion(value) {
     return normalized ? normalized.slice(0, 64) : null;
 }
 
+function normalizeReleaseTopicTitle(value, fallback = null) {
+    const normalized = normalizeOptionalText(value, 255);
+    return normalized || fallback;
+}
+
+function normalizeReleaseMessageKind(message) {
+    if (Array.isArray(message?.photo) && message.photo.length > 0) {
+        return 'PHOTO';
+    }
+    if (message?.video) {
+        return 'VIDEO';
+    }
+    if (message?.document) {
+        return 'DOCUMENT';
+    }
+    if (typeof message?.text === 'string' && message.text.trim()) {
+        return 'TEXT';
+    }
+    if (typeof message?.caption === 'string' && message.caption.trim()) {
+        return 'TEXT';
+    }
+    return 'OTHER';
+}
+
+function extractReleaseMessageText(message) {
+    if (typeof message?.text === 'string' && message.text.trim()) {
+        return message.text.trim().slice(0, 8000);
+    }
+    if (typeof message?.caption === 'string' && message.caption.trim()) {
+        return message.caption.trim().slice(0, 8000);
+    }
+    if (message?.forum_topic_created?.name) {
+        return `Создана тема «${String(message.forum_topic_created.name).trim()}».`;
+    }
+    if (message?.forum_topic_edited?.name) {
+        return `Переименована тема: ${String(message.forum_topic_edited.name).trim()}.`;
+    }
+    if (message?.forum_topic_closed) {
+        return 'Тема закрыта.';
+    }
+    if (message?.forum_topic_reopened) {
+        return 'Тема снова открыта.';
+    }
+    if (message?.delete_chat_photo) {
+        return 'Фото группы удалено.';
+    }
+    if (message?.new_chat_title) {
+        return `Изменено название группы: ${String(message.new_chat_title).trim()}.`;
+    }
+    return '';
+}
+
 function normalizeChangelogItems(value) {
     if (Array.isArray(value)) {
         return value
@@ -154,6 +206,40 @@ async function ensureReleaseNotifierSchema(db = pool) {
                 updated_at BIGINT NOT NULL
             )
         `);
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS release_notifier_topics (
+                chat_id VARCHAR(64) NOT NULL,
+                thread_id BIGINT NOT NULL,
+                topic_title VARCHAR(255) DEFAULT NULL,
+                is_general TINYINT(1) NOT NULL DEFAULT 0,
+                last_message_id BIGINT DEFAULT NULL,
+                last_message_text LONGTEXT DEFAULT NULL,
+                last_sender_name VARCHAR(120) DEFAULT NULL,
+                deleted_at BIGINT DEFAULT NULL,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT NOT NULL,
+                PRIMARY KEY (chat_id, thread_id),
+                INDEX idx_release_notifier_topics_chat_updated (chat_id, updated_at)
+            )
+        `);
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS release_notifier_messages (
+                chat_id VARCHAR(64) NOT NULL,
+                thread_id BIGINT NOT NULL,
+                message_id BIGINT NOT NULL,
+                sender_name VARCHAR(120) DEFAULT NULL,
+                sender_username VARCHAR(120) DEFAULT NULL,
+                message_text LONGTEXT NOT NULL,
+                message_kind ENUM('TEXT','PHOTO','VIDEO','DOCUMENT','OTHER') NOT NULL DEFAULT 'TEXT',
+                raw_json LONGTEXT DEFAULT NULL,
+                deleted_at BIGINT DEFAULT NULL,
+                created_at BIGINT NOT NULL,
+                updated_at BIGINT NOT NULL,
+                PRIMARY KEY (chat_id, message_id),
+                INDEX idx_release_notifier_messages_thread_created (chat_id, thread_id, created_at),
+                INDEX idx_release_notifier_messages_thread_message (chat_id, thread_id, message_id)
+            )
+        `);
         schemaReady = true;
     })().finally(() => {
         schemaReadyPromise = null;
@@ -179,6 +265,169 @@ async function setMeta(metaKey, metaValue, db = pool) {
          ON DUPLICATE KEY UPDATE meta_value = VALUES(meta_value), updated_at = VALUES(updated_at)`,
         [metaKey, metaValue, nowMs()]
     );
+}
+
+function resolveIndexedThreadId(message) {
+    return Number(extractThreadId(message) || 0) || 0;
+}
+
+function resolveIndexedTopicTitle(message, threadId, fallbackTitle = null) {
+    if (!threadId) {
+        return 'General';
+    }
+    return normalizeReleaseTopicTitle(
+        message?.forum_topic_created?.name
+            || message?.forum_topic_edited?.name
+            || message?.reply_to_message?.forum_topic_created?.name
+            || fallbackTitle,
+        `Тема ${threadId}`
+    );
+}
+
+function shapeIndexedTopic(row) {
+    if (!row) {
+        return null;
+    }
+    return {
+        chat_id: row.chat_id,
+        thread_id: Number(row.thread_id || 0) || 0,
+        topic_title: normalizeReleaseTopicTitle(row.topic_title, Number(row.thread_id || 0) ? `Тема ${row.thread_id}` : 'General'),
+        is_general: Number(row.is_general || 0) === 1,
+        last_message_id: Number(row.last_message_id || 0) || null,
+        last_message_text: normalizeOptionalText(row.last_message_text, 1200),
+        last_sender_name: normalizeOptionalText(row.last_sender_name, 120),
+        deleted_at: Number(row.deleted_at || 0) || null,
+        created_at: Number(row.created_at || 0) || null,
+        updated_at: Number(row.updated_at || 0) || null
+    };
+}
+
+function shapeIndexedMessage(row) {
+    if (!row) {
+        return null;
+    }
+    return {
+        chat_id: row.chat_id,
+        thread_id: Number(row.thread_id || 0) || 0,
+        message_id: Number(row.message_id || 0) || 0,
+        sender_name: normalizeOptionalText(row.sender_name, 120) || 'Telegram',
+        sender_username: normalizeOptionalText(row.sender_username, 120),
+        message_text: String(row.message_text || ''),
+        message_kind: String(row.message_kind || 'TEXT'),
+        deleted_at: Number(row.deleted_at || 0) || null,
+        created_at: Number(row.created_at || 0) || null,
+        updated_at: Number(row.updated_at || 0) || null
+    };
+}
+
+async function upsertIndexedTopic(chatId, threadId, topicTitle, messageId, messageText, senderName, createdAt, db = pool) {
+    const timestamp = nowMs();
+    await db.query(
+        `INSERT INTO release_notifier_topics
+         (chat_id, thread_id, topic_title, is_general, last_message_id, last_message_text, last_sender_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            topic_title = COALESCE(NULLIF(VALUES(topic_title), ''), topic_title),
+            is_general = VALUES(is_general),
+            last_message_id = VALUES(last_message_id),
+            last_message_text = VALUES(last_message_text),
+            last_sender_name = VALUES(last_sender_name),
+            updated_at = VALUES(updated_at),
+            deleted_at = NULL`,
+        [
+            String(chatId),
+            Number(threadId || 0),
+            String(topicTitle || '').slice(0, 255),
+            threadId ? 0 : 1,
+            Number(messageId || 0) || null,
+            String(messageText || '').slice(0, 8000),
+            String(senderName || '').slice(0, 120) || null,
+            Number(createdAt || timestamp) || timestamp,
+            timestamp
+        ]
+    );
+}
+
+async function refreshIndexedTopicSummary(chatId, threadId, db = pool) {
+    const [rows] = await db.query(
+        `SELECT sender_name, message_text, message_id, created_at
+         FROM release_notifier_messages
+         WHERE chat_id = ? AND thread_id = ? AND deleted_at IS NULL
+         ORDER BY created_at DESC, message_id DESC
+         LIMIT 1`,
+        [String(chatId), Number(threadId || 0)]
+    );
+    const latest = rows[0] || null;
+    await db.query(
+        `UPDATE release_notifier_topics
+         SET last_message_id = ?, last_message_text = ?, last_sender_name = ?, updated_at = ?
+         WHERE chat_id = ? AND thread_id = ?`,
+        [
+            latest ? Number(latest.message_id || 0) || null : null,
+            latest ? String(latest.message_text || '').slice(0, 8000) : null,
+            latest ? String(latest.sender_name || '').slice(0, 120) : null,
+            nowMs(),
+            String(chatId),
+            Number(threadId || 0)
+        ]
+    );
+}
+
+async function indexReleaseNotifierMessage(message, db = pool) {
+    if (!message?.chat?.id) {
+        return null;
+    }
+
+    await ensureReleaseNotifierSchema(db);
+    const chatId = String(message.chat.id);
+    const threadId = resolveIndexedThreadId(message);
+    const messageId = Number(message.message_id || 0) || null;
+    if (!messageId) {
+        return null;
+    }
+
+    const createdAt = Number(message.date || 0) > 0 ? Number(message.date) * 1000 : nowMs();
+    const senderName = normalizeOptionalText(
+        [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ').trim()
+            || message.from?.username
+            || message.sender_chat?.title
+            || 'Telegram',
+        120
+    ) || 'Telegram';
+    const senderUsername = normalizeOptionalText(message.from?.username || message.sender_chat?.username || '', 120);
+    const messageText = extractReleaseMessageText(message);
+    const messageKind = normalizeReleaseMessageKind(message);
+    const topicTitle = resolveIndexedTopicTitle(message, threadId);
+
+    await db.query(
+        `INSERT INTO release_notifier_messages
+         (chat_id, thread_id, message_id, sender_name, sender_username, message_text, message_kind, raw_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            thread_id = VALUES(thread_id),
+            sender_name = VALUES(sender_name),
+            sender_username = VALUES(sender_username),
+            message_text = VALUES(message_text),
+            message_kind = VALUES(message_kind),
+            raw_json = VALUES(raw_json),
+            updated_at = VALUES(updated_at),
+            deleted_at = NULL`,
+        [
+            chatId,
+            threadId,
+            messageId,
+            senderName,
+            senderUsername,
+            messageText,
+            messageKind,
+            JSON.stringify(message),
+            createdAt,
+            nowMs()
+        ]
+    );
+
+    await upsertIndexedTopic(chatId, threadId, topicTitle, messageId, messageText, senderName, createdAt, db);
+    return { chatId, threadId, messageId };
 }
 
 function verifyReleaseNotifierWebhookSecret(receivedSecret) {
@@ -601,15 +850,9 @@ async function receiveReleaseNotifierWebhook(update, db = pool) {
             reason: 'no-message'
         };
     }
-
-    if (message.from?.is_bot === true) {
-        return {
-            availability: true,
-            accepted: false,
-            ignored: true,
-            reason: 'bot-message'
-        };
-    }
+    await indexReleaseNotifierMessage(message, db).catch((error) => {
+        console.error('Release notifier message indexing failed:', error);
+    });
 
     const text = extractCommandText(message);
     if (!isSetChatCommand(text, config.botUsername)) {
@@ -742,6 +985,148 @@ function startReleaseNotifierPolling() {
     setTimeout(run, 300);
 }
 
+async function resolveReleaseNotifierAdminChat(db = pool) {
+    const target = await loadReleaseNotifierTarget(db);
+    if (target?.configured && target.chat_id) {
+        return {
+            chat_id: String(target.chat_id),
+            target
+        };
+    }
+    const fallbackTarget = getReleaseNotifierConfig().fallbackTarget;
+    if (fallbackTarget?.configured && fallbackTarget.chat_id) {
+        return {
+            chat_id: String(fallbackTarget.chat_id),
+            target: fallbackTarget
+        };
+    }
+    throw createHttpError(400, 'Сначала выполните /setchat в нужной группе или теме.', 'RELEASE_NOTIFIER_TARGET_MISSING');
+}
+
+async function listForumTopics(options = {}, db = pool) {
+    await ensureReleaseNotifierSchema(db);
+    const { chat_id: chatId, target } = await resolveReleaseNotifierAdminChat(db);
+    const limit = Math.min(200, Math.max(1, Number(options.limit || 80) || 80));
+    const [rows] = await db.query(
+        `SELECT *
+         FROM release_notifier_topics
+         WHERE chat_id = ? AND deleted_at IS NULL
+         ORDER BY updated_at DESC, thread_id ASC
+         LIMIT ?`,
+        [chatId, limit]
+    );
+    return {
+        target,
+        topics: rows.map((row) => shapeIndexedTopic(row)).filter(Boolean)
+    };
+}
+
+async function listTopicMessages(threadId, options = {}, db = pool) {
+    await ensureReleaseNotifierSchema(db);
+    const { chat_id: chatId, target } = await resolveReleaseNotifierAdminChat(db);
+    const normalizedThreadId = Math.max(0, Number(threadId || 0) || 0);
+    const limit = Math.min(200, Math.max(1, Number(options.limit || 100) || 100));
+    const beforeMessageId = Math.max(0, Number(options.beforeMessageId || 0) || 0);
+    const [topicRows] = await db.query(
+        `SELECT *
+         FROM release_notifier_topics
+         WHERE chat_id = ? AND thread_id = ?
+         LIMIT 1`,
+        [chatId, normalizedThreadId]
+    );
+    const topic = shapeIndexedTopic(topicRows[0] || {
+        chat_id: chatId,
+        thread_id: normalizedThreadId,
+        topic_title: normalizedThreadId ? `Тема ${normalizedThreadId}` : 'General',
+        is_general: normalizedThreadId ? 0 : 1,
+        created_at: nowMs(),
+        updated_at: nowMs()
+    });
+    const params = [chatId, normalizedThreadId];
+    let predicate = '';
+    if (beforeMessageId > 0) {
+        predicate = ' AND message_id < ?';
+        params.push(beforeMessageId);
+    }
+    params.push(limit);
+    const [rows] = await db.query(
+        `SELECT *
+         FROM release_notifier_messages
+         WHERE chat_id = ? AND thread_id = ? AND deleted_at IS NULL${predicate}
+         ORDER BY message_id DESC
+         LIMIT ?`,
+        params
+    );
+    return {
+        target,
+        topic,
+        messages: rows.map((row) => shapeIndexedMessage(row)).filter(Boolean)
+    };
+}
+
+async function deleteTopicMessage(threadId, messageId, db = pool) {
+    await ensureReleaseNotifierSchema(db);
+    const { chat_id: chatId, target } = await resolveReleaseNotifierAdminChat(db);
+    const normalizedThreadId = Math.max(0, Number(threadId || 0) || 0);
+    const normalizedMessageId = Math.max(1, Number(messageId || 0) || 0);
+    if (!normalizedMessageId) {
+        throw createHttpError(400, 'Не указан message_id.', 'RELEASE_NOTIFIER_MESSAGE_ID_REQUIRED');
+    }
+
+    await callReleaseNotifierTelegram('deleteMessage', {
+        chat_id: chatId,
+        message_id: normalizedMessageId
+    });
+
+    await db.query(
+        `UPDATE release_notifier_messages
+         SET deleted_at = ?, updated_at = ?
+         WHERE chat_id = ? AND thread_id = ? AND message_id = ?`,
+        [nowMs(), nowMs(), chatId, normalizedThreadId, normalizedMessageId]
+    );
+    await refreshIndexedTopicSummary(chatId, normalizedThreadId, db);
+
+    return {
+        deleted: true,
+        target,
+        thread_id: normalizedThreadId,
+        message_id: normalizedMessageId
+    };
+}
+
+async function deleteForumTopic(threadId, db = pool) {
+    await ensureReleaseNotifierSchema(db);
+    const { chat_id: chatId, target } = await resolveReleaseNotifierAdminChat(db);
+    const normalizedThreadId = Math.max(0, Number(threadId || 0) || 0);
+    if (!normalizedThreadId) {
+        throw createHttpError(400, 'Нельзя удалить General как тему форума.', 'RELEASE_NOTIFIER_TOPIC_REQUIRED');
+    }
+
+    await callReleaseNotifierTelegram('deleteForumTopic', {
+        chat_id: chatId,
+        message_thread_id: normalizedThreadId
+    });
+
+    await db.query(
+        `UPDATE release_notifier_topics
+         SET deleted_at = ?, updated_at = ?
+         WHERE chat_id = ? AND thread_id = ?`,
+        [nowMs(), nowMs(), chatId, normalizedThreadId]
+    );
+    await db.query(
+        `UPDATE release_notifier_messages
+         SET deleted_at = ?, updated_at = ?
+         WHERE chat_id = ? AND thread_id = ?`,
+        [nowMs(), nowMs(), chatId, normalizedThreadId]
+    );
+
+    return {
+        deleted: true,
+        target,
+        thread_id: normalizedThreadId
+    };
+}
+
 module.exports = {
     getReleaseNotifierConfig,
     getReleaseNotifierState,
@@ -752,5 +1137,9 @@ module.exports = {
     syncReleaseNotifierUpdates,
     sendReleaseAnnouncement,
     syncReleaseNotifierCommands,
-    startReleaseNotifierPolling
+    startReleaseNotifierPolling,
+    listForumTopics,
+    listTopicMessages,
+    deleteTopicMessage,
+    deleteForumTopic
 };

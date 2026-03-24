@@ -286,7 +286,6 @@ async function callTelegram(method, payload, options = {}) {
 
     try {
         const { stdout } = await execFileAsync('curl', [
-            '--noproxy', '*',
             '--ipv4',
             '-sS',
             '--retry', '1',
@@ -345,7 +344,6 @@ async function callTelegramMultipart(method, fields, fileField) {
 
     const url = `${SUPPORT_TELEGRAM_API_BASE}/bot${config.token}/${method}`;
     const args = [
-        '--noproxy', '*',
         '--ipv4',
         '-sS',
         '--retry', '1',
@@ -391,7 +389,6 @@ async function downloadTelegramFile(filePath, targetPath) {
 
     try {
         await execFileAsync('curl', [
-            '--noproxy', '*',
             '--ipv4',
             '-sS',
             '--retry', '1',

@@ -20,6 +20,7 @@ const verifiedAppsRoutes = require('./routes/verifiedApps');
 const profileOverviewRoutes = require('./routes/profileOverview');
 const supportChatRoutes = require('./routes/supportChat');
 const releaseNotifierRoutes = require('./routes/releaseNotifier');
+const releaseNotifierAdminRoutes = require('./routes/releaseNotifierAdmin');
 const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
 const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
@@ -57,8 +58,13 @@ app.use(cors({
     credentials: false
 }));
 
-const skipGlobalLimiterForDeepRoutes = (req) => {
-    return /^\/api\/scans\/(?:deep|desktop)(?:\/|$)/.test(String(req.path || ''));
+const skipGlobalLimiterForInteractiveRoutes = (req) => {
+    const path = String(req.path || '');
+    return (
+        /^\/api\/scans\/(?:deep|desktop)(?:\/|$)/.test(path)
+        || /^\/api\/profile\/support-chat(?:\/|$)/.test(path)
+        || /^\/api\/releases\/telegram\/admin(?:\/|$)/.test(path)
+    );
 };
 
 const limiter = rateLimit({
@@ -66,7 +72,7 @@ const limiter = rateLimit({
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: skipGlobalLimiterForDeepRoutes,
+    skip: skipGlobalLimiterForInteractiveRoutes,
     message: { error: 'Too many requests, please try again later.' }
 });
 const authLimiter = rateLimit({
@@ -102,6 +108,7 @@ app.use('/api/releases', releasesRoutes);
 app.use('/api/profile', profileOverviewRoutes);
 app.use('/api', supportChatRoutes);
 app.use('/api', releaseNotifierRoutes);
+app.use('/api', releaseNotifierAdminRoutes);
 app.use('/api', verifiedAppsRoutes);
 
 function buildHealthPayload() {

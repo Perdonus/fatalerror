@@ -53,8 +53,7 @@ export function LinuxPage() {
           <article className="platform-command-card platform-command-card-wide platform-command-card-centered">
             <h3>Команда</h3>
             <p>Подходит для новой установки и для дальнейших обновлений.</p>
-            <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh
-nv install @lvls/neuralv'}</pre></div>
+            <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
           </article>
         </div>
       </section>

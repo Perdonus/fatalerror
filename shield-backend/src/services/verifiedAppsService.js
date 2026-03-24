@@ -18,7 +18,8 @@ const VERIFIED_APP_SUBMIT_COOLDOWN_MS = parseInt(process.env.VERIFIED_APP_SUBMIT
 const DEVELOPER_APPLICATION_COOLDOWN_MS = parseInt(process.env.DEVELOPER_APPLICATION_COOLDOWN_MS || String(24 * 60 * 60 * 1000), 10);
 const VERIFIED_APP_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.VERIFIED_APP_QUEUE_CONCURRENCY || '1', 10));
 
-const ALLOWED_PLATFORMS = new Set(['android', 'windows', 'linux']);
+const VERIFIED_APPS_PLATFORM_ENUM = "ENUM('android','windows','linux','plugin','heroku')";
+const ALLOWED_PLATFORMS = new Set(['android', 'windows', 'linux', 'plugin', 'heroku']);
 const TEXT_EXTENSIONS = new Set([
     '.md', '.txt', '.json', '.yaml', '.yml', '.toml', '.xml', '.gradle', '.properties',
     '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.py', '.java', '.kt', '.kts', '.go',
@@ -96,7 +97,7 @@ async function ensureVerifiedAppsSchema(db = pool) {
                 repository_default_branch VARCHAR(120) DEFAULT NULL,
                 release_artifact_url VARCHAR(700) NOT NULL,
                 official_site_url VARCHAR(700) DEFAULT NULL,
-                platform ENUM('android','windows','linux') NOT NULL,
+                platform ${VERIFIED_APPS_PLATFORM_ENUM} NOT NULL,
                 app_name VARCHAR(120) NOT NULL,
                 author_name VARCHAR(120) NOT NULL,
                 avatar_url VARCHAR(700) DEFAULT NULL,
@@ -124,6 +125,10 @@ async function ensureVerifiedAppsSchema(db = pool) {
                 UNIQUE KEY uniq_verified_apps_owner_artifact (owner_user_id, release_artifact_url)
             )
         `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                MODIFY COLUMN platform ${VERIFIED_APPS_PLATFORM_ENUM} NOT NULL
+        `);
         schemaReady = true;
     })().finally(() => {
         schemaReadyPromise = null;
@@ -142,7 +147,8 @@ function adminDeveloperApplicationsEmail() {
 }
 
 function normalizePlatform(value) {
-    return String(value || '').trim().toLowerCase();
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'plugins' ? 'plugin' : normalized;
 }
 
 function normalizeUrl(value) {
@@ -627,9 +633,10 @@ async function listPublicVerifiedApps({ platform = null, limit = 24, db = pool }
     const normalizedLimit = Math.min(60, Math.max(1, parseInt(limit, 10) || 24));
     const clauses = [`status = 'SAFE'`];
     const params = [];
-    if (platform && validatePlatform(platform)) {
+    const normalizedPlatform = normalizePlatform(platform);
+    if (normalizedPlatform && validatePlatform(normalizedPlatform)) {
         clauses.push('platform = ?');
-        params.push(platform);
+        params.push(normalizedPlatform);
     }
 
     const [rows] = await db.query(

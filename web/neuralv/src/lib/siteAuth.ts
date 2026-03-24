@@ -130,9 +130,11 @@ export type SiteDeveloperPortalState = {
 
 export type SiteDeveloperApplicationState = 'none' | 'pending' | 'rejected' | 'approved';
 
+export type SiteVerifiedAppPlatform = 'android' | 'windows' | 'linux' | 'plugin' | 'heroku';
+
 export type SiteVerifiedApp = {
   id?: string;
-  platform: 'android' | 'windows' | 'linux' | string;
+  platform: SiteVerifiedAppPlatform | string;
   appName: string;
   authorName?: string;
   repositoryUrl?: string;
@@ -153,7 +155,7 @@ export type SiteVerifiedApp = {
 
 export type SiteVerifiedAppReviewRequest = {
   appName: string;
-  platform: 'android' | 'windows' | 'linux';
+  platform: SiteVerifiedAppPlatform;
   repositoryUrl: string;
   releaseArtifactUrl: string;
   officialSiteUrl?: string;
@@ -1245,6 +1247,23 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
     createdAt: value.created_at as string | number | null | undefined,
     updatedAt: value.updated_at as string | number | null | undefined
   };
+}
+
+export function formatVerifiedAppPlatform(platform: string): string {
+  switch (String(platform || '').trim().toLowerCase()) {
+    case 'android':
+      return 'Android';
+    case 'linux':
+      return 'Linux';
+    case 'plugin':
+      return 'Plugins';
+    case 'heroku':
+      return 'Heroku';
+    case 'windows':
+      return 'Windows';
+    default:
+      return String(platform || '').trim() || 'Неизвестно';
+  }
 }
 
 function getClientMeta(platform: string) {

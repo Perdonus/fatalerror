@@ -1,15 +1,61 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchPublicVerifiedApps, humanizeError, type SiteVerifiedApp } from '../lib/siteAuth';
+import {
+  fetchPublicVerifiedApps,
+  formatVerifiedAppPlatform,
+  humanizeError,
+  type SiteVerifiedApp,
+  type SiteVerifiedAppPlatform
+} from '../lib/siteAuth';
 import '../styles/auth.css';
 
-type PlatformFilter = 'all' | 'android' | 'windows' | 'linux';
+type PlatformFilter = 'all' | SiteVerifiedAppPlatform;
 
-const platformItems: Array<{ value: PlatformFilter; label: string }> = [
-  { value: 'all', label: 'Все' },
-  { value: 'windows', label: 'Windows' },
-  { value: 'android', label: 'Android' },
-  { value: 'linux', label: 'Linux' }
+type PlatformGroup = {
+  id: string;
+  label: string;
+  items: Array<{
+    value: PlatformFilter;
+    label: string;
+  }>;
+};
+
+const platformGroups: PlatformGroup[] = [
+  {
+    id: 'catalog',
+    label: 'Каталог',
+    items: [{ value: 'all', label: 'Все проверенные' }]
+  },
+  {
+    id: 'apps',
+    label: 'Приложения',
+    items: [
+      { value: 'windows', label: 'Windows' },
+      { value: 'android', label: 'Android' },
+      { value: 'linux', label: 'Linux' }
+    ]
+  },
+  {
+    id: 'integrations',
+    label: 'Интеграции',
+    items: [
+      { value: 'plugin', label: 'Plugins' },
+      { value: 'heroku', label: 'Heroku' }
+    ]
+  }
 ];
+
+const navGroupLabelStyle = {
+  padding: '2px 4px 0',
+  color: 'var(--nv-text-soft)',
+  fontSize: '0.72rem',
+  fontWeight: 700,
+  letterSpacing: '0.14em',
+  textTransform: 'uppercase' as const
+};
+
+function getFilterTitle(platform: PlatformFilter) {
+  return platform === 'all' ? 'Все проверенные' : formatVerifiedAppPlatform(platform);
+}
 
 function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
@@ -31,11 +77,12 @@ function VerifiedAppTile({ app }: { app: SiteVerifiedApp }) {
       </div>
       {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
       <div className="developer-app-row">
-        <span>Платформа</span>
-        <strong>{String(app.platform || '').toUpperCase()}</strong>
+        <span>Категория</span>
+        <strong>{formatVerifiedAppPlatform(app.platform)}</strong>
       </div>
       <div className="developer-app-links">
         {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
+        {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
       </div>
       {verifiedAt ? <div className="developer-app-footnote">Проверено: {verifiedAt}</div> : null}
     </article>
@@ -74,36 +121,34 @@ export function VerifiedAppsPage() {
     };
   }, [platform]);
 
-  const title = useMemo(() => {
-    switch (platform) {
-      case 'android':
-        return 'Android';
-      case 'windows':
-        return 'Windows';
-      case 'linux':
-        return 'Linux';
-      default:
-        return 'Все платформы';
-    }
-  }, [platform]);
+  const title = useMemo(() => getFilterTitle(platform), [platform]);
 
   return (
     <div className="page-stack profile-dashboard-shell verified-apps-shell">
       <section className="profile-dashboard-grid verified-apps-layout">
         <aside className="content-card profile-nav-card verified-apps-nav-card">
           <div className="profile-nav-head">
-            <strong>Проверенные</strong>
+            <strong>Проверенные apps</strong>
+            <span>Каталог опубликованных безопасных приложений, плагинов и Heroku-интеграций.</span>
           </div>
-          <div className="profile-nav-list" role="tablist" aria-label="Платформы">
-            {platformItems.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                className={`profile-nav-button${platform === item.value ? ' is-active' : ''}`}
-                onClick={() => setPlatform(item.value)}
-              >
-                <span>{item.label}</span>
-              </button>
+          <div className="profile-nav-list" role="tablist" aria-label="Категории проверенных приложений">
+            {platformGroups.map((group, index) => (
+              <div key={group.id} className="profile-panel-stack">
+                {index > 0 ? <div className="profile-nav-divider" /> : null}
+                <div style={navGroupLabelStyle}>{group.label}</div>
+                <div className="profile-panel-stack">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className={`profile-nav-button${platform === item.value ? ' is-active' : ''}`}
+                      onClick={() => setPlatform(item.value)}
+                    >
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </aside>
@@ -113,6 +158,7 @@ export function VerifiedAppsPage() {
             <div className="profile-panel-head">
               <h1>{title}</h1>
             </div>
+            {!loading ? <div className="profile-inline-note">Найдено: {apps.length}</div> : null}
           </article>
 
           {error ? <div className="form-message is-error">{humanizeError(error)}</div> : null}
@@ -129,7 +175,7 @@ export function VerifiedAppsPage() {
             </div>
           ) : (
             <div className="content-card profile-panel-card">
-              <div className="profile-empty-copy">Для этой платформы пока нет опубликованных приложений.</div>
+              <div className="profile-empty-copy">Для раздела {title} пока нет опубликованных приложений.</div>
             </div>
           )}
         </div>

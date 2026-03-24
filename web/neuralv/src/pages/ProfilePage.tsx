@@ -5,6 +5,7 @@ import {
   fetchDeveloperPortalState,
   fetchOwnVerifiedApps,
   fetchProfileOverview,
+  formatVerifiedAppPlatform,
   humanizeError,
   requestProfileEmailChange,
   requestProfileNameChange,
@@ -18,13 +19,15 @@ import {
   type SiteProfileScan,
   type SiteProfileSystem,
   type SiteVerifiedApp,
+  type SiteVerifiedAppPlatform,
 } from '../lib/siteAuth';
 import '../styles/auth.css';
 
 type ProfileTab = 'profile' | 'developer' | 'security';
 type AccountPending = 'name' | 'email' | 'password' | 'logout' | null;
 type DeveloperPending = 'load' | 'apply' | 'verify' | null;
-type PlatformOption = 'android' | 'windows' | 'linux';
+type PlatformOption = SiteVerifiedAppPlatform;
+type VerifiedAppsFilter = 'all' | PlatformOption;
 
 type ReviewFormState = {
   appName: string;
@@ -65,6 +68,53 @@ type DeveloperApplicationCardProps = {
   pending: DeveloperPending;
   onApply: (event: FormEvent) => Promise<void>;
 };
+
+type VerifiedAppsGroup = {
+  id: string;
+  label: string;
+  items: Array<{
+    value: VerifiedAppsFilter;
+    label: string;
+  }>;
+};
+
+const verifiedAppsGroups: VerifiedAppsGroup[] = [
+  {
+    id: 'catalog',
+    label: 'Каталог',
+    items: [{ value: 'all', label: 'Все' }]
+  },
+  {
+    id: 'apps',
+    label: 'Приложения',
+    items: [
+      { value: 'windows', label: 'Windows' },
+      { value: 'android', label: 'Android' },
+      { value: 'linux', label: 'Linux' }
+    ]
+  },
+  {
+    id: 'integrations',
+    label: 'Интеграции',
+    items: [
+      { value: 'plugin', label: 'Plugins' },
+      { value: 'heroku', label: 'Heroku' }
+    ]
+  }
+];
+
+const navGroupLabelStyle = {
+  padding: '2px 4px 0',
+  color: 'var(--nv-text-soft)',
+  fontSize: '0.72rem',
+  fontWeight: 700,
+  letterSpacing: '0.14em',
+  textTransform: 'uppercase' as const
+};
+
+function getVerifiedAppsTitle(platform: VerifiedAppsFilter) {
+  return platform === 'all' ? 'Все проверенные' : formatVerifiedAppPlatform(platform);
+}
 
 function formatDate(value: string | number | null | undefined) {
   if (!value) {
@@ -230,12 +280,13 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
       </div>
       {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
       <div className="developer-app-row">
-        <span>Платформа</span>
-        <strong>{String(app.platform || '').toUpperCase()}</strong>
+        <span>Категория</span>
+        <strong>{formatVerifiedAppPlatform(app.platform)}</strong>
       </div>
       <div className="developer-app-links">
         {app.repositoryUrl ? <a className="shell-chip" href={app.repositoryUrl} target="_blank" rel="noreferrer">Репозиторий</a> : null}
         {app.releaseArtifactUrl ? <a className="shell-chip" href={app.releaseArtifactUrl} target="_blank" rel="noreferrer">Релиз</a> : null}
+        {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
       </div>
       {verifiedAt ? <div className="developer-app-footnote">Проверено: {verifiedAt}</div> : null}
       {app.errorMessage ? <div className="developer-app-footnote is-error">{app.errorMessage}</div> : null}
@@ -357,9 +408,19 @@ function VerifiedDeveloperWorkspace({
   setReviewForm,
   onVerify
 }: VerifiedDeveloperWorkspaceProps) {
+  const [activePlatform, setActivePlatform] = useState<VerifiedAppsFilter>('all');
+  const filteredApps = useMemo(
+    () => (activePlatform === 'all' ? apps : apps.filter((app) => String(app.platform || '').trim().toLowerCase() === activePlatform)),
+    [activePlatform, apps]
+  );
+  const catalogTitle = useMemo(() => getVerifiedAppsTitle(activePlatform), [activePlatform]);
+
   return (
     <div className="profile-panel-stack">
       <section className="content-card profile-panel-card profile-form-card">
+        <div className="profile-panel-head">
+          <h2>Отправить на проверку</h2>
+        </div>
         <form className="auth-form" onSubmit={onVerify}>
           <div className="profile-security-grid">
             <label className="auth-field">
@@ -372,7 +433,7 @@ function VerifiedDeveloperWorkspace({
               />
             </label>
             <label className="auth-field">
-              <span className="auth-field-label">Платформа</span>
+              <span className="auth-field-label">Тип</span>
               <select
                 className="auth-input"
                 value={reviewForm.platform}
@@ -381,6 +442,8 @@ function VerifiedDeveloperWorkspace({
                 <option value="windows">Windows</option>
                 <option value="android">Android</option>
                 <option value="linux">Linux</option>
+                <option value="plugin">Plugins</option>
+                <option value="heroku">Heroku</option>
               </select>
             </label>
           </div>
@@ -424,19 +487,53 @@ function VerifiedDeveloperWorkspace({
         </form>
       </section>
 
-      <section className="content-card profile-panel-card">
-        <div className="profile-panel-head">
-          <h2>Проверенные приложения</h2>
-        </div>
-        {apps.length > 0 ? (
-          <div className="developer-app-grid">
-            {apps.map((app) => (
-              <ProfileVerifiedAppCard key={app.id || `${app.appName}-${app.platform}`} app={app} />
+      <section className="profile-dashboard-grid verified-apps-layout">
+        <aside className="content-card profile-nav-card verified-apps-nav-card">
+          <div className="profile-nav-head">
+            <strong>Мои проверенные</strong>
+          </div>
+          <div className="profile-nav-list" role="tablist" aria-label="Категории моих проверенных приложений">
+            {verifiedAppsGroups.map((group, index) => (
+              <div key={group.id} className="profile-panel-stack">
+                {index > 0 ? <div className="profile-nav-divider" /> : null}
+                <div style={navGroupLabelStyle}>{group.label}</div>
+                <div className="profile-panel-stack">
+                  {group.items.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      className={`profile-nav-button${activePlatform === item.value ? ' is-active' : ''}`}
+                      onClick={() => setActivePlatform(item.value)}
+                    >
+                      <span>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
-        ) : (
-          <div className="profile-empty-copy">Пока пусто.</div>
-        )}
+        </aside>
+
+        <div className="profile-dashboard-main">
+          <article className="content-card profile-panel-card profile-panel-card-featured verified-apps-header-card">
+            <div className="profile-panel-head">
+              <h1>{catalogTitle}</h1>
+            </div>
+            <div className="profile-inline-note">Найдено: {filteredApps.length}</div>
+          </article>
+
+          {filteredApps.length > 0 ? (
+            <div className="developer-app-grid">
+              {filteredApps.map((app) => (
+                <ProfileVerifiedAppCard key={app.id || `${app.appName}-${app.platform}`} app={app} />
+              ))}
+            </div>
+          ) : (
+            <section className="content-card profile-panel-card">
+              <div className="profile-empty-copy">Для раздела {catalogTitle} пока нет отправленных приложений.</div>
+            </section>
+          )}
+        </div>
       </section>
     </div>
   );
@@ -453,7 +550,7 @@ function RejectedDeveloperCard({
     <section className="content-card profile-panel-card profile-panel-card-rejected profile-panel-card-centered">
       <h2>Заявка отклонена</h2>
       {application?.reviewNote ? <div className="profile-inline-note profile-inline-note-danger">{application.reviewNote}</div> : null}
-      <button className="nv-button" type="button" onClick={onRetry}>Создать повторную заявку</button>
+      <button className="nv-button" type="button" onClick={onRetry}>Подать повторную заявку</button>
     </section>
   );
 }
@@ -685,13 +782,20 @@ export function ProfilePage() {
       return;
     }
     setMessage(result.data?.message || 'Проверка отправлена.');
+    setReviewForm({
+      appName: '',
+      platform: 'windows',
+      repositoryUrl: '',
+      releaseArtifactUrl: '',
+      officialSiteUrl: ''
+    });
     await loadDeveloperData();
     setDeveloperPending(null);
   }
 
   const displayName = user?.name || portal?.user?.name || 'Аккаунт NeuralV';
   const displayEmail = user?.email || portal?.user?.email || 'Почта недоступна';
-  const verifiedDeveloper = Boolean(portal?.verifiedDeveloper || user?.is_verified_developer);
+  const verifiedDeveloper = portal ? Boolean(portal.verifiedDeveloper) : Boolean(user?.is_verified_developer);
   const applicationState = resolveDeveloperApplicationState(portal?.latestApplication, verifiedDeveloper);
 
   return (
@@ -757,7 +861,11 @@ export function ProfilePage() {
           ) : null}
 
           {activeTab === 'developer' ? (
-            verifiedDeveloper ? (
+            developerPending === 'load' ? (
+              <article className="content-card profile-panel-card profile-panel-card-centered">
+                <h2>Загружаем раздел разработчика...</h2>
+              </article>
+            ) : verifiedDeveloper ? (
               <VerifiedDeveloperWorkspace
                 apps={verifiedApps}
                 pending={developerPending}

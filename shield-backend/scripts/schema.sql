@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS verified_apps (
     repository_default_branch VARCHAR(120) DEFAULT NULL,
     release_artifact_url VARCHAR(700) NOT NULL,
     official_site_url VARCHAR(700) DEFAULT NULL,
-    platform ENUM('android','windows','linux') NOT NULL,
+    platform ENUM('android','windows','linux','plugin','heroku') NOT NULL,
     app_name VARCHAR(120) NOT NULL,
     author_name VARCHAR(120) NOT NULL,
     avatar_url VARCHAR(700) DEFAULT NULL,

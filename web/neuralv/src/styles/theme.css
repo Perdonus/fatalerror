@@ -1768,3 +1768,11 @@ body .field-button {
     grid-template-columns: 1fr;
   }
 }
+
+.page-decor-home {
+  align-self: stretch;
+}
+
+.platform-detail-grid {
+  align-items: stretch;
+}

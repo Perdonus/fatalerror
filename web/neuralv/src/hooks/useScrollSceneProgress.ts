@@ -21,7 +21,7 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
 
     const animate = () => {
       frame = 0;
-      state.current += (state.target - state.current) * 0.14;
+      state.current += (state.target - state.current) * 0.16;
       const next = Math.abs(state.current - state.target) < 0.0015 ? state.target : state.current;
       setProgress((current) => (Math.abs(current - next) < 0.001 ? current : next));
       if (Math.abs(next - state.target) >= 0.0015) {
@@ -42,8 +42,9 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
 
       const rect = node.getBoundingClientRect();
       const viewport = window.innerHeight || 1;
-      const total = rect.height + viewport;
-      state.target = clamp((viewport - rect.top) / total);
+      const start = viewport * 0.88;
+      const end = -rect.height * 0.34;
+      state.target = clamp((start - rect.top) / (start - end));
       if (!frame) {
         frame = window.requestAnimationFrame(animate);
       }
@@ -68,23 +69,32 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
 
   const style = useMemo(() => {
     const eased = progress * progress * (3 - 2 * progress);
-    const depth = 1 - Math.abs(eased - 0.5) * 2;
-    const pulse = Math.sin(eased * Math.PI);
-    const shiftX = (eased - 0.5) * 54;
-    const shiftY = (1 - eased) * 80;
-    const orbit = Math.sin(eased * Math.PI * 1.65);
-    const tilt = (eased - 0.5) * 9;
-    const beam = 0.2 + depth * 0.8;
+    const enter = clamp((eased - 0.04) / 0.96);
+    const focus = 1 - Math.abs(eased - 0.5) * 2;
+    const depth = 0.22 + focus * 0.78;
+    const drift = (eased - 0.5) * 2;
+    const rise = (1 - enter) * 58;
+    const orbit = Math.sin(eased * Math.PI * 1.4);
+    const swing = Math.sin((eased - 0.08) * Math.PI * 1.08);
+    const pulse = 0.5 + Math.sin(eased * Math.PI * 2.2 - Math.PI / 6) * 0.5;
+    const tilt = drift * 6.5 + orbit * 1.6;
+    const beam = clamp((eased - 0.14) / 0.86);
+    const flare = 0.18 + focus * 0.82;
+
     return {
       '--scene-progress': progress,
       '--scene-progress-eased': eased,
+      '--scene-enter': enter,
+      '--scene-focus': focus,
       '--scene-depth': depth,
-      '--scene-pulse': pulse,
-      '--scene-shift-x': shiftX,
-      '--scene-shift-y': shiftY,
+      '--scene-drift': drift,
+      '--scene-rise': rise,
       '--scene-orbit': orbit,
+      '--scene-swing': swing,
+      '--scene-pulse': pulse,
       '--scene-tilt': tilt,
-      '--scene-beam': beam
+      '--scene-beam': beam,
+      '--scene-flare': flare
     } as CSSProperties;
   }, [progress]);
 

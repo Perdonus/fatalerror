@@ -3297,32 +3297,32 @@ body {
 }
 
 .shell-header {
-  width: min(1040px, calc(100vw - 24px));
+  width: min(1100px, calc(100vw - 24px));
 }
 
 .shell-header-inner {
-  width: min(980px, 100%);
+  width: min(1040px, 100%);
   padding: 7px 14px;
 }
 
 .shell-burger {
   width: 42px;
   height: 32px;
-  gap: 2px;
+  gap: 0;
   border-radius: 12px;
 }
 
 .shell-burger-line {
-  width: 21px;
-  height: 2.6px;
+  width: 23px;
+  height: 2.8px;
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(1) {
-  transform: translateY(4px) rotate(45deg);
+  transform: translateY(3px) rotate(45deg);
 }
 
 .shell-burger.is-open .shell-burger-line:nth-child(3) {
-  transform: translateY(-4px) rotate(-45deg);
+  transform: translateY(-3px) rotate(-45deg);
 }
 
 .shell-overlay-scrim,
@@ -3443,5 +3443,74 @@ body {
 
   .shell-drawer {
     width: min(320px, calc(100vw - 14px));
+  }
+}
+
+/* 2026-03-25 final header/auth polish */
+.shell-header {
+  width: min(1120px, calc(100vw - 28px));
+}
+
+.shell-header-inner {
+  width: min(1040px, 100%);
+  min-height: 54px;
+  padding: 7px 14px;
+}
+
+.brand-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+}
+
+.brand-badge-core {
+  width: 18px;
+  height: 24px;
+}
+
+.shell-burger {
+  width: 40px;
+  height: 32px;
+  gap: 0;
+  border-radius: 11px;
+}
+
+.shell-burger-line {
+  width: 23px;
+  height: 2.8px;
+  border-radius: 999px;
+}
+
+.shell-burger.is-open .shell-burger-line:nth-child(1) {
+  transform: translateY(3.2px) rotate(45deg);
+}
+
+.shell-burger.is-open .shell-burger-line:nth-child(3) {
+  transform: translateY(-3.2px) rotate(-45deg);
+}
+
+.auth-hero-shell-rich {
+  grid-template-columns: minmax(0, 0.92fr) minmax(360px, 0.98fr);
+  align-items: start;
+}
+
+.auth-hero-copy-rich {
+  max-width: 620px;
+}
+
+@media (max-width: 1120px) {
+  .auth-hero-shell-rich {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .shell-header {
+    width: min(100%, calc(100vw - 16px));
+  }
+
+  .shell-header-inner {
+    width: 100%;
+    padding-inline: 10px;
   }
 }

@@ -148,10 +148,35 @@ export function AppShell() {
     };
   }, []);
 
+  const scrollWindowToTop = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    window.document.documentElement.scrollTop = 0;
+    window.document.body.scrollTop = 0;
+  }, []);
+
   useLayoutEffect(() => {
     setMenuOpen(false);
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-  }, [location.pathname, location.search]);
+    scrollWindowToTop();
+
+    const frame = window.requestAnimationFrame(() => {
+      scrollWindowToTop();
+      window.requestAnimationFrame(() => {
+        scrollWindowToTop();
+      });
+    });
+    const timer = window.setTimeout(() => {
+      scrollWindowToTop();
+    }, 96);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [location.hash, location.key, location.pathname, location.search, scrollWindowToTop]);
 
   useEffect(() => {
     const body = document.body;
@@ -348,7 +373,13 @@ export function AppShell() {
 
       <header className="shell-header">
         <div className="shell-header-inner">
-          <NavLink className="brand-link" to="/" end aria-label="NeuralV home">
+          <NavLink
+            className="brand-link"
+            to="/"
+            end
+            aria-label="NeuralV home"
+            onClick={scrollWindowToTop}
+          >
             <span className="brand-badge" aria-hidden="true">
               <span className="brand-badge-core" />
             </span>
@@ -390,6 +421,7 @@ export function AppShell() {
                   to={item.to}
                   end={item.to === '/'}
                   className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                  onClick={scrollWindowToTop}
                 >
                   {item.label}
                 </NavLink>
@@ -405,6 +437,7 @@ export function AppShell() {
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                  onClick={scrollWindowToTop}
                 >
                   {item.label}
                 </NavLink>
@@ -420,6 +453,7 @@ export function AppShell() {
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) => `shell-drawer-link${isActive ? ' is-active' : ''}`}
+                  onClick={scrollWindowToTop}
                 >
                   {item.label}
                 </NavLink>
@@ -477,6 +511,7 @@ export function AppShell() {
                 className="footer-link"
                 to={item.to}
                 end={item.to === '/'}
+                onClick={scrollWindowToTop}
               >
                 {item.label}
               </NavLink>

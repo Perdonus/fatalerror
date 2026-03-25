@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { NeuralVDecor } from './NeuralVDecor';
 import '../styles/auth.css';
 
 type AuthPageLayoutProps = {
@@ -18,9 +17,6 @@ export function AuthPageLayout({ title, description, aside, footer, children }: 
           <h1>{title}</h1>
           {description ? <p>{description}</p> : null}
           {footer ? <div className="auth-hero-footer">{footer}</div> : null}
-        </div>
-        <div className="auth-page-decor-wrap" aria-hidden="true">
-          <NeuralVDecor variant="account" className="page-decor auth-page-decor" />
         </div>
         <article className="content-card auth-card auth-form-card">{children}</article>
       </section>

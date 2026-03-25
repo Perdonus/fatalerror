@@ -83,7 +83,7 @@ export function HomePage() {
     <div className="page-stack story-page-shell">
       <section className="story-hero">
         <div className="story-hero-center">
-          <article className="story-hero-card">
+          <article className="story-hero-card story-hero-card-main">
             <h1 className="story-hero-title">Базовые технологии ушли в прошлое. Встречайте новый стандарт безопасности.</h1>
             <div className="story-hero-actions">
               <a className="nv-button" href="#downloads">Скачать</a>

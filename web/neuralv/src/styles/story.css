@@ -37,10 +37,10 @@ html::-webkit-scrollbar-thumb {
 
 .story-hero,
 .platform-hero {
-  min-height: calc(100vh - 140px);
+  min-height: calc(100vh - 180px);
   display: grid;
   place-items: center;
-  padding: 28px 0 18px;
+  padding: 20px 0 12px;
 }
 
 .story-hero-center,
@@ -105,6 +105,10 @@ html::-webkit-scrollbar-thumb {
   padding: 28px 24px 24px;
 }
 
+.story-hero-card-main {
+  width: min(960px, 100%);
+}
+
 .story-hero-card h1,
 .platform-hero-copy h1 {
   margin: 0;
@@ -114,6 +118,11 @@ html::-webkit-scrollbar-thumb {
   font-weight: 720;
   max-width: 100%;
   text-wrap: balance;
+}
+
+.story-hero-card-main h1 {
+  font-size: clamp(1.88rem, 4vw, 3.28rem);
+  line-height: 1.04;
 }
 
 .story-hero-actions,
@@ -169,13 +178,12 @@ html::-webkit-scrollbar-thumb {
 .story-scene-sticky {
   position: static;
   min-height: auto;
-  display: grid;
-  align-items: center;
+  display: block;
 }
 
 .story-scene-card {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(340px, 0.92fr);
+  grid-template-columns: minmax(0, 0.96fr) minmax(300px, 0.84fr);
   gap: 18px;
   align-items: stretch;
   padding: 20px;
@@ -291,7 +299,7 @@ html::-webkit-scrollbar-thumb {
 .telegram-artifact-media {
   position: relative;
   overflow: hidden;
-  min-height: 360px;
+  min-height: 320px;
   height: 100%;
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -310,9 +318,7 @@ html::-webkit-scrollbar-thumb {
   object-fit: cover;
   display: block;
   filter: saturate(calc(0.88 + var(--scene-focus, 0.32) * 0.2)) brightness(calc(0.62 + var(--scene-focus, 0.32) * 0.16));
-  transform:
-    scale(calc(1.02 + var(--scene-focus, 0.32) * 0.06))
-    translate3d(calc(var(--scene-drift, 0) * -8px), calc(var(--scene-orbit, 0) * -6px), 0);
+  transform: scale(calc(1.01 + var(--scene-focus, 0.32) * 0.04));
 }
 
 .story-scene-media-shade,
@@ -439,9 +445,9 @@ html::-webkit-scrollbar-thumb {
 }
 
 .story-faq-question {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   list-style: none;
   cursor: pointer;
@@ -451,18 +457,25 @@ html::-webkit-scrollbar-thumb {
   color: #f2f4f7;
 }
 
-.story-faq-question::after {
-  content: '+';
-  flex: 0 0 auto;
+.story-faq-plus {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
   color: rgba(242, 244, 247, 0.74);
   font-size: 1.32rem;
   line-height: 1;
-  transition: transform 180ms ease, color 180ms ease;
+  transition: transform 180ms ease, color 180ms ease, border-color 180ms ease, background-color 180ms ease;
 }
 
-.story-faq-item[open] .story-faq-question::after {
+.story-faq-item[open] .story-faq-plus {
   transform: rotate(45deg);
   color: #f2f4f7;
+  border-color: rgba(201, 96, 108, 0.24);
+  background: rgba(201, 96, 108, 0.12);
 }
 
 .story-faq-question::-webkit-details-marker {
@@ -479,14 +492,14 @@ html::-webkit-scrollbar-thumb {
 
 .story-download-card {
   align-content: start;
-  justify-items: start;
-  text-align: left;
+  justify-items: center;
+  text-align: center;
 }
 
 .story-download-card p,
 .platform-install-card p,
 .platform-command-card p {
-  min-height: 2.8em;
+  min-height: auto;
 }
 
 .platform-hero-card-centered,
@@ -526,6 +539,11 @@ html::-webkit-scrollbar-thumb {
 
 .platform-install-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.platform-install-grid-split,
+.telegram-download-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .platform-install-grid-single {
@@ -582,6 +600,11 @@ html::-webkit-scrollbar-thumb {
   align-items: stretch;
 }
 
+.platform-download-section {
+  display: grid;
+  gap: 18px;
+}
+
 @keyframes storyCue {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(6px); }
@@ -614,6 +637,8 @@ html::-webkit-scrollbar-thumb {
   .telegram-hero-shell,
   .platform-info-grid,
   .platform-install-grid,
+  .platform-install-grid-split,
+  .telegram-download-grid,
   .story-download-grid,
   .story-faq-list {
     grid-template-columns: 1fr;
@@ -661,27 +686,190 @@ html::-webkit-scrollbar-thumb {
     min-height: 280px;
   }
 
-  .story-scene-media-overlay {
-    padding: 14px;
+  .platform-install-grid-split,
+  .telegram-download-grid {
+    grid-template-columns: 1fr;
   }
+}
 
-  .story-scene-media-inset {
-    right: 14px;
-    bottom: 54px;
-    width: min(42%, 156px);
-  }
+/* 2026-03-25 layout cleanup overrides */
+.story-hero-center,
+.platform-hero-center {
+  width: min(1040px, 100%);
+}
 
-  .story-scene-media-caption {
-    width: 100%;
-  }
+.story-hero-card {
+  width: min(1040px, 100%);
+  padding: 32px 24px 28px;
+}
 
-  .story-scene-media-strip {
-    justify-content: flex-start;
-  }
+.story-hero-title,
+.story-hero-card h1 {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  font-size: clamp(2rem, 4.6vw, 3.8rem);
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
 
-  .story-scene-media-label,
-  .story-scene-media-tags {
-    left: 14px;
-    right: 14px;
+.story-track {
+  gap: 18px;
+}
+
+.story-scene,
+.story-scene-compact {
+  min-height: auto;
+  padding: 0;
+}
+
+.story-scene-sticky {
+  position: static;
+  top: auto;
+  min-height: auto;
+  display: block;
+}
+
+.story-scene-card {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.92fr);
+  gap: 20px;
+  padding: 22px;
+}
+
+.story-scene-media-shell,
+.story-scene-media-frame {
+  min-height: 320px;
+}
+
+.story-scene-media-grid,
+.story-scene-media-line,
+.story-scene-media-overlay {
+  display: none;
+}
+
+.story-scene-media,
+.telegram-hero-media img,
+.telegram-artifact-media img {
+  filter: saturate(calc(0.92 + var(--scene-focus, 0.32) * 0.08)) brightness(calc(0.7 + var(--scene-focus, 0.32) * 0.1));
+  transform: scale(calc(1.01 + var(--scene-focus, 0.32) * 0.03));
+}
+
+.story-faq-grid {
+  align-items: start;
+}
+
+.story-faq-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.story-faq-plus {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f2f4f7;
+  font-size: 1rem;
+  line-height: 1;
+  flex: 0 0 auto;
+  transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.story-faq-item[open] .story-faq-plus {
+  transform: rotate(45deg);
+  border-color: rgba(201, 96, 108, 0.24);
+  background: rgba(201, 96, 108, 0.12);
+}
+
+.story-download-section,
+.platform-install-shell {
+  justify-items: center;
+}
+
+.story-download-section > h2,
+.platform-section-heading {
+  width: min(1040px, 100%);
+}
+
+.story-download-grid {
+  width: min(1040px, 100%);
+  margin: 0 auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.story-download-card,
+.platform-install-card,
+.platform-command-card {
+  width: 100%;
+  min-height: 0;
+}
+
+.story-download-card p,
+.platform-install-card p,
+.platform-command-card p {
+  min-height: 0;
+}
+
+.platform-hero-card-centered {
+  width: min(980px, 100%);
+}
+
+.platform-hero-copy-centered {
+  width: min(720px, 100%);
+  justify-items: center;
+  text-align: center;
+}
+
+.platform-hero-copy-centered p {
+  max-width: 44rem;
+}
+
+.platform-install-grid-centered {
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.platform-install-grid-split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.platform-install-grid-single {
+  width: min(720px, 100%);
+}
+
+.platform-install-grid-telegram {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.platform-download-card-centered {
+  width: min(520px, 100%);
+  justify-self: center;
+}
+
+.telegram-page .platform-install-grid-centered {
+  width: min(860px, 100%);
+}
+
+.telegram-page .platform-install-card {
+  justify-items: center;
+  text-align: center;
+}
+
+@media (max-width: 980px) {
+  .story-scene-card,
+  .story-faq-grid,
+  .story-faq-list,
+  .story-download-grid,
+  .platform-install-grid,
+  .platform-install-grid-split,
+  .platform-install-grid-telegram,
+  .platform-hero-grid {
+    grid-template-columns: 1fr;
   }
 }

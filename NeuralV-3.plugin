@@ -838,21 +838,98 @@ class NeuralVPlugin(BasePlugin):
     def _send_vhelp(self, params: Any):
         self._send_msg(params, self._s("vhelp_text"))
 
-    def _read_document_bytes(self, document: Any) -> bytes:
-        file_path_obj = get_file_loader().getPathToAttach(document, True)
-        file_path = file_path_obj.getAbsolutePath()
+    def _normalize_path_candidate(self, value: Any) -> str:
+        if value is None:
+            return ""
+        try:
+            if hasattr(value, "getAbsolutePath"):
+                value = value.getAbsolutePath()
+            elif hasattr(value, "toString"):
+                value = value.toString()
+        except Exception:
+            pass
+        try:
+            path = str(value).strip()
+        except Exception:
+            return ""
+        if not path or path.lower() == "null":
+            return ""
+        return path
 
-        if not os.path.exists(file_path):
-            get_file_loader().loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
-            for _ in range(30):
-                if os.path.exists(file_path):
-                    break
-                time.sleep(1)
+    def _collect_document_paths(self, document: Any, reply_msg: Any = None) -> List[str]:
+        candidates: List[str] = []
+        seen = set()
 
-        if not os.path.exists(file_path):
-            raise RuntimeError(self._s("download_error"))
+        def add(value: Any):
+            path = self._normalize_path_candidate(value)
+            if not path or path in seen:
+                return
+            if os.path.isabs(path) or os.path.exists(path):
+                seen.add(path)
+                candidates.append(path)
 
-        with open(file_path, "rb") as fh:
+        try:
+            loader = get_file_loader()
+        except Exception:
+            loader = None
+
+        if loader is not None:
+            for force in (True, False):
+                try:
+                    add(loader.getPathToAttach(document, force))
+                except Exception:
+                    pass
+
+        for attr in ("path", "localPath", "attachPath", "filePath", "local_path", "file_path"):
+            try:
+                add(getattr(document, attr, None))
+            except Exception:
+                pass
+
+        if reply_msg is not None:
+            for holder in (reply_msg, getattr(reply_msg, "messageOwner", None)):
+                if holder is None:
+                    continue
+                for attr in ("attachPath", "path", "localPath", "filePath", "local_path", "file_path"):
+                    try:
+                        add(getattr(holder, attr, None))
+                    except Exception:
+                        pass
+
+        return candidates
+
+    def _pick_ready_document_path(self, document: Any, reply_msg: Any = None, timeout_sec: int = 30) -> str:
+        loader = get_file_loader()
+
+        def find_ready_path() -> str:
+            for path in self._collect_document_paths(document, reply_msg):
+                try:
+                    if os.path.isfile(path) and os.path.getsize(path) > 0:
+                        return path
+                except Exception:
+                    continue
+            return ""
+
+        path = find_ready_path()
+        if path:
+            return path
+
+        try:
+            loader.loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
+        except Exception:
+            pass
+
+        for _ in range(timeout_sec):
+            path = find_ready_path()
+            if path:
+                return path
+            time.sleep(1)
+
+        raise RuntimeError(self._s("download_error"))
+
+    def _read_document_bytes(self, document: Any, reply_msg: Any = None) -> bytes:
+        path = self._pick_ready_document_path(document, reply_msg)
+        with open(path, "rb") as fh:
             return fh.read()
 
     def _analyze_bytes(self, params: Any, filename: str, raw: bytes):
@@ -870,11 +947,17 @@ class NeuralVPlugin(BasePlugin):
         analysis = LocalAnalyzer(text, filename).analyze()
         self._send_report(params, filename, analysis)
 
-    def _analyze_file_task(self, params: Any, document: Any):
+    def _analyze_file_task(self, params: Any, document: Any, reply_msg: Any = None):
         try:
             filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}.txt"
-            raw = self._read_document_bytes(document)
+            raw = self._read_document_bytes(document, reply_msg)
             self._analyze_bytes(params, filename, raw)
+        except RuntimeError as e:
+            log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
+            if str(e) == self._s("download_error"):
+                self._show_error("download_error")
+            else:
+                self._show_error("unexpected", error=str(e))
         except Exception as e:
             log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
             msg = str(e) if str(e) else self._s("unexpected", error=type(e).__name__)
@@ -933,7 +1016,7 @@ class NeuralVPlugin(BasePlugin):
         run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
 
         if document:
-            run_on_queue(lambda: self._analyze_file_task(params, document))
+            run_on_queue(lambda: self._analyze_file_task(params, document, reply_msg))
         else:
             try:
                 reply_text = (reply_msg.messageOwner.message or "").strip()

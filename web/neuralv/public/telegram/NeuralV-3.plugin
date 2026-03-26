@@ -1,327 +1,686 @@
 """
-🧠 NeuralV — ИБ-анализатор кода для ExteraGram
-    Антивирус от Fatal Error Team (@OrangeFaHTA)
-    Получить ключ: https://aistudio.google.com/app/apikey
+🛡 NeuralV — локальный анализатор кода для ExteraGram
+Антивирус от Fatal Error Team (@OrangeFaHTA)
 """
 
+import ast
+import hashlib
 import os
 import re
 import time
 import traceback
-from typing import Any, Dict, Optional, List, Tuple
-
-import requests
+from typing import Any, Dict, Iterable, List, Set
 
 from base_plugin import BasePlugin, HookResult, HookStrategy
 from client_utils import get_file_loader, run_on_queue, send_message
-from markdown_utils import parse_markdown
 from ui.settings import Header, Input, Divider
 from ui.bulletin import BulletinHelper
 from android_utils import run_on_ui_thread, log
 
-from org.telegram.tgnet import TLRPC
 from org.telegram.messenger import MessageObject, FileLoader, LocaleController
 
 __id__ = "NeuralV"
 __name__ = "NeuralV"
-__description__ = """🧠 NeuralV — Антивирус от Fatal Error Team.
-Анализирует код плагинов и файлов через ИИ.
-Поддержка: Gemini, OpenAI, Groq и совместимые API.
+__description__ = """🛡 NeuralV — локальный анализатор кода.
+Проверяет плагины и модули без ИИ и без внешних API.
 
 Команды:
 • .vcheck — ответить на файл или текст с кодом для анализа
 • .vlist  — история последних проверок
 • .vinfo [имя файла] — полный отчёт из кэша
 • .vclear — очистить историю проверок
-• .vhelp  — показать список команд
-
-Получить ключ Gemini: https://aistudio.google.com/app/apikey"""
+• .vhelp  — показать список команд"""
 __author__ = "@NeuralV_chnl"
-__version__ = "1.0"
+__version__ = "2.0"
 __min_version__ = "11.12.1"
 __icon__ = "neuralvstickers/0"
 
-# ─── константы ───────────────────────────────────────────────────────────────
-
 VCHECK_CMD = ".vcheck"
-VLIST_CMD  = ".vlist"
-VINFO_CMD  = ".vinfo"
+VLIST_CMD = ".vlist"
+VINFO_CMD = ".vinfo"
 VCLEAR_CMD = ".vclear"
-VHELP_CMD  = ".vhelp"
-
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
-
-VERDICT_PATTERN = re.compile(r'\b(Безопасно|Осторожно|Опасно)\b', re.IGNORECASE)
-
-VERDICT_ICONS = {
-    "безопасно": "✅",
-    "осторожно": "⚠️",
-    "опасно":    "🚫",
+VHELP_CMD = ".vhelp"
+CACHE_TTL = 3600
+TEXT_SAMPLE_SIZE = 8192
+TEXT_EXTENSIONS = {
+    ".py",
+    ".plugin",
+    ".txt",
+    ".json",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".toml",
+    ".env",
+    ".md",
+    ".csv",
+    ".xml",
+    ".html",
+    ".css",
+    ".sql",
+    ".sh",
 }
+VERDICT_ICONS = {
+    "Безопасно": "✅",
+    "Осторожно": "⚠️",
+    "Опасно": "🚫",
+}
+SEVERITY_LABELS = {
+    "low": "Низко",
+    "medium": "Средне",
+    "high": "Высоко",
+    "critical": "Критично",
+}
+SEVERITY_SCORES = {
+    "low": 1,
+    "medium": 3,
+    "high": 6,
+    "critical": 10,
+}
+TOKEN_RE = re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{30,}\b")
+OPENAI_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9]{20,}\b", re.IGNORECASE)
+URL_RE = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
+BASE64_BLOB_RE = re.compile(r"[A-Za-z0-9+/]{180,}={0,2}")
+SENSITIVE_NAME_RE = re.compile(r"(token|session|cookie|passwd|password|secret|api[_-]?key|authorization)", re.IGNORECASE)
 
-# ─── локализация ─────────────────────────────────────────────────────────────
+
+class SyntaxCollector(ast.NodeVisitor):
+    def __init__(self):
+        self.imports: Set[str] = set()
+        self.calls: List[str] = []
+        self.class_bases: List[str] = []
+        self.class_names: List[str] = []
+        self.functions: Set[str] = set()
+        self.strings: List[str] = []
+        self.names: Set[str] = set()
+        self.has_shell_true = False
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.imports.add(alias.name)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        module = node.module or ""
+        for alias in node.names:
+            full = f"{module}.{alias.name}" if module else alias.name
+            self.imports.add(full)
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node):
+        self.class_names.append(node.name)
+        for base in node.bases:
+            name = dotted_name(base)
+            if name:
+                self.class_bases.append(name)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node):
+        self.functions.add(node.name)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        self.functions.add(node.name)
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        name = dotted_name(node.func)
+        if name:
+            self.calls.append(name)
+        for kw in node.keywords:
+            if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                self.has_shell_true = True
+        self.generic_visit(node)
+
+    def visit_Name(self, node):
+        self.names.add(node.id)
+        self.generic_visit(node)
+
+    def visit_Constant(self, node):
+        if isinstance(node.value, str):
+            self.strings.append(node.value)
+        self.generic_visit(node)
+
+
+class Finding:
+    __slots__ = ("key", "severity", "title", "summary", "terms", "evidence")
+
+    def __init__(self, key: str, severity: str, title: str, summary: str, terms: Iterable[str], evidence: List[str]):
+        self.key = key
+        self.severity = severity
+        self.title = title
+        self.summary = summary
+        self.terms = list(terms)
+        self.evidence = evidence
+
+
+class LocalAnalyzer:
+    def __init__(self, source: str, filename: str):
+        self.source = normalize_text(source)
+        self.filename = filename or "snippet.txt"
+        self.lines = self.source.splitlines() or [self.source]
+        self.lower = self.source.lower()
+        self.ext = detect_extension(self.filename)
+        self.tree = None
+        self.collector = SyntaxCollector()
+        try:
+            self.tree = ast.parse(self.source)
+            self.collector.visit(self.tree)
+        except Exception:
+            self.tree = None
+        self.imports_lower = {item.lower() for item in self.collector.imports}
+        self.calls_lower = [item.lower() for item in self.collector.calls]
+        self.functions_lower = {item.lower() for item in self.collector.functions}
+        self.class_bases_lower = [item.lower() for item in self.collector.class_bases]
+        self.class_names_lower = [item.lower() for item in self.collector.class_names]
+        self.strings_lower = [item.lower() for item in self.collector.strings[:400]]
+        self.seed = hashlib.sha256((self.filename + "\n" + self.source).encode("utf-8", "ignore")).hexdigest()
+
+    def analyze(self) -> Dict[str, object]:
+        kind, kind_label, mismatch_note = self._classify_kind()
+        findings = self._collect_findings(mismatch_note)
+        score = sum(SEVERITY_SCORES[item.severity] for item in findings)
+        verdict = self._pick_verdict(score, findings)
+        icon = VERDICT_ICONS[verdict]
+        report = self._build_report(kind_label, mismatch_note, findings, verdict)
+        return {
+            "filename": self.filename,
+            "kind": kind,
+            "kind_label": kind_label,
+            "mismatch_note": mismatch_note,
+            "findings": findings,
+            "score": score,
+            "verdict": verdict,
+            "icon": icon,
+            "report": report,
+        }
+
+    def _classify_kind(self):
+        extera_score = 0
+        hikka_score = 0
+
+        if contains_import(self.imports_lower, "base_plugin"):
+            extera_score += 5
+        if any(base.endswith("baseplugin") for base in self.class_bases_lower):
+            extera_score += 5
+        if "create_settings" in self.functions_lower:
+            extera_score += 2
+        if "on_send_message_hook" in self.functions_lower:
+            extera_score += 3
+        if "hookresult" in self.lower or "hookstrategy" in self.lower:
+            extera_score += 2
+        if "__min_version__" in self.lower:
+            extera_score += 2
+        if "ui.settings" in self.lower or "ui.bulletin" in self.lower:
+            extera_score += 2
+
+        if "@loader.tds" in self.lower:
+            hikka_score += 4
+        if contains_import(self.imports_lower, "loader"):
+            hikka_score += 3
+        if "loader.moduleconfig" in self.lower:
+            hikka_score += 4
+        if "loader.configvalue" in self.lower:
+            hikka_score += 3
+        if "utils.answer" in self.lower:
+            hikka_score += 2
+        if any("loader.module" in base for base in self.class_bases_lower):
+            hikka_score += 5
+        if any(name.endswith("mod") for name in self.class_names_lower):
+            hikka_score += 1
+        if "@loader.command" in self.lower:
+            hikka_score += 3
+
+        if extera_score >= max(5, hikka_score + 2):
+            kind = "extera"
+            label = "плагин ExteraGram"
+        elif hikka_score >= max(5, extera_score + 2):
+            kind = "hikka"
+            label = "модуль Hikka/Heroku"
+        elif self._looks_like_python():
+            kind = "python"
+            label = "обычный Python-скрипт"
+        else:
+            kind = "text"
+            label = "текстовый файл без явной структуры модуля"
+
+        mismatch_note = ""
+        if self.ext == ".plugin" and kind != "extera":
+            mismatch_note = (
+                "Файл назван как Extera-плагин, но по структуре больше похож "
+                f"на {label}. Простым переименованием такой файл за плагин маскировать можно."
+            )
+        elif self.ext == ".py" and kind == "extera":
+            mismatch_note = (
+                "Файл имеет обычное расширение .py, но по внутренним маркерам это именно Extera-плагин. "
+                "Если его выдают за другой формат, это стоит проверять вручную."
+            )
+        elif self.ext == ".plugin" and kind == "text":
+            mismatch_note = "Файл назван как plugin, но внутри не видно ни структуры Extera, ни нормального Python-модуля."
+        return kind, label, mismatch_note
+
+    def _looks_like_python(self) -> bool:
+        if self.tree is not None:
+            return True
+        markers = ["def ", "class ", "import ", "from ", "return ", "async def "]
+        return sum(1 for item in markers if item in self.lower) >= 2
+
+    def _collect_findings(self, mismatch_note: str) -> List[Finding]:
+        findings: List[Finding] = []
+        add = findings.append
+
+        dynamic_terms = []
+        if contains_call(self.calls_lower, "exec") or "exec(" in self.lower:
+            dynamic_terms.append("exec")
+        if contains_call(self.calls_lower, "eval") or "eval(" in self.lower:
+            dynamic_terms.append("eval")
+        if "exec(compile(" in self.lower.replace(" ", ""):
+            dynamic_terms.append("exec(compile")
+        if dynamic_terms:
+            severity = "critical" if "exec(compile" in self.lower.replace(" ", "") else "high"
+            add(self._make_finding(
+                "dynamic_exec",
+                severity,
+                "Динамическое выполнение кода",
+                "Код сам собирает и запускает выражения на лету. Это один из самых опасных паттернов для модулей и плагинов.",
+                dynamic_terms,
+            ))
+
+        obfuscation_terms = []
+        for term in ["base64", "marshal", "zlib", "binascii", "codecs.decode"]:
+            if term in self.lower:
+                obfuscation_terms.append(term)
+        if BASE64_BLOB_RE.search(self.source):
+            obfuscation_terms.append("encoded_blob")
+        if obfuscation_terms:
+            severity = "high" if dynamic_terms else "medium"
+            add(self._make_finding(
+                "obfuscation",
+                severity,
+                "Признаки сокрытия логики",
+                "Внутри есть кодеки, упаковка или крупные закодированные блоки. Такое часто используют, чтобы спрятать реальное поведение.",
+                obfuscation_terms,
+            ))
+
+        shell_terms = []
+        for term in [
+            "os.system",
+            "subprocess.run",
+            "subprocess.popen",
+            "subprocess.call",
+            "subprocess.check_output",
+            "asyncio.create_subprocess_shell",
+        ]:
+            if contains_call(self.calls_lower, term):
+                shell_terms.append(term)
+        if self.collector.has_shell_true:
+            shell_terms.append("shell=True")
+        if shell_terms:
+            severity = "critical" if self.collector.has_shell_true else "high"
+            add(self._make_finding(
+                "shell_exec",
+                severity,
+                "Запуск системных команд",
+                "Модуль умеет выходить в shell или дергать системные процессы. Для чат-расширений это зона повышенного риска.",
+                shell_terms,
+            ))
+
+        network_terms = []
+        for term in [
+            "requests.get",
+            "requests.post",
+            "httpx.get",
+            "httpx.post",
+            "aiohttp.clientsession",
+            "socket.socket",
+            "websockets.connect",
+            "urllib.request.urlopen",
+        ]:
+            if contains_call(self.calls_lower, term) or term in self.lower:
+                network_terms.append(term)
+        urls = URL_RE.findall(self.source)[:6]
+        if urls:
+            network_terms.extend(urls[:2])
+        if network_terms:
+            add(self._make_finding(
+                "network",
+                "low",
+                "Сетевые обращения",
+                "Код ходит во внешнюю сеть. Само по себе это не делает его вредоносным, но такой трафик нужно понимать по назначению.",
+                network_terms,
+            ))
+
+        remote_exec = False
+        if network_terms and (dynamic_terms or "importlib" in self.lower or "runpy" in self.lower):
+            if any(fragment in self.lower for fragment in ["requests.get(", "httpx.get(", "urlopen(", "download_media("]):
+                remote_exec = True
+        if remote_exec:
+            add(self._make_finding(
+                "remote_exec",
+                "critical",
+                "Похоже на догрузку и запуск удалённого кода",
+                "Есть связка из сетевой загрузки и последующего исполнения. Это уже не просто сетевой модуль, а крайне рискованный сценарий.",
+                ["requests.get", "httpx.get", "urlopen", "exec", "importlib"],
+            ))
+
+        secret_terms = []
+        if "os.getenv" in self.lower or "os.environ" in self.lower:
+            secret_terms.extend(["os.getenv", "os.environ"])
+        if TOKEN_RE.search(self.source):
+            secret_terms.append("telegram_token")
+        if OPENAI_KEY_RE.search(self.source):
+            secret_terms.append("api_key_literal")
+        if any(SENSITIVE_NAME_RE.search(text) for text in self.strings_lower[:80]):
+            secret_terms.append("sensitive_names")
+        if secret_terms:
+            severity = "medium" if network_terms else "low"
+            add(self._make_finding(
+                "secret_access",
+                severity,
+                "Доступ к чувствительным данным",
+                "Код работает с токенами, сессионными строками или секретами окружения. Без понятной причины это настораживает.",
+                secret_terms,
+            ))
+
+        surveillance_terms = []
+        for term in ["pynput", "keyboard", "pyautogui", "imagegrab", "pil.imagegrab", "mss", "cv2.videocapture", "clipboard"]:
+            if term in self.lower:
+                surveillance_terms.append(term)
+        if surveillance_terms:
+            add(self._make_finding(
+                "surveillance",
+                "high",
+                "Слежение за вводом или экраном",
+                "В коде видны импорты и вызовы, связанные с клавиатурой, буфером обмена, скриншотами или захватом экрана.",
+                surveillance_terms,
+            ))
+
+        persistence_terms = []
+        for term in ["winreg", "runonce", "software\\microsoft\\windows\\currentversion\\run", "cron", "schtasks", "startup", ".desktop"]:
+            if term in self.lower:
+                persistence_terms.append(term)
+        if persistence_terms:
+            add(self._make_finding(
+                "persistence",
+                "high",
+                "Признаки персистентности",
+                "Код пытается закрепиться в системе и переживать перезапуск. Для обычного плагина это лишний и опасный слой.",
+                persistence_terms,
+            ))
+
+        privilege_terms = []
+        for term in ["shell.executew", "runas", "isuseranadmin", "ctypes.windll", "sudo ", "pkexec"]:
+            if term in self.lower:
+                privilege_terms.append(term.strip())
+        if privilege_terms:
+            add(self._make_finding(
+                "privilege",
+                "high",
+                "Попытка получить повышенные права",
+                "В коде есть паттерны, связанные с запуском от администратора или с прямой работой через системные API.",
+                privilege_terms,
+            ))
+
+        destructive_terms = []
+        for term in ["shutil.rmtree", "os.remove", "os.unlink", ".unlink(", ".rmdir(", "os.walk", "path.unlink"]:
+            if term in self.lower:
+                destructive_terms.append(term)
+        if destructive_terms:
+            severity = "high" if "shutil.rmtree" in destructive_terms else "medium"
+            add(self._make_finding(
+                "destructive_fs",
+                severity,
+                "Агрессивные операции с файлами",
+                "Есть удаление файлов или каталогов. В обычных утилитах это бывает, но без явного контекста такой код лучше не запускать вслепую.",
+                destructive_terms,
+            ))
+
+        if mismatch_note:
+            add(self._make_finding(
+                "format_mismatch",
+                "medium",
+                "Формат файла не совпадает с содержимым",
+                mismatch_note,
+                [self.ext or "unknown_ext"],
+            ))
+
+        unique: Dict[str, Finding] = {}
+        for item in findings:
+            prev = unique.get(item.key)
+            if not prev or SEVERITY_SCORES[item.severity] > SEVERITY_SCORES[prev.severity]:
+                unique[item.key] = item
+        return sorted(unique.values(), key=lambda item: (-SEVERITY_SCORES[item.severity], item.title))
+
+    def _make_finding(self, key: str, severity: str, title: str, summary: str, terms: Iterable[str]) -> Finding:
+        evidence = []
+        lowered_terms = [str(term).lower() for term in terms if term]
+        for term in lowered_terms:
+            evidence.extend(find_evidence(self.lines, term))
+            if len(evidence) >= 2:
+                break
+        deduped = []
+        seen = set()
+        for item in evidence:
+            if item not in seen:
+                deduped.append(item)
+                seen.add(item)
+        return Finding(key, severity, title, summary, lowered_terms, deduped[:2])
+
+    def _pick_verdict(self, score: int, findings: List[Finding]) -> str:
+        severities = {item.severity for item in findings}
+        if "critical" in severities or score >= 12:
+            return "Опасно"
+        if "high" in severities or score >= 5:
+            return "Осторожно"
+        return "Безопасно"
+
+    def _build_report(self, kind_label: str, mismatch_note: str, findings: List[Finding], verdict: str) -> str:
+        purpose = self._compose_purpose(kind_label, findings)
+        checked = self._compose_checked()
+        findings_text = self._compose_findings(findings)
+        conclusion = self._compose_conclusion(verdict, findings, mismatch_note)
+        sections = [
+            "1. Тип и назначение\n" + purpose,
+            "2. Что проверено\n" + checked,
+            "3. Что найдено\n" + findings_text,
+            "4. Что важно учесть\n" + conclusion,
+            "5. Итог\n" + verdict,
+        ]
+        return "\n\n".join(sections).strip()
+
+    def _compose_purpose(self, kind_label: str, findings: List[Finding]) -> str:
+        if kind_label == "плагин ExteraGram":
+            first = pick_variant([
+                "Похоже на плагин ExteraGram: внутри есть характерная базовая обвязка, хук обработки сообщений и блок локальных настроек.",
+                "Код выглядит как плагин ExteraGram: он подключается к клиенту, ловит сообщения и добавляет собственные действия поверх чата.",
+            ], self.seed + "purpose-extera")
+        elif kind_label == "модуль Hikka/Heroku":
+            first = pick_variant([
+                "Похоже на модуль Hikka/Heroku: видны loader-команды, конфиг модуля и типичная структура чат-расширения.",
+                "Код выглядит как модуль Hikka/Heroku: он объявляет команды, использует loader и встраивается в существующий клиентский сценарий.",
+            ], self.seed + "purpose-hikka")
+        elif kind_label == "обычный Python-скрипт":
+            first = pick_variant([
+                "Это обычный Python-скрипт без явной привязки к ExteraGram или Hikka/Heroku.",
+                "По структуре это скорее самостоятельный Python-файл, а не готовый чат-плагин под конкретный клиент.",
+            ], self.seed + "purpose-python")
+        else:
+            first = "Внутри нет устойчивой структуры полноценного плагина. Это просто текстовый файл или сильно урезанный фрагмент кода."
+
+        if any(item.key in {"dynamic_exec", "remote_exec", "surveillance"} for item in findings):
+            second = "При этом в логике уже есть поведение, которое выходит далеко за рамки обычной вспомогательной автоматизации."
+        elif any(item.key in {"network", "secret_access", "destructive_fs"} for item in findings):
+            second = "Внутри есть прикладные действия с сетью, файлами или чувствительными данными, поэтому код нельзя считать совсем безобидным без ручной проверки."
+        else:
+            second = "По явным маркерам код похож на обычную служебную логику и не выглядит как попытка скрытно выполнить что-то постороннее."
+
+        return first + " " + second
+
+    def _compose_checked(self) -> str:
+        return pick_variant([
+            "Проверил запуск системных команд, сетевые вызовы, операции с файлами, работу с секретами, признаки обфускации и попытки догружать код снаружи.",
+            "Проверка прошла по ключевым зонам риска: shell-команды, внешняя сеть, чувствительные данные, скрытие логики, удаление файлов и признаки закрепления в системе.",
+            "Разобрал импортную карту, вызовы функций, строковые литералы и характерные сигнатуры: от shell и сети до токенов, обфускации и персистентности.",
+        ], self.seed + "checked")
+
+    def _compose_findings(self, findings: List[Finding]) -> str:
+        if not findings:
+            return pick_variant([
+                "Явных опасных паттернов не видно. Сетевых догрузок, shell-команд, скрытого запуска кода и агрессивных операций с файлами в явном виде нет.",
+                "На уровне сигнатур код выглядит спокойно: нет явных попыток тянуть и исполнять удалённый код, ломиться в shell или прятать реальную логику через упаковку.",
+            ], self.seed + "clean")
+
+        rows = []
+        for item in findings[:6]:
+            row = f"- {SEVERITY_LABELS[item.severity]}: {item.title}. {item.summary}"
+            if item.evidence:
+                row += " Примеры: " + "; ".join(item.evidence)
+            rows.append(row)
+        return "\n".join(rows)
+
+    def _compose_conclusion(self, verdict: str, findings: List[Finding], mismatch_note: str) -> str:
+        if verdict == "Опасно":
+            text = pick_variant([
+                "Набор признаков уже слишком тяжёлый для безопасного плагина. Такой код лучше не запускать без полной ручной разборки и изоляции.",
+                "Картина больше похожа на рискованный или вредоносный сценарий, чем на обычный модуль. Без песочницы и ручного аудита запускать это не стоит.",
+            ], self.seed + "conclusion-danger")
+        elif verdict == "Осторожно":
+            text = pick_variant([
+                "Здесь нет однозначного приговора по одному сигналу, но связка найденных паттернов требует ручной проверки и понимания контекста.",
+                "Код нельзя назвать заведомо вредоносным по одному признаку, но и доверять ему вслепую уже нельзя. Нужна ручная проверка перед запуском.",
+            ], self.seed + "conclusion-warn")
+        else:
+            text = pick_variant([
+                "По текущим сигнатурам это выглядит как спокойный модуль без грубых признаков вредоносной активности.",
+                "На уровне статического разбора код выглядит адекватно: явных попыток скрыть опасное поведение или навредить системе не видно.",
+            ], self.seed + "conclusion-safe")
+
+        if mismatch_note:
+            text += " Отдельно настораживает несовпадение имени файла и его реальной структуры."
+        return text
+
+
+def normalize_text(text: str) -> str:
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def detect_extension(filename: str) -> str:
+    filename = (filename or "").lower().strip()
+    if "." not in filename:
+        return ""
+    return "." + filename.rsplit(".", 1)[-1]
+
+
+def dotted_name(node) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = dotted_name(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    if isinstance(node, ast.Call):
+        return dotted_name(node.func)
+    return ""
+
+
+def contains_import(imports_lower: Set[str], fragment: str) -> bool:
+    fragment = fragment.lower()
+    return any(fragment == item or item.endswith("." + fragment) or fragment in item for item in imports_lower)
+
+
+def contains_call(calls_lower: List[str], fragment: str) -> bool:
+    fragment = fragment.lower()
+    return any(call == fragment or call.endswith("." + fragment) or fragment in call for call in calls_lower)
+
+
+def pick_variant(options: List[str], seed: str) -> str:
+    if not options:
+        return ""
+    digest = hashlib.sha256(seed.encode("utf-8", "ignore")).hexdigest()
+    index = int(digest[:8], 16) % len(options)
+    return options[index]
+
+
+def find_evidence(lines: List[str], term: str) -> List[str]:
+    term = (term or "").lower().strip()
+    if not term:
+        return []
+    found = []
+    for idx, line in enumerate(lines, 1):
+        if term in line.lower():
+            compact = " ".join(line.strip().split())
+            if compact:
+                found.append(f"строка {idx}: {compact[:140]}")
+            if len(found) >= 2:
+                break
+    return found
+
+
+def looks_binary(data: bytes, filename: str) -> bool:
+    if not data:
+        return False
+    ext = detect_extension(filename)
+    if ext and ext in TEXT_EXTENSIONS:
+        return False
+    if b"\x00" in data[:TEXT_SAMPLE_SIZE]:
+        return True
+    sample = data[:TEXT_SAMPLE_SIZE]
+    printable = 0
+    for byte in sample:
+        if byte in (9, 10, 13) or 32 <= byte <= 126:
+            printable += 1
+    return printable / max(1, len(sample)) < 0.78
+
 
 def get_localized_strings():
-    try:
-        lang = LocaleController.getInstance().getCurrentLocale().getLanguage()
-    except Exception:
-        lang = "en"
-
-    strings = {
-        "ru": {
-            "settings_header":      "🧠 NeuralV",
-            "settings_subtitle":    "Анализ кода плагинов и файлов через ИИ. Ответьте на файл командой .vcheck",
-            "gemini_section":       "Google Gemini",
-            "gemini_api_key_text":  "API Ключ (Gemini)",
-            "gemini_api_key_sub":   "Получить: https://aistudio.google.com/app/apikey",
-            "gemini_model_text":    "Модель Gemini",
-            "gemini_model_sub":     "Например: gemini-2.0-flash-exp, gemini-flash-latest, gemini-2.5-pro",
-            "openai_section":       "OpenAI / Groq / совместимый",
-            "openai_api_key_text":  "API Ключ (OpenAI / Groq)",
-            "openai_api_key_sub":   "Ключ провайдера (sk-...)",
-            "openai_base_url_text": "URL сервера",
-            "openai_base_url_sub":  "Например: https://api.openai.com или https://api.groq.com",
-            "openai_model_text":    "Модель",
-            "openai_model_sub":     "Например: gpt-4o, llama-3.3-70b-versatile",
-            "advanced_section":     "Параметры",
-            "provider_text":        "Провайдер",
-            "provider_sub":         "Введите: gemini — для Gemini, openai — для OpenAI/Groq",
-            "max_file_mb_text":     "Макс. размер файла (MB)",
-            "max_file_mb_sub":      "Файлы больше этого размера не анализируются (1–50)",
-            "api_key_missing":      "❗ NeuralV: Укажи API ключ Gemini в настройках плагина.",
-            "openai_key_missing":   "❗ NeuralV: Укажи API ключ OpenAI/Groq в настройках.",
-            "no_reply":             "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
-            "no_content":           "⚠️ NeuralV: В сообщении нет файла или текста для анализа.",
-            "analyzing":            "⌛ NeuralV: Анализирую...",
-            "download_error":       "❗ NeuralV: Не удалось загрузить файл.",
-            "read_error":           "❗ NeuralV: Не удалось прочитать файл.",
-            "too_big":              "❗ NeuralV: Файл слишком большой (>{mb} MB).",
-            "api_error":            "❗ NeuralV: Ошибка API — {error}",
-            "unexpected":           "❗ NeuralV: Неожиданная ошибка — {error}",
-            "report_header":        "🛡 Отчёт ИБ-анализа: {filename}\n\n",
-            "report_footer":        "\n\nИтоговая оценка: {icon} {word}",
-            "cache_empty":          "📂 NeuralV: История проверок пуста.",
-            "cache_header":         "📊 История анализа NeuralV:\n\n",
-            "cache_row":            "{icon} {name} — {word} ({age})\n",
-            "age_min":              "{n} мин. назад",
-            "age_hour":             "{n} ч. назад",
-            "vinfo_usage":          "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
-            "vinfo_not_found":      "❗ NeuralV: Файл «{name}» не найден в истории.",
-            "vinfo_expired":        "⏳ NeuralV: Запись устарела. Перепроверь файл.",
-            "vinfo_header":         "🛡 Отчёт из кэша: {name}\n\n",
-            "vinfo_footer":         "\n\nИтоговая оценка: {icon} {word}",
-            "vclear_done":          "🧹 NeuralV: История очищена.",
-            "vhelp_text": (
-                "🧠 NeuralV — команды:\n\n"
-                "• .vcheck — ответить на файл или текст с кодом для анализа\n"
-                "• .vlist  — история последних проверок\n"
-                "• .vinfo [имя] — полный отчёт из кэша (пример: .vinfo bot.py)\n"
-                "• .vclear — очистить историю\n"
-                "• .vhelp  — эта справка\n\n"
-                "Настройки провайдера и ключа — в меню плагина.\n"
-                "Получить ключ Gemini: https://aistudio.google.com/app/apikey"
-            ),
-        },
-        "en": {
-            "settings_header":      "🧠 NeuralV",
-            "settings_subtitle":    "AI-powered code security analyzer. Reply to a file with .vcheck",
-            "gemini_section":       "Google Gemini",
-            "gemini_api_key_text":  "API Key (Gemini)",
-            "gemini_api_key_sub":   "Get key: https://aistudio.google.com/app/apikey",
-            "gemini_model_text":    "Gemini Model",
-            "gemini_model_sub":     "E.g.: gemini-2.0-flash-exp, gemini-flash-latest, gemini-2.5-pro",
-            "openai_section":       "OpenAI / Groq / compatible",
-            "openai_api_key_text":  "API Key (OpenAI / Groq)",
-            "openai_api_key_sub":   "Provider key (sk-...)",
-            "openai_base_url_text": "Server URL",
-            "openai_base_url_sub":  "E.g.: https://api.openai.com or https://api.groq.com",
-            "openai_model_text":    "Model",
-            "openai_model_sub":     "E.g.: gpt-4o, llama-3.3-70b-versatile",
-            "advanced_section":     "Parameters",
-            "provider_text":        "Provider",
-            "provider_sub":         "Enter: gemini for Gemini, openai for OpenAI/Groq",
-            "max_file_mb_text":     "Max file size (MB)",
-            "max_file_mb_sub":      "Files larger than this won't be analyzed (1–50)",
-            "api_key_missing":      "❗ NeuralV: Set the Gemini API key in plugin settings.",
-            "openai_key_missing":   "❗ NeuralV: Set the OpenAI/Groq API key in settings.",
-            "no_reply":             "⚠️ NeuralV: Reply to a file or message with .vcheck",
-            "no_content":           "⚠️ NeuralV: No file or text found in that message.",
-            "analyzing":            "⌛ NeuralV: Analyzing...",
-            "download_error":       "❗ NeuralV: Failed to download the file.",
-            "read_error":           "❗ NeuralV: Failed to read the file.",
-            "too_big":              "❗ NeuralV: File too large (>{mb} MB).",
-            "api_error":            "❗ NeuralV: API error — {error}",
-            "unexpected":           "❗ NeuralV: Unexpected error — {error}",
-            "report_header":        "🛡 Security Report: {filename}\n\n",
-            "report_footer":        "\n\nFinal verdict: {icon} {word}",
-            "cache_empty":          "📂 NeuralV: No scan history yet.",
-            "cache_header":         "📊 NeuralV Scan History:\n\n",
-            "cache_row":            "{icon} {name} — {word} ({age})\n",
-            "age_min":              "{n} min ago",
-            "age_hour":             "{n} hr ago",
-            "vinfo_usage":          "⚠️ Specify a filename. Example: .vinfo bot.py",
-            "vinfo_not_found":      "❗ NeuralV: File '{name}' not found in history.",
-            "vinfo_expired":        "⏳ NeuralV: Cache entry expired. Re-scan the file.",
-            "vinfo_header":         "🛡 Cached Report: {name}\n\n",
-            "vinfo_footer":         "\n\nFinal verdict: {icon} {word}",
-            "vclear_done":          "🧹 NeuralV: History cleared.",
-            "vhelp_text": (
-                "🧠 NeuralV — commands:\n\n"
-                "• .vcheck — reply to a file or message to analyze\n"
-                "• .vlist  — show scan history\n"
-                "• .vinfo [name] — full cached report (e.g. .vinfo bot.py)\n"
-                "• .vclear — clear history\n"
-                "• .vhelp  — this help\n\n"
-                "Set provider and API key in plugin settings.\n"
-                "Get Gemini key: https://aistudio.google.com/app/apikey"
-            ),
-        },
+    return {
+        "settings_header": "🛡 NeuralV",
+        "settings_subtitle": "Локальная проверка кода без ИИ и без внешних API.",
+        "local_section": "Локальные параметры",
+        "max_file_mb_text": "Макс. размер файла (MB)",
+        "max_file_mb_sub": "Файлы больше этого размера не проверяются локально (1–50)",
+        "no_reply": "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
+        "no_content": "⚠️ NeuralV: В сообщении нет текста или кода для проверки.",
+        "analyzing": "⌛ NeuralV: Проверяю код локально...",
+        "download_error": "❗ NeuralV: Не удалось загрузить файл. Отправь его ещё раз.",
+        "read_error": "❗ NeuralV: Не удалось прочитать файл. Попробуй отправить его ещё раз.",
+        "too_big": "❗ NeuralV: Файл слишком большой (>{mb} MB).",
+        "binary_file": "❗ NeuralV: Похоже, это не текстовый кодовый файл. Локальная проверка ждёт текст или код.",
+        "unexpected": "❗ NeuralV: Не удалось завершить проверку. Попробуй ещё раз.",
+        "report_header": "🛡 Отчёт проверки: {filename}\n\n",
+        "report_footer": "\n\nИтоговая оценка: {icon} {word}",
+        "cache_empty": "📂 NeuralV: История проверок пуста.",
+        "cache_header": "📊 История проверки NeuralV:\n\n",
+        "cache_row": "{icon} {name} — {word} ({age})\n",
+        "age_min": "{n} мин. назад",
+        "age_hour": "{n} ч. назад",
+        "vinfo_usage": "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
+        "vinfo_not_found": "❗ NeuralV: Файл «{name}» не найден в истории.",
+        "vinfo_expired": "⏳ NeuralV: Запись устарела. Перепроверь файл.",
+        "vinfo_header": "🛡 Отчёт из кэша: {name}\n\n",
+        "vinfo_footer": "\n\nИтоговая оценка: {icon} {word}",
+        "vclear_done": "🧹 NeuralV: История очищена.",
+        "vhelp_text": (
+            "🛡 NeuralV — команды:\n\n"
+            "• .vcheck — ответить на файл или текст с кодом для проверки\n"
+            "• .vlist  — история последних проверок\n"
+            "• .vinfo [имя] — полный отчёт из кэша\n"
+            "• .vclear — очистить историю\n"
+            "• .vhelp  — эта справка\n\n"
+            "Проверка идёт полностью локально: без ИИ, без API и без внешних сервисов."
+        ),
     }
-    return strings.get(lang, strings["en"])
 
-
-# ─── промпт ──────────────────────────────────────────────────────────────────
-
-def build_prompt(code_content: str, plugin_name: str = "file") -> str:
-    return (
-        f"Ты — старший эксперт по информационной безопасности (Red Team / DFIR).\n"
-        f"Выполни СТАТИЧЕСКИЙ анализ кода '{plugin_name}'. Отвечай строго на русском языке.\n\n"
-        "ПРАВИЛА ФОРМАТИРОВАНИЯ:\n"
-        "- Без Markdown-символов (*, #, _, `, |).\n"
-        "- Только обычный текст с нумерованными пунктами.\n"
-        "- Не выдумывай факты. Если не хватает контекста — укажи явно.\n\n"
-        "ОБЯЗАТЕЛЬНЫЕ ПРОВЕРКИ:\n"
-        "1. Выполнение команд ОС (os, subprocess, exec, eval, shell=True).\n"
-        "2. Сетевые запросы — адреса, передаваемые данные.\n"
-        "3. Кража токенов / паролей / ключей (env-переменные, hardcode, keylogger).\n"
-        "4. Эксфильтрация данных (отправка файлов, скриншотов, буфера обмена).\n"
-        "5. Автозапуск / персистентность (реестр, cron, startup).\n"
-        "6. Обфускация (base64, zlib, marshal, exec(compile(...))).\n"
-        "7. Подозрительные импорты (ctypes, winreg, pynput, pyautogui).\n"
-        "8. Манипуляции с файлами (удаление, шифрование, рекурсивный обход).\n"
-        "9. Повышение привилегий / обход UAC.\n"
-        "10. Признаки C2 / reverse shell / backdoor.\n\n"
-        "СТРУКТУРА ОТВЕТА (строго соблюдай):\n"
-        "1) НАЗНАЧЕНИЕ: что делает код (2-4 предложения).\n"
-        "2) РИСКИ: список рисков с уровнем (Критично / Высоко / Средне / Низко).\n"
-        "3) ПОДОЗРИТЕЛЬНЫЕ ФРАГМЕНТЫ: конкретные строки с пояснением.\n"
-        "4) РЕКОМЕНДАЦИИ: конкретные шаги по устранению.\n"
-        "5) ИТОГ: одно слово — Безопасно, Осторожно или Опасно.\n\n"
-        f"КОД ДЛЯ ПРОВЕРКИ:\n{code_content}"
-    )
-
-
-def extract_verdict(text: str) -> Tuple[str, str]:
-    matches = VERDICT_PATTERN.findall(text)
-    if matches:
-        word = matches[-1].capitalize()
-        icon = VERDICT_ICONS.get(word.lower(), "🛡️")
-        return word, icon
-    return "Не определено", "🛡️"
-
-
-def parse_plugin_name(code: str) -> str:
-    m = re.search(r'__name__\s*=\s*["\'](.+?)["\']', code)
-    return m.group(1) if m else ""
-
-
-# ─── AI клиенты ──────────────────────────────────────────────────────────────
-
-class GeminiClient:
-    def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "User-Agent": f"exteraPlugin/{__id__}/{__version__}",
-        })
-
-    def analyze(self, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
-        url = f"{GEMINI_BASE_URL}{model}:generateContent?key={api_key}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 4096},
-        }
-        try:
-            r = self.session.post(url, json=payload, timeout=120)
-            r.raise_for_status()
-            data = r.json()
-            if "candidates" in data and data["candidates"]:
-                parts = data["candidates"][0].get("content", {}).get("parts", [])
-                text = parts[0].get("text", "") if parts else ""
-                if text:
-                    return {"success": True, "text": text}
-            err = data.get("error", {}).get("message", "Empty response")
-            return {"success": False, "error": err}
-        except requests.exceptions.HTTPError as e:
-            err = f"HTTP {e.response.status_code}"
-            try:
-                err += f": {e.response.json().get('error', {}).get('message', '')}"
-            except Exception:
-                pass
-            return {"success": False, "error": err}
-        except requests.exceptions.Timeout:
-            return {"success": False, "error": "Timeout (120s)"}
-        except Exception as e:
-            log(f"[NeuralV/Gemini] {traceback.format_exc()}")
-            return {"success": False, "error": str(e)}
-
-
-class OpenAIClient:
-    def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "User-Agent": f"exteraPlugin/{__id__}/{__version__}",
-        })
-
-    def analyze(self, base_url: str, api_key: str, model: str, prompt: str) -> Dict[str, Any]:
-        try:
-            bu = (base_url or "https://api.openai.com").rstrip("/")
-            url = bu if "/chat/completions" in bu else (
-                bu + "/chat/completions" if bu.endswith("/v1") else bu + "/v1/chat/completions"
-            )
-            headers = {"Authorization": f"Bearer {api_key}"}
-            payload = {
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": "Ты — эксперт по ИБ. Отвечай строго на русском. Без Markdown."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.1,
-                "max_tokens": 4096,
-                "stream": False,
-            }
-            r = self.session.post(url, json=payload, headers=headers, timeout=120)
-            r.raise_for_status()
-            data = r.json()
-            if "choices" not in data or not data["choices"]:
-                return {"success": False, "error": data.get("error", {}).get("message", "No choices")}
-            text = (data["choices"][0].get("message") or {}).get("content", "")
-            if not text or not text.strip():
-                return {"success": False, "error": "Empty content"}
-            return {"success": True, "text": text}
-        except requests.exceptions.HTTPError as e:
-            err = f"HTTP {e.response.status_code}"
-            try:
-                err += f": {e.response.json().get('error', {}).get('message', '')}"
-            except Exception:
-                pass
-            return {"success": False, "error": err}
-        except requests.exceptions.Timeout:
-            return {"success": False, "error": "Timeout (120s)"}
-        except Exception as e:
-            log(f"[NeuralV/OpenAI] {traceback.format_exc()}")
-            return {"success": False, "error": str(e)}
-
-
-# ─── основной класс ──────────────────────────────────────────────────────────
 
 class NeuralVPlugin(BasePlugin):
     def __init__(self):
         super().__init__()
-        self.gemini = GeminiClient()
-        self.openai = OpenAIClient()
-        self.v_cache: dict = {}  # {filename: {verdict, icon, word, ts}}
+        self.v_cache: Dict[str, Dict[str, Any]] = {}
 
     def on_plugin_load(self):
         self.add_on_send_message_hook()
@@ -331,61 +690,12 @@ class NeuralVPlugin(BasePlugin):
         self.v_cache.clear()
         log("[NeuralV] unloaded")
 
-    # ── настройки ─────────────────────────────────────────────────────────────
-
     def create_settings(self) -> List[Any]:
         s = get_localized_strings()
         return [
             Header(text=s["settings_header"]),
             Divider(text=s["settings_subtitle"]),
-
-            Header(text=s["gemini_section"]),
-            Input(
-                key="gemini_api_key",
-                text=s["gemini_api_key_text"],
-                subtext=s["gemini_api_key_sub"],
-                default="",
-                icon="input_bot2",
-            ),
-            Input(
-                key="gemini_model",
-                text=s["gemini_model_text"],
-                subtext=s["gemini_model_sub"],
-                default="gemini-2.0-flash-exp",
-                icon="msg_language",
-            ),
-
-            Header(text=s["openai_section"]),
-            Input(
-                key="openai_api_key",
-                text=s["openai_api_key_text"],
-                subtext=s["openai_api_key_sub"],
-                default="",
-                icon="input_bot2",
-            ),
-            Input(
-                key="openai_base_url",
-                text=s["openai_base_url_text"],
-                subtext=s["openai_base_url_sub"],
-                default="https://api.openai.com",
-                icon="msg_language",
-            ),
-            Input(
-                key="openai_model",
-                text=s["openai_model_text"],
-                subtext=s["openai_model_sub"],
-                default="gpt-4o",
-                icon="msg_language",
-            ),
-
-            Header(text=s["advanced_section"]),
-            Input(
-                key="provider",
-                text=s["provider_text"],
-                subtext=s["provider_sub"],
-                default="gemini",
-                icon="msg_language",
-            ),
+            Header(text=s["local_section"]),
             Input(
                 key="max_file_mb",
                 text=s["max_file_mb_text"],
@@ -395,11 +705,8 @@ class NeuralVPlugin(BasePlugin):
             ),
         ]
 
-    # ── helpers ───────────────────────────────────────────────────────────────
-
     def _s(self, key: str, **kwargs) -> str:
-        s = get_localized_strings()
-        template = s.get(key, key)
+        template = get_localized_strings().get(key, key)
         try:
             return template.format(**kwargs) if kwargs else template
         except Exception:
@@ -409,6 +716,27 @@ class NeuralVPlugin(BasePlugin):
         msg = self._s(key, **kwargs)
         run_on_ui_thread(lambda: BulletinHelper.show_error(msg))
 
+    def _show_runtime_error(self, error: Exception):
+        text = str(error or "").lower()
+        if "не удалось загрузить файл" in text or "download" in text or "attach" in text:
+            self._show_error("download_error")
+        elif "decode" in text or "utf-" in text or "binary" in text:
+            self._show_error("binary_file")
+        elif "permission" in text or "read" in text or "open" in text:
+            self._show_error("read_error")
+        else:
+            self._show_error("unexpected")
+
+    def _show_status(self, verdict_word: str, verdict_icon: str):
+        def inner():
+            if verdict_word == "Опасно":
+                BulletinHelper.show_error(f"{verdict_icon} {verdict_word}")
+            elif verdict_word == "Осторожно":
+                BulletinHelper.show_info(f"{verdict_icon} {verdict_word}")
+            else:
+                BulletinHelper.show_success(f"{verdict_icon} {verdict_word}")
+        run_on_ui_thread(inner)
+
     def _get_max_bytes(self) -> int:
         try:
             mb = max(1, min(50, int(self.get_setting("max_file_mb", "10"))))
@@ -416,86 +744,30 @@ class NeuralVPlugin(BasePlugin):
             mb = 10
         return mb * 1024 * 1024
 
-    def _run_analysis(self, prompt: str) -> Dict[str, Any]:
-        provider = (self.get_setting("provider", "gemini") or "gemini").strip().lower()
-        if provider == "gemini":
-            api_key = (self.get_setting("gemini_api_key", "") or "").strip()
-            if not api_key:
-                return {"success": False, "error": "API_KEY_MISSING"}
-            model = (self.get_setting("gemini_model", "gemini-2.0-flash-exp") or "gemini-2.0-flash-exp").strip()
-            return self.gemini.analyze(api_key, model, prompt)
-        else:
-            api_key = (self.get_setting("openai_api_key", "") or "").strip()
-            if not api_key:
-                return {"success": False, "error": "OPENAI_KEY_MISSING"}
-            base_url = (self.get_setting("openai_base_url", "https://api.openai.com") or "").strip()
-            model = (self.get_setting("openai_model", "gpt-4o") or "").strip()
-            return self.openai.analyze(base_url, api_key, model, prompt)
-
-    def _send_report(self, params: Any, filename: str, verdict_text: str):
-        word, icon = extract_verdict(verdict_text)
-
-        self.v_cache[filename] = {
-            "verdict": verdict_text,
-            "icon": icon,
-            "word": word,
-            "ts": time.time(),
-        }
-
-        header = self._s("report_header", filename=filename)
-        footer = self._s("report_footer", icon=icon, word=word)
-        full_text = header + verdict_text.strip() + footer
-
-        try:
-            peer_id = params.peer
-        except Exception:
-            log("[NeuralV] Cannot get peer from params")
-            return
-
-        payload: Dict[str, Any] = {"peer": peer_id, "message": ""}
-        reply_to = getattr(params, "replyToMsg", None)
-        if reply_to:
-            payload["replyToMsg"] = reply_to
-
-        try:
-            parsed = parse_markdown(full_text)
-            entities = []
-            if parsed.entities:
-                for ent in parsed.entities:
-                    try:
-                        obj = ent.to_tlrpc_object()
-                        if obj:
-                            entities.append(obj)
-                    except Exception:
-                        pass
-            payload["message"] = parsed.text
-            payload["entities"] = entities or None
-            send_message(payload)
-        except Exception as e:
-            log(f"[NeuralV] markdown parse failed: {e}, using plain text")
-            try:
-                payload["message"] = full_text
-                payload["entities"] = None
-                send_message(payload)
-            except Exception as e2:
-                log(f"[NeuralV] fallback send failed: {e2}")
-                return
-
-        def show_bulletin():
-            w = word.lower()
-            if "опасно" in w:
-                BulletinHelper.show_error(f"{icon} {word}")
-            elif "осторожно" in w:
-                BulletinHelper.show_info(f"{icon} {word}")
-            else:
-                BulletinHelper.show_success(f"{icon} {word}")
-        run_on_ui_thread(show_bulletin)
-
     def _send_msg(self, params: Any, text: str):
         try:
             send_message({"peer": params.peer, "message": text})
         except Exception as e:
             log(f"[NeuralV] _send_msg failed: {e}")
+
+    def _store_report(self, filename: str, analysis: Dict[str, object]):
+        self.v_cache[filename] = {
+            "report": analysis["report"],
+            "icon": analysis["icon"],
+            "word": analysis["verdict"],
+            "kind": analysis["kind_label"],
+            "ts": time.time(),
+        }
+
+    def _send_report(self, params: Any, filename: str, analysis: Dict[str, object]):
+        self._store_report(filename, analysis)
+        word = str(analysis["verdict"])
+        icon = str(analysis["icon"])
+        report = str(analysis["report"])
+        header = self._s("report_header", filename=filename)
+        footer = self._s("report_footer", icon=icon, word=word)
+        self._send_msg(params, header + report + footer)
+        self._show_status(word, icon)
 
     def _send_vlist(self, params: Any):
         if not self.v_cache:
@@ -504,7 +776,7 @@ class NeuralVPlugin(BasePlugin):
         now = time.time()
         text = self._s("cache_header")
         for name, entry in self.v_cache.items():
-            age_min = int((now - entry["ts"]) / 60)
+            age_min = int((now - float(entry["ts"])) / 60)
             age = self._s("age_min", n=age_min) if age_min < 60 else self._s("age_hour", n=age_min // 60)
             text += self._s("cache_row", icon=entry["icon"], name=name, word=entry["word"], age=age)
         self._send_msg(params, text)
@@ -518,13 +790,12 @@ class NeuralVPlugin(BasePlugin):
         if not entry:
             self._send_msg(params, self._s("vinfo_not_found", name=name))
             return
-        # Проверяем TTL (1 час)
-        if time.time() - entry["ts"] > 3600:
+        if time.time() - float(entry["ts"]) > CACHE_TTL:
             self._send_msg(params, self._s("vinfo_expired"))
             return
         header = self._s("vinfo_header", name=name)
         footer = self._s("vinfo_footer", icon=entry["icon"], word=entry["word"])
-        self._send_msg(params, header + entry["verdict"].strip() + footer)
+        self._send_msg(params, header + str(entry["report"]) + footer)
 
     def _send_vclear(self, params: Any):
         self.v_cache.clear()
@@ -533,78 +804,141 @@ class NeuralVPlugin(BasePlugin):
     def _send_vhelp(self, params: Any):
         self._send_msg(params, self._s("vhelp_text"))
 
-    def _handle_result(self, params: Any, filename: str, result: Dict[str, Any]):
-        if result.get("success"):
-            self._send_report(params, filename, result["text"])
-        else:
-            err = result.get("error", "Unknown")
-            if err == "API_KEY_MISSING":
-                self._show_error("api_key_missing")
-            elif err == "OPENAI_KEY_MISSING":
-                self._show_error("openai_key_missing")
-            else:
-                self._show_error("api_error", error=err)
-
-    # ── фоновые задачи ────────────────────────────────────────────────────────
-
-    def _analyze_file_task(self, params: Any, document: Any):
+    def _normalize_path_candidate(self, value: Any) -> str:
+        if value is None:
+            return ""
         try:
-            file_path_obj = get_file_loader().getPathToAttach(document, True)
-            file_path = file_path_obj.getAbsolutePath()
+            if hasattr(value, "getAbsolutePath"):
+                value = value.getAbsolutePath()
+            elif hasattr(value, "toString"):
+                value = value.toString()
+        except Exception:
+            pass
+        try:
+            path = str(value).strip()
+        except Exception:
+            return ""
+        if not path or path.lower() == "null":
+            return ""
+        return path
 
-            if not os.path.exists(file_path):
-                get_file_loader().loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
-                for _ in range(30):
-                    if os.path.exists(file_path):
-                        break
-                    time.sleep(1)
+    def _collect_document_paths(self, document: Any, reply_msg: Any = None) -> List[str]:
+        candidates: List[str] = []
+        seen = set()
 
-            if not os.path.exists(file_path):
-                self._show_error("download_error")
+        def add(value: Any):
+            path = self._normalize_path_candidate(value)
+            if not path or path in seen:
                 return
+            if os.path.isabs(path) or os.path.exists(path):
+                seen.add(path)
+                candidates.append(path)
 
+        try:
+            loader = get_file_loader()
+        except Exception:
+            loader = None
+
+        if loader is not None:
+            for force in (True, False):
+                try:
+                    add(loader.getPathToAttach(document, force))
+                except Exception:
+                    pass
+
+        for attr in ("path", "localPath", "attachPath", "filePath", "local_path", "file_path"):
             try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    code = f.read()
-            except Exception as e:
-                self._show_error("read_error")
-                log(f"[NeuralV] read error: {e}")
-                return
+                add(getattr(document, attr, None))
+            except Exception:
+                pass
 
-            if not code.strip():
-                self._show_error("no_content")
-                return
+        if reply_msg is not None:
+            for holder in (reply_msg, getattr(reply_msg, "messageOwner", None)):
+                if holder is None:
+                    continue
+                for attr in ("attachPath", "path", "localPath", "filePath", "local_path", "file_path"):
+                    try:
+                        add(getattr(holder, attr, None))
+                    except Exception:
+                        pass
 
-            max_bytes = self._get_max_bytes()
-            if len(code.encode("utf-8")) > max_bytes:
-                self._show_error("too_big", mb=max_bytes // (1024 * 1024))
-                return
+        return candidates
 
-            filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}"
-            name = parse_plugin_name(code) or filename
-            result = self._run_analysis(build_prompt(code, name))
-            self._handle_result(params, filename, result)
+    def _pick_ready_document_path(self, document: Any, reply_msg: Any = None, timeout_sec: int = 30) -> str:
+        loader = get_file_loader()
 
+        def find_ready_path() -> str:
+            for path in self._collect_document_paths(document, reply_msg):
+                try:
+                    if os.path.isfile(path) and os.path.getsize(path) > 0:
+                        return path
+                except Exception:
+                    continue
+            return ""
+
+        path = find_ready_path()
+        if path:
+            return path
+
+        try:
+            loader.loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
+        except Exception:
+            pass
+
+        for _ in range(timeout_sec):
+            path = find_ready_path()
+            if path:
+                return path
+            time.sleep(1)
+
+        raise RuntimeError(self._s("download_error"))
+
+    def _read_document_bytes(self, document: Any, reply_msg: Any = None) -> bytes:
+        path = self._pick_ready_document_path(document, reply_msg)
+        with open(path, "rb") as fh:
+            return fh.read()
+
+    def _analyze_bytes(self, params: Any, filename: str, raw: bytes):
+        max_bytes = self._get_max_bytes()
+        if len(raw) > max_bytes:
+            self._show_error("too_big", mb=max_bytes // (1024 * 1024))
+            return
+        if looks_binary(raw, filename):
+            self._show_error("binary_file")
+            return
+        text = raw.decode("utf-8", errors="ignore")
+        if not text.strip():
+            self._show_error("no_content")
+            return
+        analysis = LocalAnalyzer(text, filename).analyze()
+        self._send_report(params, filename, analysis)
+
+    def _analyze_file_task(self, params: Any, document: Any, reply_msg: Any = None):
+        try:
+            filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}.txt"
+            raw = self._read_document_bytes(document, reply_msg)
+            self._analyze_bytes(params, filename, raw)
+        except RuntimeError as e:
+            log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
+            if str(e) == self._s("download_error"):
+                self._show_error("download_error")
+            else:
+                self._show_runtime_error(e)
         except Exception as e:
             log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
-            self._show_error("unexpected", error=str(e))
+            self._show_runtime_error(e)
 
     def _analyze_text_task(self, params: Any, text: str, filename: str):
         try:
             max_bytes = self._get_max_bytes()
-            if len(text.encode("utf-8")) > max_bytes:
+            if len(text.encode("utf-8", "ignore")) > max_bytes:
                 self._show_error("too_big", mb=max_bytes // (1024 * 1024))
                 return
-
-            name = parse_plugin_name(text) or filename
-            result = self._run_analysis(build_prompt(text, name))
-            self._handle_result(params, filename, result)
-
+            analysis = LocalAnalyzer(text, filename).analyze()
+            self._send_report(params, filename, analysis)
         except Exception as e:
             log(f"[NeuralV] _analyze_text_task: {traceback.format_exc()}")
-            self._show_error("unexpected", error=str(e))
-
-    # ── хук команд ───────────────────────────────────────────────────────────
+            self._show_runtime_error(e)
 
     def on_send_message_hook(self, account: int, params: Any) -> HookResult:
         if not hasattr(params, "message") or not isinstance(params.message, str):
@@ -613,28 +947,23 @@ class NeuralVPlugin(BasePlugin):
         msg = params.message.strip()
         cmd = msg.lower()
 
-        # ── .vlist ──
         if cmd == VLIST_CMD:
             run_on_queue(lambda: self._send_vlist(params))
             return HookResult(strategy=HookStrategy.CANCEL)
 
-        # ── .vclear ──
         if cmd == VCLEAR_CMD:
             run_on_queue(lambda: self._send_vclear(params))
             return HookResult(strategy=HookStrategy.CANCEL)
 
-        # ── .vhelp ──
         if cmd == VHELP_CMD:
             run_on_queue(lambda: self._send_vhelp(params))
             return HookResult(strategy=HookStrategy.CANCEL)
 
-        # ── .vinfo [name] ──
         if cmd.startswith(VINFO_CMD):
             args = msg[len(VINFO_CMD):].strip()
             run_on_queue(lambda: self._send_vinfo(params, args))
             return HookResult(strategy=HookStrategy.CANCEL)
 
-        # ── .vcheck ──
         if cmd != VCHECK_CMD:
             return HookResult()
 
@@ -644,27 +973,24 @@ class NeuralVPlugin(BasePlugin):
 
         reply_msg = params.replyToMsg
         document = None
-
         try:
             document = MessageObject.getDocument(reply_msg.messageOwner)
         except Exception:
-            pass
+            document = None
+
+        run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
 
         if document:
-            run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
-            run_on_queue(lambda: self._analyze_file_task(params, document))
+            run_on_queue(lambda: self._analyze_file_task(params, document, reply_msg))
         else:
             try:
                 reply_text = (reply_msg.messageOwner.message or "").strip()
             except Exception:
                 reply_text = ""
-
             if not reply_text:
                 self._show_error("no_content")
                 return HookResult(strategy=HookStrategy.CANCEL)
-
             filename = f"snippet_{int(time.time())}.txt"
-            run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
             run_on_queue(lambda: self._analyze_text_task(params, reply_text, filename))
 
         return HookResult(strategy=HookStrategy.CANCEL)

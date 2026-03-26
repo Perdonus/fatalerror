@@ -7,13 +7,13 @@ const telegramArtifacts = [
     title: 'Extera/Ayu',
     description: 'Плагин для ExteraGram и AyuGram.',
     fileName: 'NeuralV-3.plugin',
-    downloadUrl: `/neuralv/telegram/NeuralV-3.plugin?v=${telegramAssetVersion}`
+    downloadUrl: `/neuralv/downloads/telegram/NeuralV-3.plugin?v=${telegramAssetVersion}`
   },
   {
     title: 'Heroku',
     description: 'Модуль для Heroku.',
     fileName: 'NeuralV.py',
-    downloadUrl: `/neuralv/telegram/NeuralV.py?v=${telegramAssetVersion}`
+    downloadUrl: `/neuralv/downloads/telegram/NeuralV.py?v=${telegramAssetVersion}`
   }
 ];
 

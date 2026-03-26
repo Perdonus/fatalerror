@@ -1,0 +1,687 @@
+"""
+🛡 NeuralV — локальная проверка кода для ExteraGram
+    Антивирус от Fatal Error Team (@OrangeFaHTA)
+"""
+
+import os
+import re
+import time
+import traceback
+from typing import Any, Dict, List, Optional, Tuple
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from client_utils import get_file_loader, run_on_queue, send_message
+from ui.settings import Header, Input, Divider
+from ui.bulletin import BulletinHelper
+from android_utils import run_on_ui_thread, log
+
+from org.telegram.messenger import MessageObject, FileLoader, LocaleController
+
+__id__ = "NeuralV"
+__name__ = "NeuralV"
+__description__ = """🛡 NeuralV — локальная проверка кода без внешних API.
+
+Команды:
+• .vcheck — ответить на файл или текст с кодом
+• .vlist  — история последних проверок
+• .vinfo [имя файла] — полный отчёт из кэша
+• .vclear — очистить историю проверок
+• .vhelp  — список команд"""
+__author__ = "@NeuralV_chnl"
+__version__ = "2.0"
+__min_version__ = "11.12.1"
+__icon__ = "neuralvstickers/0"
+
+VCHECK_CMD = ".vcheck"
+VLIST_CMD = ".vlist"
+VINFO_CMD = ".vinfo"
+VCLEAR_CMD = ".vclear"
+VHELP_CMD = ".vhelp"
+
+TYPE_EXTERA = "Плагин ExteraGram"
+TYPE_HIKKA = "Модуль Hikka/Heroku"
+TYPE_GENERIC = "Python-скрипт"
+CACHE_TTL = 3600
+DEFAULT_MAX_FILE_MB = 10
+
+VERDICT_ICONS = {
+    "безопасно": "✅",
+    "осторожно": "⚠️",
+    "опасно": "🚫",
+}
+
+FORMAT_MARKERS = {
+    TYPE_EXTERA: [
+        r"\bBasePlugin\b",
+        r"\bHookResult\b",
+        r"\bHookStrategy\b",
+        r"__min_version__\s*=",
+        r"def\s+on_send_message_hook\s*\(",
+        r"get_file_loader\s*\(",
+        r"BulletinHelper",
+    ],
+    TYPE_HIKKA: [
+        r"\bloader\.Module\b",
+        r"@loader\.tds",
+        r"\bModuleConfig\b",
+        r"\bConfigValue\b",
+        r"utils\.answer\s*\(",
+        r"@loader\.command",
+        r"download_media\s*\(",
+    ],
+}
+
+LINE_RULES = [
+    {
+        "id": "dynamic_exec",
+        "title": "Динамическое выполнение кода",
+        "severity": "Критично",
+        "score": 38,
+        "detail": "Код может выполнять строки или собранные объекты как программу.",
+        "patterns": [r"\bexec\s*\(", r"\beval\s*\(", r"\bcompile\s*\(", r"\bglobals\s*\(\s*\)\s*\["],
+    },
+    {
+        "id": "process_spawn",
+        "title": "Запуск внешних команд",
+        "severity": "Высоко",
+        "score": 24,
+        "detail": "Обнаружен запуск команд ОС или shell-процессов.",
+        "patterns": [r"subprocess\.", r"os\.system\s*\(", r"popen\s*\(", r"create_subprocess", r"shell\s*=\s*True"],
+    },
+    {
+        "id": "destructive_fs",
+        "title": "Агрессивная работа с файлами",
+        "severity": "Высоко",
+        "score": 22,
+        "detail": "Есть операции удаления или рекурсивной зачистки файловой системы.",
+        "patterns": [r"shutil\.rmtree\s*\(", r"os\.remove\s*\(", r"os\.unlink\s*\(", r"Path\([^\n]+\.unlink\s*\(", r"os\.rmdir\s*\("],
+    },
+    {
+        "id": "network_calls",
+        "title": "Сетевые обращения",
+        "severity": "Средне",
+        "score": 10,
+        "detail": "Код активно ходит в сеть или работает с сокетами.",
+        "patterns": [r"requests\.", r"httpx\.", r"aiohttp\.", r"urllib\.", r"socket\.", r"websockets?\.", r"https?://", r"tg://"],
+    },
+    {
+        "id": "credential_access",
+        "title": "Работа с токенами и секретами",
+        "severity": "Высоко",
+        "score": 18,
+        "detail": "Файл обращается к токенам, сессионным строкам или конфиденциальным данным.",
+        "patterns": [r"api[_-]?hash", r"api[_-]?id", r"bot[_-]?token", r"string[_-]?session", r"session[_-]?string", r"Authorization", r"Bearer ", r"cookie", r"os\.environ", r"getenv\s*\("],
+    },
+    {
+        "id": "obfuscation",
+        "title": "Признаки обфускации",
+        "severity": "Высоко",
+        "score": 18,
+        "detail": "Код использует упаковку или скрытое восстановление полезной нагрузки.",
+        "patterns": [r"base64\.", r"marshal\.", r"zlib\.", r"bz2\.", r"lzma\.", r"codecs\.decode", r"bytes\.fromhex\s*\(", r"chr\s*\("],
+    },
+    {
+        "id": "surveillance",
+        "title": "Слежение за пользователем",
+        "severity": "Высоко",
+        "score": 24,
+        "detail": "Есть маркеры снятия скриншотов, чтения буфера обмена или перехвата ввода.",
+        "patterns": [r"pyautogui", r"pynput", r"keyboard", r"mouse", r"ImageGrab", r"mss\.", r"clipboard", r"win32clipboard", r"cv2\.", r"screenshot"],
+    },
+    {
+        "id": "persistence",
+        "title": "Персистентность",
+        "severity": "Высоко",
+        "score": 22,
+        "detail": "Код пытается закрепиться в системе после перезапуска.",
+        "patterns": [r"winreg", r"Run\\", r"CurrentVersion\\Run", r"startup", r"Start Menu\\Programs\\Startup", r"crontab", r"systemctl", r"schtasks"],
+    },
+    {
+        "id": "privilege",
+        "title": "Повышение привилегий",
+        "severity": "Высоко",
+        "score": 24,
+        "detail": "Есть признаки попытки получить расширенные права или обойти защиту системы.",
+        "patterns": [r"ctypes", r"ShellExecute", r"runas", r"UAC", r"IsUserAnAdmin", r"sudo", r"pkexec"],
+    },
+    {
+        "id": "remote_payload",
+        "title": "Подгрузка внешнего кода",
+        "severity": "Критично",
+        "score": 30,
+        "detail": "Код скачивает внешние данные, которые могут использоваться как исполняемая нагрузка.",
+        "patterns": [r"download_media\s*\(", r"requests\.get\s*\(", r"httpx\.[A-Za-z_]+\s*\(", r"urlopen\s*\(", r"get\s*\([^\n]+https?://"],
+    },
+]
+
+
+def get_localized_strings():
+    try:
+        lang = LocaleController.getInstance().getCurrentLocale().getLanguage()
+    except Exception:
+        lang = "ru"
+
+    ru = {
+        "settings_header": "🛡 NeuralV",
+        "settings_subtitle": "Локальная проверка кода без внешних API.",
+        "limits": "Параметры",
+        "max_file_mb_text": "Макс. размер файла (MB)",
+        "max_file_mb_sub": "Файлы больше этого размера не проверяются локально (1–50)",
+        "analyzing": "⌛ NeuralV: Проверяю локально…",
+        "no_reply": "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
+        "no_content": "⚠️ NeuralV: В сообщении нет текста для анализа.",
+        "binary": "⚠️ NeuralV: {error}",
+        "too_big": "❗ NeuralV: Файл слишком большой (>{mb} MB).",
+        "download_error": "❗ NeuralV: Не удалось загрузить файл.",
+        "read_error": "❗ NeuralV: Не удалось прочитать файл.",
+        "report_header": "🛡 Локальная проверка: {filename}\n\n",
+        "report_footer": "\n\nИтоговая оценка: {icon} {word}",
+        "cache_empty": "📂 NeuralV: История проверок пуста.",
+        "cache_header": "📊 История проверки NeuralV:\n\n",
+        "cache_row": "{icon} {name} — {word} ({age})\n",
+        "age_min": "{n} мин. назад",
+        "age_hour": "{n} ч. назад",
+        "vinfo_usage": "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
+        "vinfo_not_found": "❗ NeuralV: Файл «{name}» не найден в истории.",
+        "vinfo_expired": "⏳ NeuralV: Запись устарела. Перепроверь файл.",
+        "vinfo_header": "🛡 Отчёт из кэша: {name}\n\n",
+        "vinfo_footer": "\n\nИтоговая оценка: {icon} {word}",
+        "vclear_done": "🧹 NeuralV: История очищена.",
+        "vhelp_text": (
+            "🛡 NeuralV — команды:\n\n"
+            "• .vcheck — ответить на файл или текст с кодом\n"
+            "• .vlist  — история последних проверок\n"
+            "• .vinfo [имя] — полный отчёт из кэша\n"
+            "• .vclear — очистить историю\n"
+            "• .vhelp  — эта справка\n\n"
+            "Проверка полностью локальная: без AI, без API и без отправки кода наружу."
+        ),
+    }
+    en = {
+        "settings_header": "🛡 NeuralV",
+        "settings_subtitle": "Local code review without external APIs.",
+        "limits": "Parameters",
+        "max_file_mb_text": "Max file size (MB)",
+        "max_file_mb_sub": "Files larger than this are skipped (1–50)",
+        "analyzing": "⌛ NeuralV: Checking locally…",
+        "no_reply": "⚠️ NeuralV: Reply to a file or code message with .vcheck",
+        "no_content": "⚠️ NeuralV: No readable text found in that message.",
+        "binary": "⚠️ NeuralV: {error}",
+        "too_big": "❗ NeuralV: File too large (>{mb} MB).",
+        "download_error": "❗ NeuralV: Failed to download the file.",
+        "read_error": "❗ NeuralV: Failed to read the file.",
+        "report_header": "🛡 Local review: {filename}\n\n",
+        "report_footer": "\n\nFinal verdict: {icon} {word}",
+        "cache_empty": "📂 NeuralV: Scan history is empty.",
+        "cache_header": "📊 NeuralV scan history:\n\n",
+        "cache_row": "{icon} {name} — {word} ({age})\n",
+        "age_min": "{n} min ago",
+        "age_hour": "{n} hr ago",
+        "vinfo_usage": "⚠️ Specify a filename. Example: .vinfo bot.py",
+        "vinfo_not_found": "❗ NeuralV: File '{name}' not found in history.",
+        "vinfo_expired": "⏳ NeuralV: Cache entry expired. Re-scan the file.",
+        "vinfo_header": "🛡 Cached report: {name}\n\n",
+        "vinfo_footer": "\n\nFinal verdict: {icon} {word}",
+        "vclear_done": "🧹 NeuralV: History cleared.",
+        "vhelp_text": (
+            "🛡 NeuralV — commands:\n\n"
+            "• .vcheck — reply to a file or code text\n"
+            "• .vlist  — show recent scans\n"
+            "• .vinfo [name] — show cached report\n"
+            "• .vclear — clear history\n"
+            "• .vhelp  — this help\n\n"
+            "All analysis is local: no AI, no API, no remote upload."
+        ),
+    }
+    return ru if lang == "ru" else en
+
+
+def _strip_inline(line: str) -> str:
+    return re.sub(r"\s+", " ", line.strip())
+
+
+def _is_probably_text(raw: bytes) -> bool:
+    if not raw:
+        return False
+    if b"\x00" in raw:
+        return False
+    text = raw.decode("utf-8", errors="ignore")
+    if not text.strip():
+        return False
+    printable = sum(1 for ch in text if ch.isprintable() or ch in "\r\n\t")
+    return printable / max(1, len(text)) >= 0.88
+
+
+def _decode_source(raw: bytes) -> Tuple[Optional[str], Optional[str]]:
+    if not raw:
+        return None, "Файл пустой."
+    if not _is_probably_text(raw):
+        return None, "Похоже, это бинарный файл или контейнер. Я проверяю только текст и код."
+    text = raw.decode("utf-8", errors="ignore")
+    if not text.strip():
+        return None, "В файле нет читаемого текста для анализа."
+    return text, None
+
+
+class LocalSecurityAnalyzer:
+    def __init__(self, filename: str, source: str):
+        self.filename = filename or "snippet.txt"
+        self.source = source or ""
+        self.lines = self.source.splitlines()
+
+    def _score_format(self, markers: List[str]) -> int:
+        total = 0
+        for pattern in markers:
+            if re.search(pattern, self.source, re.IGNORECASE | re.MULTILINE):
+                total += 1
+        return total
+
+    def detect_type(self) -> str:
+        extera_score = self._score_format(FORMAT_MARKERS[TYPE_EXTERA])
+        hikka_score = self._score_format(FORMAT_MARKERS[TYPE_HIKKA])
+        if extera_score >= 3 and extera_score > hikka_score:
+            return TYPE_EXTERA
+        if hikka_score >= 3 and hikka_score >= extera_score:
+            return TYPE_HIKKA
+        return TYPE_GENERIC
+
+    def detect_name(self, detected_type: str) -> str:
+        match = re.search(r"__name__\s*=\s*['\"]([^'\"]+)['\"]", self.source)
+        if match:
+            return match.group(1).strip()
+        class_match = re.search(r"class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", self.source)
+        if class_match:
+            return class_match.group(1)
+        if detected_type == TYPE_EXTERA:
+            return "Extera plugin"
+        if detected_type == TYPE_HIKKA:
+            return "Hikka/Heroku module"
+        return self.filename
+
+    def _expected_type_from_filename(self) -> Optional[str]:
+        if self.filename.lower().endswith(".plugin"):
+            return TYPE_EXTERA
+        return None
+
+    def _collect_findings(self) -> List[Dict[str, object]]:
+        findings: List[Dict[str, object]] = []
+        for rule in LINE_RULES:
+            evidence: List[Dict[str, object]] = []
+            for index, line in enumerate(self.lines, start=1):
+                for pattern in rule["patterns"]:
+                    if re.search(pattern, line, re.IGNORECASE):
+                        evidence.append({"line": index, "text": _strip_inline(line)[:180]})
+                        break
+                if len(evidence) >= 3:
+                    break
+            if evidence:
+                findings.append(
+                    {
+                        "id": rule["id"],
+                        "title": rule["title"],
+                        "severity": rule["severity"],
+                        "score": rule["score"],
+                        "detail": rule["detail"],
+                        "evidence": evidence,
+                    }
+                )
+
+        ids = {item["id"] for item in findings}
+        if "obfuscation" in ids and "dynamic_exec" in ids:
+            findings.append(
+                {
+                    "id": "combo_obfuscated_exec",
+                    "title": "Обфускация с последующим выполнением",
+                    "severity": "Критично",
+                    "score": 26,
+                    "detail": "Связка упаковки и динамического запуска выглядит как скрытая полезная нагрузка.",
+                    "evidence": [],
+                }
+            )
+        if "network_calls" in ids and "credential_access" in ids:
+            findings.append(
+                {
+                    "id": "combo_secret_exfil",
+                    "title": "Секреты рядом с сетевой отправкой",
+                    "severity": "Высоко",
+                    "score": 18,
+                    "detail": "В одном файле сочетаются сетевые вызовы и работа с чувствительными данными.",
+                    "evidence": [],
+                }
+            )
+        if "remote_payload" in ids and "dynamic_exec" in ids:
+            findings.append(
+                {
+                    "id": "combo_remote_exec",
+                    "title": "Удалённая нагрузка может исполняться локально",
+                    "severity": "Критично",
+                    "score": 28,
+                    "detail": "Файл похож на загрузчик, который получает код извне и затем исполняет его у пользователя.",
+                    "evidence": [],
+                }
+            )
+
+        detected_type = self.detect_type()
+        expected = self._expected_type_from_filename()
+        if expected and expected != detected_type:
+            findings.append(
+                {
+                    "id": "format_mismatch",
+                    "title": "Имя файла не совпадает с реальным форматом",
+                    "severity": "Средне",
+                    "score": 12,
+                    "detail": f"Файл назван как {expected.lower()}, но по структуре больше похож на {detected_type.lower()}.",
+                    "evidence": [],
+                }
+            )
+
+        severity_order = {"Критично": 0, "Высоко": 1, "Средне": 2, "Низко": 3}
+        findings.sort(key=lambda item: (severity_order.get(str(item["severity"]), 4), -int(item["score"])))
+        return findings
+
+    def _summarize(self, detected_type: str, findings: List[Dict[str, object]]) -> str:
+        ids = {item["id"] for item in findings}
+        if detected_type == TYPE_EXTERA:
+            intro = "Код оформлен как плагин ExteraGram: видны метаданные плагина, hook-логика и характерные служебные импорты."
+        elif detected_type == TYPE_HIKKA:
+            intro = "Код оформлен как модуль Hikka/Heroku: используются декораторы команд, конфиг и привычные для модуля служебные вызовы."
+        else:
+            intro = "Файл выглядит как обычный Python-скрипт без жёсткой привязки к ExteraGram или Hikka."
+
+        if not findings:
+            tail = "Сильных признаков скрытой нагрузки, персистентности или агрессивного вмешательства в систему не видно."
+        elif {"dynamic_exec", "remote_payload"} & ids:
+            tail = "Главная проблема в том, что файл не ограничивается прикладной логикой и имеет признаки подгрузки либо исполнения внешнего кода."
+        elif {"process_spawn", "destructive_fs", "surveillance"} & ids:
+            tail = "Файл выходит за рамки безобидной автоматизации: он трогает систему, данные пользователя или внешние процессы."
+        else:
+            tail = "Откровенно вредоносная картина не подтверждается, но в коде есть спорные места, которые требуют ручной проверки."
+        return intro + " " + tail
+
+    def build_report(self) -> Dict[str, object]:
+        detected_type = self.detect_type()
+        module_name = self.detect_name(detected_type)
+        findings = self._collect_findings()
+        score = sum(int(item["score"]) for item in findings)
+        critical = sum(1 for item in findings if item["severity"] == "Критично")
+        high = sum(1 for item in findings if item["severity"] == "Высоко")
+        if critical or score >= 60:
+            verdict = "Опасно"
+        elif high >= 2 or score >= 24:
+            verdict = "Осторожно"
+        else:
+            verdict = "Безопасно"
+        icon = VERDICT_ICONS[verdict.lower()]
+
+        lines: List[str] = []
+        lines.append(f"Проверка файла: {self.filename}")
+        lines.append(f"Определённый формат: {detected_type}")
+        lines.append(f"Имя модуля: {module_name}")
+        lines.append(f"Итог: {icon} {verdict}")
+        lines.append("")
+        lines.append("Что видно по коду")
+        lines.append(self._summarize(detected_type, findings))
+        lines.append("")
+        lines.append("Что насторожило")
+        if findings:
+            for finding in findings[:6]:
+                lines.append(f"- [{finding['severity']}] {finding['title']}: {finding['detail']}")
+        else:
+            lines.append("- Сильных признаков вредоносной активности в этом файле не найдено.")
+        lines.append("")
+        lines.append("Ключевые места")
+        shown = 0
+        for finding in findings:
+            for evidence in finding.get("evidence", []):
+                lines.append(f"- строка {evidence['line']}: {evidence['text']}")
+                shown += 1
+                if shown >= 6:
+                    break
+            if shown >= 6:
+                break
+        if shown == 0:
+            lines.append("- Подозрительная картина видна по набору признаков, но без одной показательной строки.") if findings else lines.append("- Набор конструкций выглядит типично для обычного модуля без скрытой нагрузки.")
+        lines.append("")
+        lines.append("Что проверить руками")
+        if verdict == "Опасно":
+            lines.append("- Не запускать файл без изоляции. Сначала разобрать проблемные строки и убрать опасные ветки.")
+            lines.append("- Отдельно проверить, нет ли скрытой загрузки кода, отправки данных наружу и постоянного закрепления в системе.")
+        elif verdict == "Осторожно":
+            lines.append("- Сверить спорные места с заявленной логикой модуля и убедиться, что они действительно нужны.")
+            lines.append("- Если модуль сторонний, проверить автора и историю изменений перед установкой.")
+        else:
+            lines.append("- Перед установкой всё равно стоит сверить источник файла и убедиться, что это актуальная версия автора.")
+
+        return {
+            "verdict": verdict,
+            "icon": icon,
+            "report": "\n".join(lines).strip(),
+            "type": detected_type,
+        }
+
+
+class NeuralVPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self.v_cache: Dict[str, Dict[str, object]] = {}
+
+    def on_plugin_load(self):
+        self.add_on_send_message_hook()
+        log("[NeuralV] loaded")
+
+    def on_plugin_unload(self):
+        self.v_cache.clear()
+        log("[NeuralV] unloaded")
+
+    def create_settings(self) -> List[Any]:
+        s = get_localized_strings()
+        return [
+            Header(text=s["settings_header"]),
+            Divider(text=s["settings_subtitle"]),
+            Header(text=s["limits"]),
+            Input(
+                key="max_file_mb",
+                text=s["max_file_mb_text"],
+                subtext=s["max_file_mb_sub"],
+                default=str(DEFAULT_MAX_FILE_MB),
+                icon="input_phone",
+            ),
+        ]
+
+    def _s(self, key: str, **kwargs) -> str:
+        s = get_localized_strings()
+        template = s.get(key, key)
+        try:
+            return template.format(**kwargs) if kwargs else template
+        except Exception:
+            return template
+
+    def _show_error(self, key: str, **kwargs):
+        msg = self._s(key, **kwargs)
+        run_on_ui_thread(lambda: BulletinHelper.show_error(msg))
+
+    def _show_success(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_success(text))
+
+    def _show_info(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_info(text))
+
+    def _get_max_bytes(self) -> int:
+        try:
+            mb = max(1, min(50, int(self.get_setting("max_file_mb", str(DEFAULT_MAX_FILE_MB)))))
+        except Exception:
+            mb = DEFAULT_MAX_FILE_MB
+        return mb * 1024 * 1024
+
+    def _cache_entry(self, filename: str, report: Dict[str, object]):
+        self.v_cache[filename] = {
+            "report": report["report"],
+            "icon": report["icon"],
+            "word": report["verdict"],
+            "ts": time.time(),
+        }
+
+    def _send_msg(self, params: Any, text: str):
+        try:
+            send_message({"peer": params.peer, "message": text})
+        except Exception as exc:
+            log(f"[NeuralV] send failed: {exc}")
+
+    def _send_report(self, params: Any, filename: str, report: Dict[str, object]):
+        self._cache_entry(filename, report)
+        header = self._s("report_header", filename=filename)
+        footer = self._s("report_footer", icon=report["icon"], word=report["verdict"])
+        self._send_msg(params, header + report["report"].strip() + footer)
+
+        verdict = str(report["verdict"])
+        icon = str(report["icon"])
+        if verdict == "Опасно":
+            self._show_error(f"{icon} {verdict}")
+        elif verdict == "Осторожно":
+            self._show_info(f"{icon} {verdict}")
+        else:
+            self._show_success(f"{icon} {verdict}")
+
+    def _send_vlist(self, params: Any):
+        if not self.v_cache:
+            self._send_msg(params, self._s("cache_empty"))
+            return
+        now = time.time()
+        text = self._s("cache_header")
+        for name, entry in self.v_cache.items():
+            age_min = int((now - float(entry["ts"])) / 60)
+            age = self._s("age_min", n=age_min) if age_min < 60 else self._s("age_hour", n=age_min // 60)
+            text += self._s("cache_row", icon=entry["icon"], name=name, word=entry["word"], age=age)
+        self._send_msg(params, text)
+
+    def _send_vinfo(self, params: Any, args: str):
+        name = args.strip()
+        if not name:
+            self._send_msg(params, self._s("vinfo_usage"))
+            return
+        entry = self.v_cache.get(name)
+        if not entry:
+            self._send_msg(params, self._s("vinfo_not_found", name=name))
+            return
+        if time.time() - float(entry["ts"]) > CACHE_TTL:
+            self._send_msg(params, self._s("vinfo_expired"))
+            return
+        header = self._s("vinfo_header", name=name)
+        footer = self._s("vinfo_footer", icon=entry["icon"], word=entry["word"])
+        self._send_msg(params, header + str(entry["report"]).strip() + footer)
+
+    def _send_vclear(self, params: Any):
+        self.v_cache.clear()
+        self._send_msg(params, self._s("vclear_done"))
+
+    def _send_vhelp(self, params: Any):
+        self._send_msg(params, self._s("vhelp_text"))
+
+    def _analyze_source(self, params: Any, source: str, filename: str):
+        try:
+            max_bytes = self._get_max_bytes()
+            if len(source.encode("utf-8")) > max_bytes:
+                self._show_error("too_big", mb=max_bytes // (1024 * 1024))
+                return
+            analyzer = LocalSecurityAnalyzer(filename, source)
+            report = analyzer.build_report()
+            self._send_report(params, filename, report)
+        except Exception as exc:
+            log(f"[NeuralV] analyze failed: {traceback.format_exc()}")
+            self._show_error("binary", error=str(exc))
+
+    def _analyze_file_task(self, params: Any, document: Any):
+        try:
+            file_path_obj = get_file_loader().getPathToAttach(document, True)
+            file_path = file_path_obj.getAbsolutePath()
+            if not os.path.exists(file_path):
+                get_file_loader().loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
+                for _ in range(30):
+                    if os.path.exists(file_path):
+                        break
+                    time.sleep(1)
+            if not os.path.exists(file_path):
+                self._show_error("download_error")
+                return
+
+            try:
+                with open(file_path, "rb") as handle:
+                    raw = handle.read()
+            except Exception as exc:
+                log(f"[NeuralV] read error: {exc}")
+                self._show_error("read_error")
+                return
+
+            if len(raw) > self._get_max_bytes():
+                self._show_error("too_big", mb=self._get_max_bytes() // (1024 * 1024))
+                return
+
+            source, error_text = _decode_source(raw)
+            if error_text:
+                self._show_error("binary", error=error_text)
+                return
+
+            filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}.txt"
+            self._analyze_source(params, source or "", filename)
+        except Exception as exc:
+            log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
+            self._show_error("binary", error=str(exc))
+
+    def _analyze_text_task(self, params: Any, text: str, filename: str):
+        self._analyze_source(params, text, filename)
+
+    def on_send_message_hook(self, account: int, params: Any) -> HookResult:
+        if not hasattr(params, "message") or not isinstance(params.message, str):
+            return HookResult()
+
+        msg = params.message.strip()
+        cmd = msg.lower()
+
+        if cmd == VLIST_CMD:
+            run_on_queue(lambda: self._send_vlist(params))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        if cmd == VCLEAR_CMD:
+            run_on_queue(lambda: self._send_vclear(params))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        if cmd == VHELP_CMD:
+            run_on_queue(lambda: self._send_vhelp(params))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        if cmd.startswith(VINFO_CMD):
+            args = msg[len(VINFO_CMD):].strip()
+            run_on_queue(lambda: self._send_vinfo(params, args))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        if cmd != VCHECK_CMD:
+            return HookResult()
+
+        if not hasattr(params, "replyToMsg") or not params.replyToMsg:
+            self._show_error("no_reply")
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        reply_msg = params.replyToMsg
+        document = None
+        try:
+            document = MessageObject.getDocument(reply_msg.messageOwner)
+        except Exception:
+            document = None
+
+        if document:
+            self._show_info(self._s("analyzing"))
+            run_on_queue(lambda: self._analyze_file_task(params, document))
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        try:
+            reply_text = (reply_msg.messageOwner.message or "").strip()
+        except Exception:
+            reply_text = ""
+        if not reply_text:
+            self._show_error("no_content")
+            return HookResult(strategy=HookStrategy.CANCEL)
+
+        filename = f"snippet_{int(time.time())}.txt"
+        self._show_info(self._s("analyzing"))
+        run_on_queue(lambda: self._analyze_text_task(params, reply_text, filename))
+        return HookResult(strategy=HookStrategy.CANCEL)

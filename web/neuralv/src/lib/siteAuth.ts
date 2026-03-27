@@ -1571,7 +1571,7 @@ function withSupportChatAccessToken(url: string, token: string) {
     return url;
   }
   try {
-    const resolved = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'https://sosiskibot.ru');
+    const resolved = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'https://neuralvv.org');
     resolved.searchParams.set('access_token', token);
     if (resolved.origin === (typeof window !== 'undefined' ? window.location.origin : resolved.origin)) {
       return `${resolved.pathname}${resolved.search}${resolved.hash}`;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${NEURALV_BASE_URL:-https://sosiskibot.ru}"
+BASE_URL="${NEURALV_BASE_URL:-https://neuralvv.org}"
 MANIFEST_URL="${NEURALV_MANIFEST_URL:-${BASE_URL}/basedata/api/releases/manifest}"
 INSTALL_ROOT="${HOME}/.local/bin"
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"

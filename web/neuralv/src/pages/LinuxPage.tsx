@@ -43,7 +43,7 @@ export function LinuxPage() {
           <article className="platform-command-card platform-command-card-wide platform-command-card-centered">
             <h3>Установка через NV</h3>
             <p>Один короткий сценарий для первой установки и следующих обновлений.</p>
-            <div className="command-card"><pre>{'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
+            <div className="command-card"><pre>{'curl -fsSL https://neuralvv.org/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
           </article>
         </div>
       </section>

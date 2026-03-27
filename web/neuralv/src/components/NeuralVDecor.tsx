@@ -9,31 +9,31 @@ const labels: Record<NeuralVDecorVariant, { title: string; note: string; src: st
   home: {
     title: 'NeuralV',
     note: 'Android / Windows / Linux',
-    src: '/neuralv/media/story/platforms-poster.avif',
+    src: '/media/story/platforms-poster.avif',
     alt: 'Тёмная серверная инфраструктура.'
   },
   android: {
     title: 'Android',
     note: 'Один APK',
-    src: '/neuralv/media/story/android.jpg',
+    src: '/media/story/android.jpg',
     alt: 'Микросхема крупным планом.'
   },
   windows: {
     title: 'Windows',
     note: 'Setup / portable / NV',
-    src: '/neuralv/media/story/windows.jpg',
+    src: '/media/story/windows.jpg',
     alt: 'Тёмное рабочее место с экраном.'
   },
   linux: {
     title: 'Linux',
     note: 'Установка через NV',
-    src: '/neuralv/media/story/linux-poster.avif',
+    src: '/media/story/linux-poster.avif',
     alt: 'Код на тёмном экране.'
   },
   account: {
     title: 'Аккаунт',
     note: 'Почта, профиль и подтверждения',
-    src: '/neuralv/media/story/account.jpg',
+    src: '/media/story/account.jpg',
     alt: 'Тёмное рабочее пространство с ноутбуком.'
   }
 };

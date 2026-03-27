@@ -1,14 +1,14 @@
 # NeuralV Website
 
-Vite + React + Material Web scaffold для публикации под `https://sosiskibot.ru/neuralv/`.
+Vite + React + Material Web scaffold для публикации под `https://neuralvv.org/`.
 
 ## Что уже реализовано
 
 - SPA с роутами:
-  - `/neuralv/`
-  - `/neuralv/android`
-  - `/neuralv/windows`
-  - `/neuralv/linux`
+  - `/`
+  - `/android`
+  - `/windows`
+  - `/linux`
 - MD3-inspired responsive UI на Material Web кнопках и кастомных expressive tokens.
 - Чтение release manifest из backend:
   - по умолчанию `GET /basedata/api/releases/manifest`
@@ -17,14 +17,14 @@ Vite + React + Material Web scaffold для публикации под `https:/
 
 ## Предполагаемый deploy под nginx
 
-Собранный `dist/` должен обслуживаться под подпапкой `/neuralv/`.
+Собранный `dist/` должен обслуживаться из корня домена.
 
 Пример location:
 
 ```nginx
-location /neuralv/ {
-    alias /var/www/neuralv/;
-    try_files $uri $uri/ /neuralv/index.html;
+location / {
+    root /var/www/neuralvv;
+    try_files $uri $uri/ /index.html;
 }
 ```
 
@@ -49,7 +49,7 @@ location /neuralv/ {
     },
     {
       "platform": "shell",
-      "installCommand": "curl -fsSL https://sosiskibot.ru/neuralv/install/linux.sh | bash"
+      "installCommand": "curl -fsSL https://neuralvv.org/install/linux.sh | bash"
     }
   ]
 }

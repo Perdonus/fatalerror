@@ -22,7 +22,7 @@ export type LinuxCommandRow = {
   note?: string;
 };
 
-export const linuxBootstrapCommand = 'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';
+export const linuxBootstrapCommand = 'curl -fsSL https://neuralvv.org/install/nv.sh | sh';
 export const linuxInstallCommand = 'nv install @lvls/neuralv';
 
 export function linuxVersionInstallCommand(version?: string) {

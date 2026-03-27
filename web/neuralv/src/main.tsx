@@ -15,7 +15,7 @@ if (typeof document !== 'undefined') {
   document.documentElement.style.colorScheme = 'dark';
 }
 
-if (typeof window === 'undefined' || window.location.pathname.replace(/\/+$/, '') !== '/neuralv/nv') {
+if (typeof window === 'undefined' || window.location.pathname.replace(/\/+$/, '') !== '/nv') {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <BrowserRouter basename={import.meta.env.BASE_URL}>

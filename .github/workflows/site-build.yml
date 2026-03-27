@@ -117,7 +117,7 @@ jobs:
                       "download_url": f"{os.environ['RAW_BASE']}/site/neuralv-site.zip",
                       "install_command": "",
                       "file_name": "neuralv-site.zip",
-                      "notes": ["Static web bundle for /neuralv/"],
+                      "notes": ["Static web bundle for neuralvv.org root"],
                       "metadata": {}
                   }
               ]

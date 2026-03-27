@@ -42,7 +42,7 @@ const fallbackRegistry = {
       name: '@lvls/neuralv',
       title: 'NeuralV',
       description: 'Клиент защиты для Windows и Linux.',
-      homepage: '/neuralv/',
+      homepage: '/',
       latest_version: '1.5.6',
       variants: [
         { id: 'windows', label: 'Windows', os: 'windows', version: '1.5.6' },
@@ -199,7 +199,7 @@ function authConfigStatus() {
     return {
       title: 'Вход через Telegram ещё не включён',
       body: 'Сайт пока не может открыть авторский вход.',
-      hint: 'Сначала нужно привязать бота и домен sosiskibot.ru к Telegram Login Widget.'
+      hint: 'Сначала нужно привязать бота и домен neuralvv.org к Telegram Login Widget.'
     };
   }
   if (issues.missing_session_secret) {
@@ -230,7 +230,7 @@ function authErrorStatus(rawMessage) {
     return {
       title: 'Вход через Telegram пока не включён',
       body: 'Бот ещё не разрешён для домена сайта.',
-      hint: 'Нужен /setdomain в BotFather и домен sosiskibot.ru. Это проблема настройки сайта, не твоего аккаунта.'
+      hint: 'Нужен /setdomain в BotFather и домен neuralvv.org. Это проблема настройки сайта, не твоего аккаунта.'
     };
   }
   if (/not configured|не настро/i.test(message)) {

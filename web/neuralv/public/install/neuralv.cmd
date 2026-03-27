@@ -1,5 +1,5 @@
 @echo off
-curl.exe -fsSL https://sosiskibot.ru/neuralv/install/nv.cmd -o "%TEMP%\nv-install.cmd"
+curl.exe -fsSL https://neuralvv.org/install/nv.cmd -o "%TEMP%\nv-install.cmd"
 if errorlevel 1 exit /b 1
 call "%TEMP%\nv-install.cmd"
 if errorlevel 1 exit /b 1

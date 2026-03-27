@@ -23,40 +23,40 @@ type StoryMediaAsset = {
 const mediaConfigs: Record<StoryVisualKind, StoryMediaAsset> = {
   shield: {
     kind: 'image',
-    src: '/neuralv/media/story/hero.jpg',
+    src: '/media/story/hero.jpg',
     alt: 'Рабочее место разработчика в тёмной палитре.'
   },
   route: {
     kind: 'video',
-    src: '/neuralv/media/story/route-loop.mp4',
-    poster: '/neuralv/media/story/route-poster.avif',
+    src: '/media/story/route-loop.mp4',
+    poster: '/media/story/route-poster.avif',
     alt: 'Тёмная анимированная сцена с маршрутом проверки.'
   },
   platforms: {
     kind: 'image',
-    src: '/neuralv/media/story/windows.jpg',
+    src: '/media/story/windows.jpg',
     alt: 'Рабочее место с несколькими экранами и кодом.'
   },
   privacy: {
     kind: 'image',
-    src: '/neuralv/media/story/linux.jpg',
+    src: '/media/story/linux.jpg',
     alt: 'Тёмная сцена с терминалом и кодом.'
   },
   android: {
     kind: 'video',
-    src: '/neuralv/media/story/android-loop.mp4',
-    poster: '/neuralv/media/story/android.jpg',
+    src: '/media/story/android-loop.mp4',
+    poster: '/media/story/android.jpg',
     alt: 'Android-сцена в тёмной палитре.'
   },
   windows: {
     kind: 'video',
-    src: '/neuralv/media/story/windows-loop.mp4',
-    poster: '/neuralv/media/story/windows.jpg',
+    src: '/media/story/windows-loop.mp4',
+    poster: '/media/story/windows.jpg',
     alt: 'Windows-сцена в тёмной палитре.'
   },
   linux: {
     kind: 'image',
-    src: '/neuralv/media/story/linux-poster.avif',
+    src: '/media/story/linux-poster.avif',
     alt: 'Linux-сцена с тёмным фоном.'
   }
 };

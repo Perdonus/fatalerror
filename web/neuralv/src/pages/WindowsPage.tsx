@@ -55,7 +55,7 @@ export function WindowsPage() {
           <article className="platform-command-card platform-command-card-centered">
             <h3>NV</h3>
             <p>Короткий путь для установки и следующих обновлений.</p>
-            <div className="command-card"><pre>irm https://sosiskibot.ru/neuralv/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
+            <div className="command-card"><pre>irm https://neuralvv.org/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
           </article>
         </div>
       </section>

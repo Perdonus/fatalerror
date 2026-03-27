@@ -218,4 +218,4 @@ export const homeManifestFacts = [
 ];
 
 export const homeShellFallbackCommand =
-  'curl -fsSL https://sosiskibot.ru/neuralv/install/nv.sh | sh';
+  'curl -fsSL https://neuralvv.org/install/nv.sh | sh';

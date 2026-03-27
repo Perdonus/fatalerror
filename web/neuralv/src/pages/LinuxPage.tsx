@@ -27,9 +27,6 @@ export function LinuxPage() {
                 <strong>{version}</strong>
                 <p>Требования: {requirement}</p>
               </div>
-              <div className="platform-meta-chip">Только NV</div>
-              <div className="platform-meta-chip">Один маршрут</div>
-              <div className="platform-meta-chip">Без лишних пакетов</div>
             </div>
           </article>
         </div>
@@ -43,7 +40,9 @@ export function LinuxPage() {
           <article className="platform-command-card platform-command-card-wide platform-command-card-centered">
             <h3>Установка через NV</h3>
             <p>Один короткий сценарий для первой установки и следующих обновлений.</p>
-            <div className="command-card"><pre>{'curl -fsSL https://neuralvv.org/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
+            <div className="platform-install-actions">
+              <div className="command-card"><pre>{'curl -fsSL https://neuralvv.org/install/nv.sh | sh\nnv install @lvls/neuralv'}</pre></div>
+            </div>
           </article>
         </div>
       </section>

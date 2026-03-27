@@ -29,9 +29,6 @@ export function AndroidPage() {
                 <strong>{version}</strong>
                 <p>Требования: {requirement}</p>
               </div>
-              <div className="platform-meta-chip">Телефон и планшет</div>
-              <div className="platform-meta-chip">Один APK</div>
-              <div className="platform-meta-chip">Общий профиль</div>
             </div>
           </article>
         </div>
@@ -62,11 +59,13 @@ export function AndroidPage() {
           <article className="platform-install-card platform-install-card-centered">
             <h3>Android APK</h3>
             <p>{requirement}</p>
-            {ready && artifact?.downloadUrl ? (
-              <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать APK</a>
-            ) : (
-              <button className="nv-button is-disabled" type="button" disabled>APK скоро</button>
-            )}
+            <div className="platform-install-actions">
+              {ready && artifact?.downloadUrl ? (
+                <a className="nv-button" href={artifact.downloadUrl} target="_blank" rel="noreferrer">Скачать APK</a>
+              ) : (
+                <button className="nv-button is-disabled" type="button" disabled>APK скоро</button>
+              )}
+            </div>
           </article>
         </div>
       </section>

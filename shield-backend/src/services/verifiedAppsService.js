@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const { fetchUserById, sanitizeAccountUser } = require('./accountEntitlementsService');
 const { isMailConfigured, sendMail, queueMailTask } = require('../utils/mail');
+const { isVerifiedAppsAiConfigured, reviewVerifiedRepositoryWithAi } = require('./verifiedAppsAiReviewService');
 
 const GITHUB_API_BASE = String(process.env.GITHUB_API_BASE || 'https://api.github.com').replace(/\/$/, '');
 const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
@@ -12,11 +13,18 @@ const VERIFIED_APP_DOWNLOAD_TIMEOUT_MS = parseInt(process.env.VERIFIED_APP_DOWNL
 const VERIFIED_APP_MAX_REPO_TREE_ENTRIES = parseInt(process.env.VERIFIED_APP_MAX_REPO_TREE_ENTRIES || '12000', 10);
 const VERIFIED_APP_MAX_TEXT_FILES = parseInt(process.env.VERIFIED_APP_MAX_TEXT_FILES || '24', 10);
 const VERIFIED_APP_MAX_TEXT_FILE_BYTES = parseInt(process.env.VERIFIED_APP_MAX_TEXT_FILE_BYTES || '262144', 10);
+const VERIFIED_APP_MAX_TOTAL_TEXT_BYTES = parseInt(process.env.VERIFIED_APP_MAX_TOTAL_TEXT_BYTES || String(1024 * 1024), 10);
 const VERIFIED_APP_MAX_ARTIFACT_BYTES = parseInt(process.env.VERIFIED_APP_MAX_ARTIFACT_BYTES || String(120 * 1024 * 1024), 10);
+const VERIFIED_APP_MAX_RELEASES = parseInt(process.env.VERIFIED_APP_MAX_RELEASES || '25', 10);
+const VERIFIED_APP_MAX_RELEASE_ASSETS = parseInt(process.env.VERIFIED_APP_MAX_RELEASE_ASSETS || '80', 10);
 const VERIFIED_APP_MAX_ACTIVE_PER_USER = parseInt(process.env.VERIFIED_APP_MAX_ACTIVE_PER_USER || '3', 10);
 const VERIFIED_APP_SUBMIT_COOLDOWN_MS = parseInt(process.env.VERIFIED_APP_SUBMIT_COOLDOWN_MS || String(2 * 60 * 1000), 10);
 const DEVELOPER_APPLICATION_COOLDOWN_MS = parseInt(process.env.DEVELOPER_APPLICATION_COOLDOWN_MS || String(24 * 60 * 60 * 1000), 10);
 const VERIFIED_APP_QUEUE_CONCURRENCY = Math.max(1, parseInt(process.env.VERIFIED_APP_QUEUE_CONCURRENCY || '1', 10));
+const VERIFIED_APP_AI_BASE_URL = String(process.env.VERIFIED_APP_AI_BASE_URL || 'https://sosiskibot.ru/api/v1').replace(/\/+$/, '');
+const VERIFIED_APP_AI_API_KEY = String(process.env.VERIFIED_APP_AI_API_KEY || process.env.SOSISKIBOT_API_KEY || '').trim();
+const VERIFIED_APP_AI_MODEL = String(process.env.VERIFIED_APP_AI_MODEL || 'gpt-4.1-mini').trim();
+const VERIFIED_APP_AI_TIMEOUT_MS = parseInt(process.env.VERIFIED_APP_AI_TIMEOUT_MS || '90000', 10);
 
 const VERIFIED_APPS_PLATFORM_ENUM = "ENUM('android','windows','linux','plugins','heroku')";
 const ALLOWED_PLATFORMS = new Set(['android', 'windows', 'linux', 'plugins', 'heroku']);
@@ -96,7 +104,12 @@ async function ensureVerifiedAppsSchema(db = pool) {
                 repository_name VARCHAR(120) NOT NULL,
                 repository_default_branch VARCHAR(120) DEFAULT NULL,
                 release_artifact_url VARCHAR(700) NOT NULL,
+                release_tag VARCHAR(120) DEFAULT NULL,
+                release_name VARCHAR(255) DEFAULT NULL,
+                release_asset_name VARCHAR(255) DEFAULT NULL,
+                release_published_at BIGINT DEFAULT NULL,
                 official_site_url VARCHAR(700) DEFAULT NULL,
+                project_description VARCHAR(1200) DEFAULT NULL,
                 platform ${VERIFIED_APPS_PLATFORM_ENUM} NOT NULL,
                 app_name VARCHAR(120) NOT NULL,
                 author_name VARCHAR(120) NOT NULL,
@@ -124,6 +137,30 @@ async function ensureVerifiedAppsSchema(db = pool) {
                 INDEX idx_verified_apps_sha256 (sha256),
                 UNIQUE KEY uniq_verified_apps_owner_artifact (owner_user_id, release_artifact_url)
             )
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS repository_default_branch VARCHAR(120) DEFAULT NULL AFTER repository_name
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS release_tag VARCHAR(120) DEFAULT NULL AFTER release_artifact_url
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS release_name VARCHAR(255) DEFAULT NULL AFTER release_tag
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS release_asset_name VARCHAR(255) DEFAULT NULL AFTER release_name
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS release_published_at BIGINT DEFAULT NULL AFTER release_asset_name
+        `);
+        await db.query(`
+            ALTER TABLE verified_apps
+                ADD COLUMN IF NOT EXISTS project_description VARCHAR(1200) DEFAULT NULL AFTER official_site_url
         `);
         await db.query(`
             ALTER TABLE verified_apps
@@ -206,6 +243,20 @@ function normalizeOptionalMessage(value, maxLength = 700) {
     return normalized ? normalized.slice(0, maxLength) : null;
 }
 
+function normalizeProjectDescription(value) {
+    return normalizeOptionalMessage(value, 1200);
+}
+
+function normalizeReleaseTag(value) {
+    const normalized = String(value || '').trim();
+    return normalized ? normalized.slice(0, 120) : null;
+}
+
+function normalizeReleaseAssetName(value) {
+    const normalized = String(value || '').trim();
+    return normalized ? normalized.slice(0, 255) : null;
+}
+
 function parseGithubRepo(input) {
     try {
         const url = new URL(normalizeUrl(input));
@@ -267,6 +318,240 @@ function parseGithubArtifactUrl(input) {
     } catch (_) {
         return null;
     }
+}
+
+function isLikelySourceArchive(name) {
+    const lowered = String(name || '').toLowerCase();
+    return (
+        lowered === 'source code (zip)' ||
+        lowered === 'source code (tar.gz)' ||
+        lowered.endsWith('.zip') && lowered.includes('source') ||
+        lowered.endsWith('.tar.gz') && lowered.includes('source')
+    );
+}
+
+function parseGithubReleaseList(payload) {
+    if (!Array.isArray(payload)) {
+        return [];
+    }
+    return payload.slice(0, VERIFIED_APP_MAX_RELEASES).map((release) => ({
+        id: release.id,
+        tagName: String(release.tag_name || '').trim(),
+        name: String(release.name || '').trim() || null,
+        draft: Boolean(release.draft),
+        prerelease: Boolean(release.prerelease),
+        publishedAt: release.published_at ? Date.parse(release.published_at) || null : null,
+        htmlUrl: String(release.html_url || '').trim() || null,
+        assets: Array.isArray(release.assets)
+            ? release.assets.slice(0, VERIFIED_APP_MAX_RELEASE_ASSETS).map((asset) => ({
+                id: asset.id,
+                name: String(asset.name || '').trim(),
+                size: Number(asset.size || 0),
+                contentType: String(asset.content_type || '').trim() || null,
+                downloadCount: Number(asset.download_count || 0),
+                browserDownloadUrl: String(asset.browser_download_url || '').trim() || null
+            }))
+            : []
+    })).filter((release) => release.tagName);
+}
+
+function inferPlatformFromRepo({ paths, releases, description, ownerRepo }) {
+    const score = {
+        android: 0,
+        windows: 0,
+        linux: 0,
+        plugins: 0,
+        heroku: 0
+    };
+    const loweredPaths = paths.map((path) => String(path || '').toLowerCase());
+    const releaseNames = releases.flatMap((release) => release.assets.map((asset) => asset.name.toLowerCase()));
+    const corpus = [description, ownerRepo, ...loweredPaths.slice(0, 3000), ...releaseNames].join('\n');
+
+    const apply = (platform, terms, weight = 1) => {
+        for (const term of terms) {
+            if (corpus.includes(term)) {
+                score[platform] += weight;
+            }
+        }
+    };
+
+    apply('android', ['androidmanifest.xml', '.apk', 'gradle', 'build.gradle', 'app/src/main', 'android'], 2);
+    apply('windows', ['.sln', '.csproj', '.msi', '.exe', 'winui', 'wpf', 'windows'], 2);
+    apply('linux', ['appimage', '.deb', '.rpm', 'systemd', 'linux', 'snapcraft', 'pkgbuild'], 2);
+    apply('plugins', ['exteragram', 'ayugram', '.plugin', 'telegram plugin'], 3);
+    apply('heroku', ['heroku', 'hikka', 'loader.module', '@loader.tds', 'telethon'], 3);
+
+    const ranked = Object.entries(score).sort((left, right) => right[1] - left[1]);
+    const [platform, value] = ranked[0];
+    if (!value) {
+        return { platform: 'windows', confidence: 'low', score };
+    }
+    return {
+        platform,
+        confidence: value >= 6 ? 'high' : value >= 3 ? 'medium' : 'low',
+        score
+    };
+}
+
+function scoreReleaseAsset(asset, normalizedPlatform) {
+    const loweredName = String(asset?.name || '').toLowerCase();
+    if (!asset?.browserDownloadUrl || !asset?.name || isLikelySourceArchive(loweredName)) {
+        return -999;
+    }
+
+    let score = 0;
+    if (normalizedPlatform === 'android') {
+        if (loweredName.endsWith('.apk')) score += 8;
+        if (loweredName.includes('android')) score += 3;
+    } else if (normalizedPlatform === 'windows') {
+        if (loweredName.endsWith('.exe') || loweredName.endsWith('.msi') || loweredName.endsWith('.zip')) score += 7;
+        if (loweredName.includes('windows') || loweredName.includes('win')) score += 3;
+        if (loweredName.includes('portable') || loweredName.includes('setup')) score += 2;
+    } else if (normalizedPlatform === 'linux') {
+        if (loweredName.endsWith('.deb') || loweredName.endsWith('.rpm') || loweredName.endsWith('.appimage') || loweredName.endsWith('.tar.gz')) score += 7;
+        if (loweredName.includes('linux')) score += 3;
+    } else if (normalizedPlatform === 'plugins') {
+        if (loweredName.endsWith('.plugin')) score += 8;
+        if (loweredName.includes('extera') || loweredName.includes('ayu')) score += 3;
+    } else if (normalizedPlatform === 'heroku') {
+        if (loweredName.endsWith('.py')) score += 7;
+        if (loweredName.includes('heroku') || loweredName.includes('hikka')) score += 3;
+    }
+
+    if (!loweredName.includes('debug')) score += 1;
+    if (!loweredName.includes('source')) score += 1;
+    return score;
+}
+
+function chooseReleaseAsset(releases, {
+    platform,
+    releaseTag = null,
+    releaseAssetName = null
+} = {}) {
+    const normalizedReleaseTag = normalizeReleaseTag(releaseTag);
+    const normalizedAssetName = normalizeReleaseAssetName(releaseAssetName)?.toLowerCase() || null;
+    const stableReleases = releases.filter((release) => !release.draft);
+    const releasePool = normalizedReleaseTag
+        ? stableReleases.filter((release) => release.tagName.toLowerCase() === normalizedReleaseTag.toLowerCase())
+        : stableReleases;
+
+    const rankedReleases = releasePool
+        .slice()
+        .sort((left, right) => Number(right.publishedAt || 0) - Number(left.publishedAt || 0));
+
+    for (const release of rankedReleases) {
+        const assets = release.assets
+            .filter((asset) => asset.browserDownloadUrl && !isLikelySourceArchive(asset.name))
+            .map((asset) => ({
+                ...asset,
+                score: normalizedAssetName
+                    ? (asset.name.toLowerCase() === normalizedAssetName ? 1000 : -1000)
+                    : scoreReleaseAsset(asset, platform)
+            }))
+            .sort((left, right) => right.score - left.score || right.downloadCount - left.downloadCount || right.size - left.size);
+        const best = assets.find((asset) => asset.score > -500);
+        if (best) {
+            return {
+                release,
+                asset: best
+            };
+        }
+    }
+
+    return null;
+}
+
+async function fetchGithubRepoMeta(repoMeta) {
+    return fetchJson(
+        `${GITHUB_API_BASE}/repos/${encodeURIComponent(repoMeta.owner)}/${encodeURIComponent(repoMeta.repo)}`,
+        { headers: githubHeaders() }
+    );
+}
+
+async function fetchGithubReleaseCatalog(repoMeta) {
+    const payload = await fetchJson(
+        `${GITHUB_API_BASE}/repos/${encodeURIComponent(repoMeta.owner)}/${encodeURIComponent(repoMeta.repo)}/releases?per_page=${VERIFIED_APP_MAX_RELEASES}`,
+        { headers: githubHeaders(), timeoutMs: VERIFIED_APP_DOWNLOAD_TIMEOUT_MS }
+    );
+    return parseGithubReleaseList(payload);
+}
+
+function resolvePlatformOverride(value) {
+    const normalized = normalizePlatform(value);
+    return validatePlatform(normalized) ? normalized : null;
+}
+
+function pickDetectedAppName(inputName, repo) {
+    const normalized = normalizeAppName(inputName);
+    if (normalized) {
+        return normalized;
+    }
+    return normalizeAppName(repo?.name || repo?.full_name || repo?.repo || 'NeuralV App') || 'NeuralV App';
+}
+
+async function discoverVerificationSubmission({
+    repositoryUrl,
+    appName,
+    platform,
+    releaseTag,
+    releaseAssetName
+}) {
+    const repoMeta = parseGithubRepo(repositoryUrl);
+    if (!repoMeta) {
+        const error = new Error('Public GitHub repository URL required');
+        error.code = 'INVALID_REPOSITORY_URL';
+        throw error;
+    }
+
+    const repo = await fetchGithubRepoMeta(repoMeta);
+    if (repo.private) {
+        const error = new Error('Private repositories are not supported');
+        error.code = 'PRIVATE_REPOSITORY_NOT_SUPPORTED';
+        throw error;
+    }
+
+    const releases = await fetchGithubReleaseCatalog(repoMeta);
+    if (!releases.length) {
+        const error = new Error('Repository has no public releases');
+        error.code = 'REPOSITORY_RELEASES_NOT_FOUND';
+        throw error;
+    }
+
+    const assetNames = releases.flatMap((release) => release.assets.map((asset) => asset.name));
+    const platformOverride = resolvePlatformOverride(platform);
+    const inferredPlatform = platformOverride || inferPlatformFromRepo({
+        paths: assetNames,
+        releases,
+        description: `${repo.description || ''}\n${repo.homepage || ''}`,
+        ownerRepo: `${repoMeta.owner}/${repoMeta.repo}`
+    }).platform;
+
+    const selection = chooseReleaseAsset(releases, {
+        platform: inferredPlatform,
+        releaseTag,
+        releaseAssetName
+    });
+
+    if (!selection?.release || !selection?.asset?.browserDownloadUrl) {
+        const error = new Error('No matching release asset found');
+        error.code = 'REPOSITORY_RELEASE_ASSET_NOT_FOUND';
+        throw error;
+    }
+
+    return {
+        repoMeta,
+        repo,
+        releases,
+        platform: inferredPlatform,
+        appName: pickDetectedAppName(appName, repo),
+        release: selection.release,
+        asset: selection.asset
+    };
+}
+
+function truncateText(value, maxLength = 900) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
 }
 
 function validatePlatform(platform) {
@@ -375,6 +660,106 @@ async function downloadArtifactAndHash(url) {
     };
 }
 
+function buildCandidateTextPaths(blobPaths) {
+    const scored = blobPaths.map((path, index) => {
+        const lowered = String(path || '').toLowerCase();
+        const fileName = lowered.split('/').pop() || lowered;
+        const extension = fileName.includes('.') ? `.${fileName.split('.').pop()}` : '';
+        let priority = 0;
+        if (IMPORTANT_FILE_NAMES.has(fileName)) priority += 10;
+        if (['.py', '.kt', '.kts', '.java', '.js', '.ts', '.tsx', '.jsx', '.cs', '.go', '.rs'].includes(extension)) priority += 6;
+        if (lowered.includes('/src/')) priority += 3;
+        if (lowered.includes('/app/')) priority += 2;
+        if (/(security|crypto|token|auth|network|scan|hook|plugin|module|heroku|telegram)/.test(lowered)) priority += 4;
+        return { path, priority, index };
+    });
+    return scored
+        .filter((entry) => entry.priority > 0)
+        .sort((left, right) => right.priority - left.priority || left.index - right.index)
+        .slice(0, VERIFIED_APP_MAX_TEXT_FILES)
+        .map((entry) => entry.path);
+}
+
+function buildRepoLanguageHints(paths) {
+    const hints = new Set();
+    for (const path of paths) {
+        const lowered = String(path || '').toLowerCase();
+        if (lowered.endsWith('.kt') || lowered.endsWith('.kts') || lowered.includes('androidmanifest.xml')) hints.add('kotlin/android');
+        if (lowered.endsWith('.cs') || lowered.endsWith('.csproj') || lowered.endsWith('.sln')) hints.add('csharp/windows');
+        if (lowered.endsWith('.go')) hints.add('go');
+        if (lowered.endsWith('.rs')) hints.add('rust');
+        if (lowered.endsWith('.py')) hints.add('python');
+        if (lowered.endsWith('.js') || lowered.endsWith('.ts') || lowered.endsWith('.tsx') || lowered.endsWith('.jsx')) hints.add('javascript/typescript');
+    }
+    return Array.from(hints).slice(0, 8);
+}
+
+function analyzeSampledFiles(sampledFiles, paths) {
+    const allText = sampledFiles.map((file) => file.contentLower).join('\n');
+    const findings = [];
+    const addFinding = (key, severity, title, detail, terms) => {
+        const matches = sampledFiles
+            .filter((file) => terms.some((term) => file.contentLower.includes(term)))
+            .slice(0, 6)
+            .map((file) => file.path);
+        if (matches.length === 0) {
+            return;
+        }
+        findings.push({ key, severity, title, detail, paths: matches });
+    };
+
+    addFinding('dynamic_exec', 'critical', 'Динамическое выполнение кода', 'Найдены конструкции, которые могут исполнять собранный на лету код.', ['exec(', 'eval(', 'compile(', 'subprocess.Popen(']);
+    addFinding('download_exec', 'critical', 'Загрузка и запуск кода снаружи', 'Код тянет данные из сети и содержит признаки их последующего исполнения.', ['requests.get(', 'httpx.get(', 'urllib.request.urlopen(', 'download_media(']);
+    addFinding('destructive_fs', 'high', 'Агрессивные файловые операции', 'Есть удаление файлов или каталогов без явного безопасного контура.', ['shutil.rmtree', 'os.remove', 'os.unlink', '.unlink(', '.rmdir(']);
+    addFinding('persistence', 'high', 'Закрепление в системе', 'Есть признаки автозапуска или попытки пережить перезагрузку системы.', ['winreg', 'runonce', 'currentversion\\\\run', 'cron', 'schtasks', 'startup', '.desktop']);
+    addFinding('privilege', 'high', 'Повышение привилегий', 'Есть обращения к механизмам администратора или системным API.', ['runas', 'isuseranadmin', 'ctypes.windll', 'sudo ', 'pkexec']);
+    addFinding('obfuscation', 'high', 'Сокрытие логики', 'Есть обфускация, упаковка или длинные кодированные блоки.', ['base64', 'marshal', 'zlib', 'binascii', 'codecs.decode']);
+    addFinding('token_access', 'medium', 'Доступ к токенам и секретам', 'Встречаются признаки работы с токенами, cookies или секретами окружения.', ['api_key', 'bearer ', 'authorization', 'token', 'session']);
+
+    const hardSignals = inferRiskSignals(paths, sampledFiles.map((file) => file.content));
+    const highOrCritical = findings.filter((finding) => finding.severity === 'critical' || finding.severity === 'high');
+    const riskScore = Math.min(98, hardSignals.length * 15 + highOrCritical.length * 12 + findings.length * 6);
+    return {
+        findings,
+        hardSignals,
+        riskScore
+    };
+}
+
+function tryParseJsonBlock(content) {
+    const raw = String(content || '').trim();
+    if (!raw) {
+        return null;
+    }
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]+?)```/i);
+    const source = fenced ? fenced[1] : raw;
+    const firstBrace = source.indexOf('{');
+    const lastBrace = source.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        return null;
+    }
+    try {
+        return JSON.parse(source.slice(firstBrace, lastBrace + 1));
+    } catch (_) {
+        return null;
+    }
+}
+
+async function callVerificationAi(payload) {
+    try {
+        return await reviewVerifiedRepositoryWithAi(payload);
+    } catch (error) {
+        if (error?.code === 'AI_REVIEW_NOT_CONFIGURED') {
+            error.code = 'VERIFICATION_AI_NOT_CONFIGURED';
+        } else if (error?.code === 'AI_REVIEW_INVALID' || error?.code === 'AI_REVIEW_EMPTY') {
+            error.code = 'VERIFICATION_AI_INVALID_RESPONSE';
+        } else if (!error?.code) {
+            error.code = 'VERIFICATION_AI_REQUEST_FAILED';
+        }
+        throw error;
+    }
+}
+
 function inferRiskSignals(paths, sampleTexts) {
     const lowerPaths = paths.map((path) => String(path || '').toLowerCase());
     const lowerText = sampleTexts.join('\n').toLowerCase();
@@ -403,7 +788,12 @@ function toPrivateRecord(row) {
         platform: row.platform,
         repository_url: row.repository_url,
         release_artifact_url: row.release_artifact_url,
+        release_tag: row.release_tag,
+        release_name: row.release_name,
+        release_asset_name: row.release_asset_name,
+        release_published_at: row.release_published_at,
         official_site_url: row.official_site_url,
+        project_description: row.project_description,
         avatar_url: row.avatar_url,
         status: row.status,
         sha256: row.sha256,
@@ -437,6 +827,7 @@ function toPublicRecord(row) {
         repository_url: row.repository_url,
         official_site_url: row.official_site_url,
         artifact_file_name: row.artifact_file_name,
+        release_tag: row.release_tag,
         status: row.status
     };
 }
@@ -837,6 +1228,11 @@ async function fetchPublicVerifiedAppById(id, db = pool) {
 
 async function createVerificationJob(userId, input, db = pool) {
     await ensureVerifiedAppsSchema(db);
+    if (!isVerifiedAppsAiConfigured()) {
+        const error = new Error('AI review is not configured');
+        error.code = 'VERIFICATION_AI_NOT_CONFIGURED';
+        throw error;
+    }
     const user = await fetchUserById(userId, { db });
     if (!user) {
         const error = new Error('User not found');
@@ -849,38 +1245,16 @@ async function createVerificationJob(userId, input, db = pool) {
         throw error;
     }
 
-    const platform = normalizePlatform(input.platform);
-    if (!validatePlatform(platform)) {
+    const platformOverride = normalizePlatform(input.platform || input.platform_override);
+    if (platformOverride && !validatePlatform(platformOverride)) {
         const error = new Error('Unsupported platform');
         error.code = 'UNSUPPORTED_PLATFORM';
         throw error;
     }
 
-    const appName = normalizeAppName(input.app_name);
-    if (!appName || appName.length < 2) {
-        const error = new Error('Application name is required');
-        error.code = 'APP_NAME_REQUIRED';
-        throw error;
-    }
-
-    const repo = parseGithubRepo(input.repository_url);
-    if (!repo) {
-        const error = new Error('Public GitHub repository URL required');
-        error.code = 'INVALID_REPOSITORY_URL';
-        throw error;
-    }
-
-    const artifact = parseGithubArtifactUrl(input.release_artifact_url);
-    if (!artifact) {
-        const error = new Error('GitHub release artifact URL required');
-        error.code = 'INVALID_RELEASE_ARTIFACT_URL';
-        throw error;
-    }
-    if (artifact.owner.toLowerCase() !== repo.owner.toLowerCase() || artifact.repo.toLowerCase() !== repo.repo.toLowerCase()) {
-        const error = new Error('Artifact must belong to the same repository');
-        error.code = 'ARTIFACT_REPOSITORY_MISMATCH';
-        throw error;
-    }
+    const projectDescription = normalizeProjectDescription(input.project_description || input.description);
+    const releaseTag = normalizeReleaseTag(input.release_tag);
+    const releaseAssetName = normalizeReleaseAssetName(input.release_asset_name);
 
     const officialSiteUrl = normalizeUrl(input.official_site_url);
     if (officialSiteUrl) {
@@ -895,6 +1269,19 @@ async function createVerificationJob(userId, input, db = pool) {
             throw error;
         }
     }
+
+    const discovery = await discoverVerificationSubmission({
+        repositoryUrl: input.repository_url,
+        appName: input.app_name,
+        platform: platformOverride,
+        releaseTag,
+        releaseAssetName
+    });
+    const repo = discovery.repoMeta;
+    const appName = discovery.appName;
+    const selectedPlatform = discovery.platform;
+    const selectedRelease = discovery.release;
+    const selectedAsset = discovery.asset;
 
     const [activeRows] = await db.query(
         `SELECT COUNT(*) AS active_count
@@ -931,7 +1318,7 @@ async function createVerificationJob(userId, input, db = pool) {
          WHERE owner_user_id = ? AND release_artifact_url = ?
          ORDER BY created_at DESC
          LIMIT 1`,
-        [userId, artifact.canonicalUrl]
+        [userId, selectedAsset.browserDownloadUrl]
     );
     const existing = existingRows[0];
     if (existing && ['QUEUED', 'RUNNING', 'SAFE'].includes(String(existing.status || ''))) {
@@ -950,8 +1337,14 @@ async function createVerificationJob(userId, input, db = pool) {
              SET repository_url = ?,
                  repository_owner = ?,
                  repository_name = ?,
+                 repository_default_branch = NULL,
                  release_artifact_url = ?,
+                 release_tag = ?,
+                 release_name = ?,
+                 release_asset_name = ?,
+                 release_published_at = ?,
                  official_site_url = ?,
+                 project_description = ?,
                  platform = ?,
                  app_name = ?,
                  author_name = ?,
@@ -975,9 +1368,14 @@ async function createVerificationJob(userId, input, db = pool) {
                 repo.canonicalUrl,
                 repo.owner,
                 repo.repo,
-                artifact.canonicalUrl,
+                selectedAsset.browserDownloadUrl,
+                selectedRelease.tagName,
+                selectedRelease.name,
+                selectedAsset.name,
+                selectedRelease.publishedAt,
                 officialSiteUrl || null,
-                platform,
+                projectDescription,
+                selectedPlatform,
                 appName,
                 String(user.name || '').slice(0, 120) || 'Unknown',
                 now,
@@ -988,17 +1386,22 @@ async function createVerificationJob(userId, input, db = pool) {
     } else {
         await db.query(
             `INSERT INTO verified_apps
-             (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, official_site_url, platform, app_name, author_name, status, queued_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
+             (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, app_name, author_name, status, queued_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
             [
                 id,
                 userId,
                 repo.canonicalUrl,
                 repo.owner,
                 repo.repo,
-                artifact.canonicalUrl,
+                selectedAsset.browserDownloadUrl,
+                selectedRelease.tagName,
+                selectedRelease.name,
+                selectedAsset.name,
+                selectedRelease.publishedAt,
                 officialSiteUrl || null,
-                platform,
+                projectDescription,
+                selectedPlatform,
                 appName,
                 String(user.name || '').slice(0, 120) || 'Unknown',
                 now,
@@ -1087,6 +1490,13 @@ async function processVerificationJob(id, db = pool) {
         await updateJobStatus(id, {
             status: analysis.status,
             repository_default_branch: analysis.summary.repo.default_branch || null,
+            release_artifact_url: analysis.releaseArtifactUrl || job.release_artifact_url || '',
+            release_tag: analysis.releaseTag || job.release_tag || null,
+            release_name: analysis.releaseName || null,
+            release_asset_name: analysis.releaseAssetName || null,
+            release_published_at: analysis.releasePublishedAt || null,
+            platform: analysis.platform || job.platform,
+            app_name: analysis.appName || job.app_name,
             avatar_url: analysis.avatarUrl,
             sha256: analysis.artifact.sha256,
             artifact_file_name: analysis.artifact.fileName,
@@ -1112,9 +1522,8 @@ async function processVerificationJob(id, db = pool) {
 
 async function analyzeVerificationCandidate(job) {
     const repoMeta = parseGithubRepo(job.repository_url);
-    const artifactMeta = parseGithubArtifactUrl(job.release_artifact_url);
-    if (!repoMeta || !artifactMeta) {
-        throw new Error('Stored repository or artifact URL is invalid');
+    if (!repoMeta) {
+        throw new Error('Stored repository URL is invalid');
     }
 
     const repo = await fetchJson(
@@ -1127,6 +1536,8 @@ async function analyzeVerificationCandidate(job) {
     if (!repo.default_branch) {
         throw new Error('Repository default branch is unavailable');
     }
+
+    const releases = await fetchGithubReleaseCatalog(repoMeta);
 
     const tree = await fetchJson(
         `${GITHUB_API_BASE}/repos/${encodeURIComponent(repoMeta.owner)}/${encodeURIComponent(repoMeta.repo)}/git/trees/${encodeURIComponent(repo.default_branch)}?recursive=1`,
@@ -1141,65 +1552,198 @@ async function analyzeVerificationCandidate(job) {
         .filter((entry) => entry && entry.type === 'blob' && typeof entry.path === 'string')
         .map((entry) => entry.path);
 
-    const textCandidates = blobPaths
-        .filter((path) => {
-            const lowered = path.toLowerCase();
-            const fileName = lowered.split('/').pop() || lowered;
-            const extension = fileName.includes('.') ? `.${fileName.split('.').pop()}` : '';
-            return IMPORTANT_FILE_NAMES.has(fileName) || TEXT_EXTENSIONS.has(extension);
-        })
-        .slice(0, VERIFIED_APP_MAX_TEXT_FILES);
+    const inferredPlatform = inferPlatformFromRepo({
+        paths: blobPaths,
+        releases,
+        description: repo.description,
+        ownerRepo: `${repoMeta.owner}/${repoMeta.repo}`
+    });
+    const targetPlatform = validatePlatform(normalizePlatform(job.platform))
+        ? normalizePlatform(job.platform)
+        : inferredPlatform.platform;
 
-    const sampledTexts = [];
+    const storedSelection = releases
+        .map((release) => ({
+            release,
+            asset: release.assets.find((asset) => asset.browserDownloadUrl === job.release_artifact_url) || null
+        }))
+        .find((entry) => entry.asset);
+    const selectedRelease = storedSelection || chooseReleaseAsset(releases, {
+            platform: targetPlatform,
+            releaseTag: job.release_tag,
+            releaseAssetName: job.release_asset_name
+        });
+    if (!selectedRelease?.asset?.browserDownloadUrl) {
+        const error = new Error('Не удалось подобрать релиз с пригодным файлом для проверки.');
+        error.code = 'VERIFICATION_RELEASE_NOT_FOUND';
+        throw error;
+    }
+
+    const artifactUrl = selectedRelease.asset.browserDownloadUrl;
+    const artifact = await downloadArtifactAndHash(artifactUrl);
+    const textCandidates = buildCandidateTextPaths(blobPaths);
+    const sampledFiles = [];
+    let totalTextBytes = 0;
     for (const path of textCandidates) {
         try {
             const segments = path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
             const content = await fetchText(
                 `https://raw.githubusercontent.com/${encodeURIComponent(repoMeta.owner)}/${encodeURIComponent(repoMeta.repo)}/${encodeURIComponent(repo.default_branch)}/${segments}`
             );
-            sampledTexts.push(content);
-        } catch (error) {
-            sampledTexts.push('');
+            totalTextBytes += Buffer.byteLength(content, 'utf8');
+            if (totalTextBytes > VERIFIED_APP_MAX_TOTAL_TEXT_BYTES) {
+                break;
+            }
+            sampledFiles.push({
+                path,
+                content,
+                contentLower: content.toLowerCase(),
+                excerpt: truncateText(content, 1200)
+            });
+        } catch (_) {
+            // ignore unreadable text files
         }
     }
 
-    const hardSignals = inferRiskSignals(blobPaths, sampledTexts);
-    const artifact = await downloadArtifactAndHash(job.release_artifact_url);
-    const findings = {
-        repo: {
-            full_name: repo.full_name,
+    const serverAnalysis = analyzeSampledFiles(sampledFiles, blobPaths);
+    const topLevel = Array.from(new Set(blobPaths.map((path) => String(path).split('/')[0]).filter(Boolean))).slice(0, 40);
+    const suspiciousFiles = serverAnalysis.findings.flatMap((finding) => finding.paths || []).slice(0, 18);
+    const aiPayload = {
+        task: 'security_verification',
+        repository: {
+            url: repo.canonicalUrl || repo.html_url || repoMeta.canonicalUrl,
+            full_name: repo.full_name || `${repoMeta.owner}/${repoMeta.repo}`,
+            description: truncateText(repo.description, 400),
             default_branch: repo.default_branch,
-            description: String(repo.description || '').slice(0, 280),
-            stargazers_count: Number(repo.stargazers_count || 0),
-            forks_count: Number(repo.forks_count || 0),
-            open_issues_count: Number(repo.open_issues_count || 0),
             archived: Boolean(repo.archived),
-            tree_entries: treeEntries.length,
-            text_files_sampled: textCandidates.length
+            stars: Number(repo.stargazers_count || 0),
+            forks: Number(repo.forks_count || 0),
+            topics: Array.isArray(repo.topics) ? repo.topics.slice(0, 20) : [],
+            top_level_directories: topLevel,
+            total_files: blobPaths.length,
+            language_hints: buildRepoLanguageHints(blobPaths)
         },
-        hard_signals: hardSignals,
-        warnings: hardSignals.length > 0
-            ? ['Обнаружены сильные риск-маркеры в публичном репозитории']
-            : []
+        user_input: {
+            app_name: job.app_name || null,
+            official_site_url: job.official_site_url || null,
+            description: job.project_description || null,
+            platform_override: validatePlatform(normalizePlatform(job.platform)) ? normalizePlatform(job.platform) : null,
+            requested_release_tag: job.release_tag || null,
+            requested_release_asset_name: job.release_asset_name || null
+        },
+        releases: releases.map((release) => ({
+            tag: release.tagName,
+            name: release.name,
+            draft: release.draft,
+            prerelease: release.prerelease,
+            published_at: release.publishedAt,
+            asset_count: release.assets.length,
+            assets: release.assets.slice(0, 12).map((asset) => ({
+                name: asset.name,
+                size: asset.size,
+                content_type: asset.contentType,
+                download_count: asset.downloadCount
+            }))
+        })),
+        selected_release: {
+            tag: selectedRelease.release.tagName,
+            name: selectedRelease.release.name,
+            published_at: selectedRelease.release.publishedAt,
+            asset_name: selectedRelease.asset.name,
+            asset_size: selectedRelease.asset.size
+        },
+        server_findings: {
+            inferred_platform: inferredPlatform,
+            suspicious_files: suspiciousFiles,
+            hard_signals: serverAnalysis.hardSignals,
+            findings: serverAnalysis.findings
+        },
+        sampled_files: sampledFiles.slice(0, 22).map((file) => ({
+            path: file.path,
+            excerpt: file.excerpt
+        }))
     };
 
-    const riskScore = hardSignals.length > 0 ? 85 : 8;
-    const status = hardSignals.length > 0 ? 'FAILED' : 'SAFE';
-    const publicSummary = buildPublicSummary({
-        appName: job.app_name,
-        platform: job.platform,
-        repositoryRef: repo.full_name || `${repoMeta.owner}/${repoMeta.repo}`,
-        artifactFileName: artifact.fileName,
-        hardSignals
-    });
+    const aiResult = await callVerificationAi(aiPayload);
+    const aiFindings = [
+        ...Array.isArray(aiResult.concerns)
+            ? aiResult.concerns.map((item) => ({
+                severity: 'high',
+                title: truncateText(item, 120),
+                detail: truncateText(item, 360),
+                paths: []
+            }))
+            : [],
+        ...Array.isArray(aiResult.highlights)
+            ? aiResult.highlights.map((item) => ({
+                severity: 'low',
+                title: truncateText(item, 120),
+                detail: '',
+                paths: []
+            }))
+            : []
+    ].filter((finding) => finding.title);
+
+    const aiMarksUnsafe = String(aiResult.verdict || '').toUpperCase() !== 'SAFE';
+    const status = serverAnalysis.hardSignals.length > 0 || aiMarksUnsafe ? 'FAILED' : 'SAFE';
+    const riskScore = Math.min(
+        99,
+        Math.max(
+            serverAnalysis.riskScore,
+            status === 'FAILED'
+                ? (Number(aiResult.confidence || 0) >= 0.8 ? 92 : 78)
+                : 18
+        )
+    );
+
+    const publicSummary = truncateText(
+        aiResult.summary
+            || buildPublicSummary({
+                appName: job.app_name,
+                platform: targetPlatform,
+                repositoryRef: repo.full_name || `${repoMeta.owner}/${repoMeta.repo}`,
+                artifactFileName: artifact.fileName,
+                hardSignals: serverAnalysis.hardSignals
+            }),
+        280
+    );
 
     return {
         status,
+        platform: validatePlatform(normalizePlatform(aiResult.platform)) ? normalizePlatform(aiResult.platform) : targetPlatform,
+        appName: normalizeAppName(aiResult.appName || job.app_name || repo.name || repoMeta.repo) || job.app_name,
+        releaseTag: selectedRelease.release.tagName,
+        releaseName: selectedRelease.release.name || null,
+        releaseAssetName: selectedRelease.asset.name || artifact.fileName,
+        releaseArtifactUrl: artifactUrl,
+        releasePublishedAt: selectedRelease.release.publishedAt || null,
         riskScore,
-        errorMessage: status === 'FAILED' ? 'Автоматическая проверка остановлена: обнаружены подозрительные признаки в исходниках.' : null,
+        errorMessage: status === 'FAILED'
+            ? truncateText(
+                aiResult.concerns?.[0]
+                || 'Автоматическая проверка нашла рискованные признаки в исходниках или релизе.',
+                255
+            )
+            : null,
         avatarUrl: String(repo.owner?.avatar_url || '').trim() || null,
-        artifact,
-        findings,
+        artifact: {
+            ...artifact,
+            fileName: selectedRelease.asset.name || artifact.fileName
+        },
+        findings: {
+            repo: {
+                full_name: repo.full_name,
+                default_branch: repo.default_branch,
+                description: String(repo.description || '').slice(0, 280),
+                archived: Boolean(repo.archived),
+                tree_entries: treeEntries.length,
+                sampled_files: sampledFiles.length,
+                releases_checked: releases.length
+            },
+            hard_signals: serverAnalysis.hardSignals,
+            server_findings: serverAnalysis.findings,
+            ai_findings: aiFindings
+        },
         publicSummary,
         summary: {
             repo: {
@@ -1214,16 +1758,37 @@ async function analyzeVerificationCandidate(job) {
                 archived: Boolean(repo.archived),
                 tree_entries: treeEntries.length
             },
+            release: {
+                tag: selectedRelease.release.tagName,
+                name: selectedRelease.release.name,
+                published_at: selectedRelease.release.publishedAt,
+                asset_name: selectedRelease.asset.name,
+                asset_size: selectedRelease.asset.size,
+                asset_download_url: artifactUrl
+            },
             artifact: {
-                file_name: artifact.fileName,
+                file_name: selectedRelease.asset.name || artifact.fileName,
                 size_bytes: artifact.sizeBytes,
                 content_type: artifact.contentType,
                 sha256: artifact.sha256
             },
+            inference: {
+                platform: validatePlatform(normalizePlatform(aiResult.platform)) ? normalizePlatform(aiResult.platform) : targetPlatform,
+                platform_reason: truncateText(aiResult.projectDescription || aiResult.summary, 220),
+                model: VERIFIED_APP_AI_MODEL,
+                verdict: aiResult.verdict,
+                confidence: aiResult.confidence
+            },
+            releases_checked: releases.map((release) => ({
+                tag: release.tagName,
+                asset_count: release.assets.length,
+                published_at: release.publishedAt
+            })),
             limits: {
                 max_repo_tree_entries: VERIFIED_APP_MAX_REPO_TREE_ENTRIES,
                 max_text_files: VERIFIED_APP_MAX_TEXT_FILES,
                 max_text_file_bytes: VERIFIED_APP_MAX_TEXT_FILE_BYTES,
+                max_total_text_bytes: VERIFIED_APP_MAX_TOTAL_TEXT_BYTES,
                 max_artifact_bytes: VERIFIED_APP_MAX_ARTIFACT_BYTES
             }
         }

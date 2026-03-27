@@ -83,6 +83,7 @@ export function HomePage() {
     <div className="page-stack story-page-shell">
       <section className="story-hero">
         <div className="story-hero-center">
+          <div className="story-hero-spacer" aria-hidden="true" />
           <article className="story-hero-card story-hero-card-main">
             <h1 className="story-hero-title">Базовые технологии ушли в прошлое. Встречайте новый стандарт безопасности.</h1>
             <div className="story-hero-actions">
@@ -110,9 +111,6 @@ export function HomePage() {
       </div>
 
       <section className="story-faq-section">
-        <div className="platform-section-heading platform-section-heading-centered story-faq-heading-centered">
-          <h2>Частые вопросы</h2>
-        </div>
         <div className="story-faq-list story-faq-list-centered">
           {faqItems.map((item) => (
             <details key={item.question} className="story-faq-item">

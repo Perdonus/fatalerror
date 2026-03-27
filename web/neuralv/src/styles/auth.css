@@ -190,6 +190,32 @@
   resize: vertical;
 }
 
+.profile-advanced-details {
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  padding: 14px 16px;
+}
+
+.profile-advanced-summary {
+  cursor: pointer;
+  color: var(--nv-text);
+  font-weight: 700;
+  list-style: none;
+}
+
+.profile-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.profile-advanced-details[open] {
+  background: rgba(255,255,255,0.03);
+}
+
+.profile-advanced-details[open] .profile-advanced-summary {
+  margin-bottom: 14px;
+}
+
 .profile-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);

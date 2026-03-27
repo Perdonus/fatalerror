@@ -30,15 +30,17 @@ import '../styles/auth.css';
 type ProfileTab = 'profile' | 'developer' | 'security';
 type AccountPending = 'name' | 'email' | 'password' | 'logout' | null;
 type DeveloperPending = 'load' | 'apply' | 'verify' | null;
-type PlatformOption = SiteVerifiedAppPlatform;
+type PlatformOption = '' | SiteVerifiedAppPlatform;
 type DraftStatus = 'idle' | 'saved';
 
 type ReviewFormState = {
-  appName: string;
-  platform: PlatformOption;
   repositoryUrl: string;
-  releaseArtifactUrl: string;
+  appName: string;
   officialSiteUrl: string;
+  description: string;
+  platform: PlatformOption;
+  releaseTag: string;
+  releaseAssetName: string;
 };
 
 type SecurityWorkspaceProps = {
@@ -445,30 +447,6 @@ function VerifiedDeveloperWorkspace({
     <div className="profile-panel-stack">
       <section className="content-card profile-panel-card profile-form-card">
         <form className="auth-form" onSubmit={onVerify}>
-          <div className="profile-security-grid">
-            <label className="auth-field">
-              <span className="auth-field-label">Название</span>
-              <input
-                className="auth-input"
-                type="text"
-                value={reviewForm.appName}
-                onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
-              />
-            </label>
-            <label className="auth-field">
-              <span className="auth-field-label">Тип</span>
-              <select
-                className="auth-input"
-                value={reviewForm.platform}
-                onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
-              >
-                {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-
           <label className="auth-field">
             <span className="auth-field-label">Репозиторий</span>
             <input
@@ -481,13 +459,13 @@ function VerifiedDeveloperWorkspace({
           </label>
 
           <label className="auth-field">
-            <span className="auth-field-label">Релиз</span>
+            <span className="auth-field-label">Название</span>
             <input
               className="auth-input"
-              type="url"
-              value={reviewForm.releaseArtifactUrl}
-              onChange={(event) => setReviewForm((current) => ({ ...current, releaseArtifactUrl: event.target.value }))}
-              placeholder="https://github.com/.../releases/download/..."
+              type="text"
+              value={reviewForm.appName}
+              onChange={(event) => setReviewForm((current) => ({ ...current, appName: event.target.value }))}
+              placeholder="Можно оставить пустым"
             />
           </label>
 
@@ -501,6 +479,58 @@ function VerifiedDeveloperWorkspace({
               placeholder="https://example.com"
             />
           </label>
+
+          <label className="auth-field">
+            <span className="auth-field-label">Описание</span>
+            <textarea
+              className="auth-input auth-textarea"
+              value={reviewForm.description}
+              onChange={(event) => setReviewForm((current) => ({ ...current, description: event.target.value }))}
+              placeholder="Необязательно"
+              rows={4}
+            />
+          </label>
+
+          <details className="profile-advanced-details">
+            <summary className="profile-advanced-summary">Расширенные настройки</summary>
+            <div className="profile-panel-stack">
+              <label className="auth-field">
+                <span className="auth-field-label">Платформа</span>
+                <select
+                  className="auth-input"
+                  value={reviewForm.platform}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, platform: event.target.value as PlatformOption }))}
+                >
+                  <option value="">Определить автоматически</option>
+                  {VERIFIED_APP_PLATFORM_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="auth-field">
+                <span className="auth-field-label">Версия или тег</span>
+                <input
+                  className="auth-input"
+                  type="text"
+                  value={reviewForm.releaseTag}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, releaseTag: event.target.value }))}
+                  placeholder="Например, v1.5.0"
+                />
+              </label>
+
+              <label className="auth-field">
+                <span className="auth-field-label">Имя файла релиза</span>
+                <input
+                  className="auth-input"
+                  type="text"
+                  value={reviewForm.releaseAssetName}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, releaseAssetName: event.target.value }))}
+                  placeholder="Например, app-release.apk"
+                />
+              </label>
+            </div>
+          </details>
 
           <div className="profile-draft-note" aria-live="polite">
             {reviewDraftStatus === 'saved' ? 'Черновик сохранён.' : 'Черновик сохраняется автоматически.'}
@@ -658,11 +688,13 @@ export function ProfilePage() {
   const [applicationDraftStatus, setApplicationDraftStatus] = useState<DraftStatus>('idle');
   const [showRetryForm, setShowRetryForm] = useState(false);
   const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => loadDraft(VERIFIED_REVIEW_DRAFT_KEY, {
-    appName: '',
-    platform: 'windows' as PlatformOption,
     repositoryUrl: '',
-    releaseArtifactUrl: '',
-    officialSiteUrl: ''
+    appName: '',
+    officialSiteUrl: '',
+    description: '',
+    platform: '' as PlatformOption,
+    releaseTag: '',
+    releaseAssetName: ''
   }));
   const [reviewDraftStatus, setReviewDraftStatus] = useState<DraftStatus>('idle');
 
@@ -673,7 +705,10 @@ export function ProfilePage() {
 
   useEffect(() => {
     setReviewForm((current) => {
-      const normalizedPlatform = normalizeVerifiedAppPlatform(String(current.platform || 'windows'));
+      if (!current.platform) {
+        return current;
+      }
+      const normalizedPlatform = normalizeVerifiedAppPlatform(String(current.platform || ''));
       if (normalizedPlatform === current.platform) {
         return current;
       }
@@ -681,7 +716,7 @@ export function ProfilePage() {
         ...current,
         platform: (normalizedPlatform === 'android' || normalizedPlatform === 'windows' || normalizedPlatform === 'linux' || normalizedPlatform === 'plugins' || normalizedPlatform === 'heroku'
           ? normalizedPlatform
-          : 'windows') as PlatformOption
+          : '') as PlatformOption
       };
     });
   }, []);
@@ -837,11 +872,13 @@ export function ProfilePage() {
     setMessage('');
     setError('');
     const result = await submitVerifiedAppReview({
-      appName: reviewForm.appName,
-      platform: normalizeVerifiedAppPlatform(reviewForm.platform) as PlatformOption,
       repositoryUrl: reviewForm.repositoryUrl,
-      releaseArtifactUrl: reviewForm.releaseArtifactUrl,
-      officialSiteUrl: reviewForm.officialSiteUrl
+      appName: reviewForm.appName,
+      officialSiteUrl: reviewForm.officialSiteUrl,
+      description: reviewForm.description,
+      platform: reviewForm.platform ? (normalizeVerifiedAppPlatform(reviewForm.platform) as SiteVerifiedAppPlatform) : undefined,
+      releaseTag: reviewForm.releaseTag,
+      releaseAssetName: reviewForm.releaseAssetName
     });
     if (!result.ok) {
       setError(result.error || 'Не удалось отправить приложение.');
@@ -850,11 +887,13 @@ export function ProfilePage() {
     }
     setMessage(result.data?.message || 'Проверка отправлена.');
     setReviewForm({
-      appName: '',
-      platform: 'windows',
       repositoryUrl: '',
-      releaseArtifactUrl: '',
-      officialSiteUrl: ''
+      appName: '',
+      officialSiteUrl: '',
+      description: '',
+      platform: '',
+      releaseTag: '',
+      releaseAssetName: ''
     });
     clearDraft(VERIFIED_REVIEW_DRAFT_KEY);
     setReviewDraftStatus('idle');

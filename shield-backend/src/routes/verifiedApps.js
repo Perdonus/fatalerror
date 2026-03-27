@@ -56,16 +56,24 @@ function mapServiceError(error) {
             return { status: 403, error: 'Сначала нужно получить статус разработчика.' };
         case 'UNSUPPORTED_PLATFORM':
             return { status: 400, error: 'Укажите поддерживаемую платформу.' };
-        case 'APP_NAME_REQUIRED':
-            return { status: 400, error: 'Укажите название приложения.' };
         case 'INVALID_REPOSITORY_URL':
             return { status: 400, error: 'Нужна ссылка на публичный GitHub-репозиторий.' };
-        case 'INVALID_RELEASE_ARTIFACT_URL':
-            return { status: 400, error: 'Нужна ссылка на GitHub release artifact.' };
-        case 'ARTIFACT_REPOSITORY_MISMATCH':
-            return { status: 400, error: 'Артефакт должен принадлежать тому же репозиторию.' };
+        case 'PRIVATE_REPOSITORY_NOT_SUPPORTED':
+            return { status: 400, error: 'Закрытые репозитории пока не поддерживаются.' };
         case 'INVALID_OFFICIAL_SITE_URL':
             return { status: 400, error: 'Ссылка на сайт указана неверно.' };
+        case 'REPOSITORY_RELEASES_NOT_FOUND':
+        case 'REPOSITORY_RELEASE_ASSET_NOT_FOUND':
+        case 'VERIFICATION_RELEASE_NOT_FOUND':
+            return { status: 422, error: 'Не удалось подобрать релизный файл. Откройте расширенные настройки и выберите версию или платформу вручную.' };
+        case 'AI_REVIEW_NOT_CONFIGURED':
+        case 'VERIFICATION_AI_NOT_CONFIGURED':
+            return { status: 503, error: 'Серверная проверка временно недоступна.' };
+        case 'AI_REVIEW_EMPTY':
+        case 'AI_REVIEW_INVALID':
+        case 'VERIFICATION_AI_REQUEST_FAILED':
+        case 'VERIFICATION_AI_INVALID_RESPONSE':
+            return { status: 502, error: 'AI-проверка временно не смогла завершить разбор репозитория.' };
         case 'TOO_MANY_ACTIVE_VERIFICATION_JOBS':
             return { status: 429, error: 'Сначала дождитесь завершения текущих проверок.' };
         case 'VERIFICATION_SUBMIT_COOLDOWN':
@@ -77,14 +85,14 @@ function mapServiceError(error) {
         case 'VERIFICATION_ALREADY_EXISTS':
             return {
                 status: 409,
-                error: 'Проверка этого релиза уже есть.',
+                error: 'Проверка этого релиза уже идёт или уже завершена.',
                 job_id: error?.jobId || null,
                 job_status: error?.status || null
             };
         default:
             return {
                 status: 500,
-                error: String(error?.message || 'Не удалось выполнить запрос.').slice(0, 255)
+                error: 'Не удалось завершить проверку. Попробуйте ещё раз чуть позже.'
             };
     }
 }
@@ -159,15 +167,17 @@ async function handleCreateVerificationJob(req, res) {
     try {
         const app = await createVerificationJob(req.userId, {
             repository_url: req.body?.repository_url,
-            release_artifact_url: req.body?.release_artifact_url,
             official_site_url: req.body?.official_site_url,
             platform: req.body?.platform,
-            app_name: req.body?.app_name
+            app_name: req.body?.app_name,
+            description: req.body?.description,
+            release_tag: req.body?.release_tag,
+            release_asset_name: req.body?.release_asset_name
         });
         res.status(201).json({
             success: true,
             app,
-            message: 'Проверка запущена. Как только сервер закончит анализ, приложение появится в списке.'
+            message: 'Проверка запущена. Сервер сам разберёт репозиторий, релизы и соберёт итог в списке.'
         });
     } catch (error) {
         const payload = mapServiceError(error);

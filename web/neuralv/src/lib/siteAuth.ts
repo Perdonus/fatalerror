@@ -174,7 +174,11 @@ export type SiteVerifiedApp = {
   authorName?: string;
   repositoryUrl?: string;
   releaseArtifactUrl?: string;
+  releaseTag?: string;
+  releaseName?: string;
+  releaseAssetName?: string;
   officialSiteUrl?: string;
+  projectDescription?: string;
   avatarUrl?: string;
   sha256?: string;
   status?: string;
@@ -218,11 +222,13 @@ export const VERIFIED_APP_GROUPS: SiteVerifiedAppGroup[] = [
 ];
 
 export type SiteVerifiedAppReviewRequest = {
-  appName: string;
-  platform: SiteVerifiedAppPlatform;
   repositoryUrl: string;
-  releaseArtifactUrl: string;
+  appName?: string;
   officialSiteUrl?: string;
+  description?: string;
+  platform?: SiteVerifiedAppPlatform;
+  releaseTag?: string;
+  releaseAssetName?: string;
 };
 
 export type SiteProfileSystem = {
@@ -1340,7 +1346,11 @@ function mapVerifiedApp(value: Record<string, unknown> | null | undefined): Site
     authorName: typeof value.author_name === 'string' ? value.author_name : undefined,
     repositoryUrl: typeof value.repository_url === 'string' ? value.repository_url : undefined,
     releaseArtifactUrl: typeof value.release_artifact_url === 'string' ? value.release_artifact_url : undefined,
+    releaseTag: typeof value.release_tag === 'string' ? value.release_tag : undefined,
+    releaseName: typeof value.release_name === 'string' ? value.release_name : undefined,
+    releaseAssetName: typeof value.release_asset_name === 'string' ? value.release_asset_name : undefined,
     officialSiteUrl: typeof value.official_site_url === 'string' ? value.official_site_url : undefined,
+    projectDescription: typeof value.project_description === 'string' ? value.project_description : undefined,
     avatarUrl: typeof value.avatar_url === 'string' ? value.avatar_url : undefined,
     sha256: typeof value.sha256 === 'string' ? value.sha256 : undefined,
     status: typeof value.status === 'string' ? value.status : undefined,
@@ -1682,8 +1692,10 @@ export async function submitVerifiedAppReview(
       app_name: payload.appName,
       platform: payload.platform,
       repository_url: payload.repositoryUrl,
-      release_artifact_url: payload.releaseArtifactUrl,
-      official_site_url: payload.officialSiteUrl
+      official_site_url: payload.officialSiteUrl,
+      description: payload.description,
+      release_tag: payload.releaseTag,
+      release_asset_name: payload.releaseAssetName
     }),
     headers: { Authorization: `Bearer ${sessionResult.data.token}` }
   });

@@ -99,26 +99,21 @@ export function useScrollSceneProgress<T extends HTMLElement>() {
     const eased = progress * progress * (3 - 2 * progress);
     const enter = clamp((eased - 0.04) / 0.96);
     const rawFocus = 1 - Math.abs(eased - 0.5) * 2;
-    const motionScale = reduced ? 0.08 : mobile ? 0.42 : 1;
-    const revealScale = reduced ? 0.36 : mobile ? 0.72 : 1;
-    const depthScale = reduced ? 0.22 : mobile ? 0.56 : 1;
-    const beamScale = reduced ? 0.24 : mobile ? 0.68 : 1;
-    const rawDrift = (eased - 0.5) * 2;
-    const rawRise = (1 - enter) * 58;
-    const rawOrbit = Math.sin(eased * Math.PI * 1.4);
-    const rawSwing = Math.sin((eased - 0.08) * Math.PI * 1.08);
-    const rawPulse = 0.5 + Math.sin(eased * Math.PI * 2.2 - Math.PI / 6) * 0.5;
+    const motionScale = 0;
+    const revealScale = reduced ? 0.82 : mobile ? 0.92 : 1;
+    const depthScale = 0;
+    const beamScale = reduced ? 0.2 : mobile ? 0.5 : 0.7;
     const focus = reduced ? 0.42 + rawFocus * 0.18 : mobile ? 0.24 + rawFocus * 0.76 : rawFocus;
     const depth = 0.22 + focus * 0.78;
-    const drift = rawDrift * motionScale;
-    const rise = rawRise * revealScale;
-    const orbit = rawOrbit * motionScale;
-    const swing = rawSwing * motionScale;
-    const pulse = 0.5 + (rawPulse - 0.5) * (reduced ? 0.1 : mobile ? 0.38 : 1);
-    const tilt = (rawDrift * 6.5 + rawOrbit * 1.6) * depthScale;
+    const drift = 0;
+    const rise = 0;
+    const orbit = 0;
+    const swing = 0;
+    const pulse = 1;
+    const tilt = 0;
     const beam = clamp((eased - 0.14) / 0.86) * beamScale;
     const flare = reduced ? 0.24 + rawFocus * 0.16 : mobile ? 0.16 + rawFocus * 0.6 : 0.18 + rawFocus * 0.82;
-    const parallax = 0.24 + focus * 0.76;
+    const parallax = 1;
 
     return {
       '--scene-progress': progress,

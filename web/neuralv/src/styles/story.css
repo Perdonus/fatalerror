@@ -39,8 +39,8 @@ html::-webkit-scrollbar-thumb {
 .platform-hero {
   min-height: calc(100vh - 126px);
   display: grid;
-  place-items: center;
-  padding: 10px 0 0;
+  align-items: stretch;
+  padding: 0;
 }
 
 .story-hero-center,
@@ -48,7 +48,17 @@ html::-webkit-scrollbar-thumb {
   width: min(1080px, 100%);
   display: grid;
   justify-items: center;
-  gap: 16px;
+  gap: 18px;
+}
+
+.story-hero-center {
+  min-height: calc(100vh - 148px);
+  grid-template-rows: 1fr auto auto;
+}
+
+.story-hero-spacer {
+  width: 100%;
+  min-height: 0;
 }
 
 .story-hero-card,
@@ -102,11 +112,11 @@ html::-webkit-scrollbar-thumb {
   gap: 18px;
   justify-items: center;
   text-align: center;
-  padding: 28px 24px 24px;
+  padding: 24px 20px 22px;
 }
 
 .story-hero-card-main {
-  width: min(960px, 100%);
+  width: min(900px, 100%);
 }
 
 .story-hero-card h1,
@@ -121,8 +131,9 @@ html::-webkit-scrollbar-thumb {
 }
 
 .story-hero-card-main h1 {
-  font-size: clamp(1.88rem, 4vw, 3.28rem);
-  line-height: 1.04;
+  font-size: clamp(1.7rem, 3.5vw, 2.9rem);
+  line-height: 1.06;
+  max-width: none;
 }
 
 .story-hero-actions,
@@ -139,6 +150,8 @@ html::-webkit-scrollbar-thumb {
   display: grid;
   justify-items: center;
   gap: 8px;
+  align-self: end;
+  padding-bottom: 4px;
 }
 
 .story-scroll-arrow {
@@ -163,7 +176,7 @@ html::-webkit-scrollbar-thumb {
 
 .story-track {
   display: grid;
-  gap: 24px;
+  gap: 32px;
 }
 
 .story-scene {
@@ -184,9 +197,9 @@ html::-webkit-scrollbar-thumb {
 .story-scene-card {
   display: grid;
   grid-template-columns: minmax(0, 0.96fr) minmax(300px, 0.84fr);
-  gap: 18px;
+  gap: 24px;
   align-items: stretch;
-  padding: 20px;
+  padding: 22px;
 }
 
 .story-scene-card > *,
@@ -299,7 +312,7 @@ html::-webkit-scrollbar-thumb {
 .telegram-artifact-media {
   position: relative;
   overflow: hidden;
-  min-height: 320px;
+  min-height: 336px;
   height: 100%;
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -415,8 +428,8 @@ html::-webkit-scrollbar-thumb {
 .story-download-section,
 .platform-install-shell {
   display: grid;
-  gap: 18px;
-  margin-top: 8px;
+  gap: 22px;
+  margin-top: 12px;
 }
 
 .story-faq-grid {
@@ -488,7 +501,7 @@ html::-webkit-scrollbar-thumb {
 
 .story-download-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 18px;
+  gap: 22px;
 }
 
 .story-download-card {
@@ -664,6 +677,10 @@ html::-webkit-scrollbar-thumb {
     padding-top: 14px;
   }
 
+  .story-hero-center {
+    min-height: calc(100vh - 132px);
+  }
+
   .story-hero-card,
   .platform-hero-card,
   .story-scene-card,
@@ -680,6 +697,10 @@ html::-webkit-scrollbar-thumb {
   .platform-hero-copy h1 {
     max-width: none;
     font-size: clamp(1.7rem, 9vw, 3rem);
+  }
+
+  .story-hero-card-main {
+    min-height: auto;
   }
 
   .story-scene-card,
@@ -708,13 +729,23 @@ html::-webkit-scrollbar-thumb {
 
 .story-hero-center {
   min-height: calc(100vh - 164px);
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr auto auto;
   align-content: stretch;
+}
+
+.story-hero-spacer {
+  width: 100%;
+  min-height: 0;
 }
 
 .story-hero-card {
   width: min(1040px, 100%);
   padding: 32px 24px 28px;
+}
+
+.story-hero-card-main {
+  min-height: min(356px, calc(100vh - 310px));
+  align-content: center;
 }
 
 .story-hero-title,
@@ -729,7 +760,7 @@ html::-webkit-scrollbar-thumb {
 }
 
 .story-track {
-  gap: 28px;
+  gap: 34px;
 }
 
 .story-scene,
@@ -747,8 +778,8 @@ html::-webkit-scrollbar-thumb {
 
 .story-scene-card {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 0.92fr);
-  gap: 26px;
-  padding: 26px;
+  gap: 28px;
+  padding: 28px;
 }
 
 .story-scene-media-shell,
@@ -821,14 +852,16 @@ html::-webkit-scrollbar-thumb {
   width: min(1040px, 100%);
   margin: 0 auto;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 18px;
+  gap: 22px;
 }
 
 .story-download-card,
 .platform-install-card,
 .platform-command-card {
   width: 100%;
-  min-height: 0;
+  min-height: 100%;
+  align-content: start;
+  grid-template-rows: auto 1fr auto;
 }
 
 .story-download-card p,
@@ -839,7 +872,7 @@ html::-webkit-scrollbar-thumb {
 
 .story-scroll-cue {
   align-self: end;
-  padding-bottom: 10px;
+  padding-bottom: 6px;
 }
 
 .platform-hero-card-centered {
@@ -859,7 +892,7 @@ html::-webkit-scrollbar-thumb {
 .platform-install-grid-centered {
   width: min(980px, 100%);
   margin: 0 auto;
-  gap: 20px;
+  gap: 24px;
 }
 
 .platform-install-grid-split {
@@ -872,6 +905,10 @@ html::-webkit-scrollbar-thumb {
 
 .platform-install-grid-telegram {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.platform-hero-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .platform-download-card-centered {
@@ -898,5 +935,172 @@ html::-webkit-scrollbar-thumb {
   .platform-install-grid-telegram,
   .platform-hero-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Final layout overrides for centered hero and non-sticky story cards */
+.story-hero {
+  min-height: calc(100vh - 126px);
+  align-items: stretch;
+  padding: 0;
+}
+
+.story-hero-center {
+  min-height: calc(100vh - 126px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  width: min(1080px, 100%);
+}
+
+.story-hero-spacer {
+  flex: 1 1 auto;
+  min-height: clamp(42px, 12vh, 140px);
+}
+
+.story-hero-card {
+  justify-items: stretch;
+  text-align: left;
+}
+
+.story-hero-card-main {
+  width: min(860px, 100%);
+  margin-inline: auto;
+  padding: 24px clamp(20px, 3vw, 30px);
+  gap: 14px;
+}
+
+.story-hero-title,
+.story-hero-card-main h1 {
+  font-size: clamp(1.7rem, 3.5vw, 2.9rem);
+  line-height: 1.05;
+  letter-spacing: -0.05em;
+  max-width: none;
+  text-align: left;
+}
+
+.story-hero-actions {
+  justify-content: flex-start;
+}
+
+.story-scroll-cue {
+  margin-top: auto;
+  justify-self: center;
+  align-self: center;
+  padding: 0 0 8px;
+}
+
+.story-track,
+.story-faq-section,
+.story-download-section,
+.platform-install-shell {
+  gap: 24px;
+}
+
+.story-scene-card {
+  grid-template-columns: minmax(0, 0.98fr) minmax(320px, 0.82fr);
+  gap: 22px;
+  min-height: 0;
+}
+
+.story-scene-media-shell,
+.story-scene-media-frame {
+  min-height: 340px;
+}
+
+.story-faq-list-centered {
+  gap: 18px;
+}
+
+.story-download-grid {
+  gap: 26px;
+}
+
+.story-download-card,
+.platform-install-card,
+.platform-command-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.story-download-actions,
+.platform-install-actions {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.platform-hero-card-centered {
+  width: min(960px, 100%);
+  padding: 26px 24px;
+}
+
+.platform-hero-copy-centered {
+  width: min(760px, 100%);
+}
+
+.platform-hero-grid-centered {
+  width: min(420px, 100%);
+}
+
+.platform-install-grid-centered,
+.platform-install-grid-single,
+.telegram-page .platform-install-grid-centered {
+  width: min(960px, 100%);
+}
+
+.platform-install-grid-single {
+  max-width: 720px;
+}
+
+.platform-install-card-centered,
+.platform-command-card-centered {
+  min-height: 100%;
+}
+
+@media (max-width: 980px) {
+  .story-hero-center {
+    min-height: calc(100vh - 118px);
+  }
+
+  .story-hero-card-main {
+    width: min(100%, 100%);
+  }
+
+  .story-scene-card {
+    gap: 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  .story-hero {
+    min-height: calc(100vh - 104px);
+  }
+
+  .story-hero-center {
+    min-height: calc(100vh - 104px);
+  }
+
+  .story-hero-spacer {
+    min-height: clamp(24px, 8vh, 72px);
+  }
+
+  .story-hero-card-main {
+    padding: 22px 18px;
+  }
+
+  .story-hero-title,
+  .story-hero-card-main h1 {
+    font-size: clamp(1.42rem, 7vw, 2.05rem);
+  }
+
+  .story-track,
+  .story-faq-section,
+  .story-download-section,
+  .platform-install-shell {
+    gap: 18px;
   }
 }

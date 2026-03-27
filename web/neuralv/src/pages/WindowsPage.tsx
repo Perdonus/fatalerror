@@ -29,9 +29,6 @@ export function WindowsPage() {
                 <strong>{version}</strong>
                 <p>Требования: {requirement}</p>
               </div>
-              <div className="platform-meta-chip">Setup</div>
-              <div className="platform-meta-chip">Portable</div>
-              <div className="platform-meta-chip">Через NV</div>
             </div>
           </article>
         </div>
@@ -45,17 +42,23 @@ export function WindowsPage() {
           <article className="platform-install-card platform-install-card-centered">
             <h3>Setup</h3>
             <p>Обычная установка с ярлыками и готовым запуском.</p>
-            {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
+            <div className="platform-install-actions">
+              {setupUrl ? <a className="nv-button" href={setupUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
+            </div>
           </article>
           <article className="platform-install-card platform-install-card-centered">
             <h3>Portable</h3>
             <p>Подходит, если директория и запуск должны оставаться под твоим контролем.</p>
-            {portableUrl ? <a className="nv-button" href={portableUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
+            <div className="platform-install-actions">
+              {portableUrl ? <a className="nv-button" href={portableUrl} target="_blank" rel="noreferrer">Скачать</a> : null}
+            </div>
           </article>
           <article className="platform-command-card platform-command-card-centered">
             <h3>NV</h3>
             <p>Короткий путь для установки и следующих обновлений.</p>
-            <div className="command-card"><pre>irm https://neuralvv.org/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
+            <div className="platform-install-actions">
+              <div className="command-card"><pre>irm https://neuralvv.org/install/nv.ps1 | iex{`\n`}nv install @lvls/neuralv</pre></div>
+            </div>
           </article>
         </div>
       </section>

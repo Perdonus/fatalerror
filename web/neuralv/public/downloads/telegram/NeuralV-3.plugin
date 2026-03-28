@@ -1,808 +1,976 @@
 """
-🛡 NeuralV — локальный анализатор кода для ExteraGram
-Антивирус от Fatal Error Team (@OrangeFaHTA)
+🧠 NeuralV — MD3-панель проверки для ExteraGram/AyuGram
+Команда: .nv — ответом на файл запускает проверку.
 """
 
-import ast
 import hashlib
+import json
 import os
 import re
+import threading
 import time
 import traceback
-from typing import Any, Dict, Iterable, List, Set
+from typing import Any, Dict, List, Optional
 
-from base_plugin import BasePlugin, HookResult, HookStrategy
-from client_utils import get_file_loader, run_on_queue, send_message
-from ui.settings import Header, Input, Divider
-from ui.bulletin import BulletinHelper
+import requests
+
+from java import dynamic_proxy, find_class
+from java.lang import Runnable
+from java.util import ArrayList
+
+from base_plugin import BasePlugin, HookResult, HookStrategy, MenuItemData, MenuItemType, MethodHook
+from client_utils import get_file_loader, get_last_fragment, run_on_queue, send_message
 from android_utils import run_on_ui_thread, log
+from ui.alert import AlertDialogBuilder
+from ui.bulletin import BulletinHelper
 
-from org.telegram.messenger import MessageObject, FileLoader, LocaleController
+from android.app import Activity
+from android.content import Intent
+from org.telegram.messenger import ApplicationLoader, FileLoader, MessageObject
+from com.exteragram.messenger.plugins import PluginsController
 
 __id__ = "NeuralV"
 __name__ = "NeuralV"
-__description__ = """🛡 NeuralV — локальный анализатор кода.
-Проверяет плагины и модули без ИИ и без внешних API.
+__description__ = """🧠 NeuralV — проверка плагинов и модулей через локальный анализ и серверный второй разбор.
 
-Команды:
-• .vcheck — ответить на файл или текст с кодом для анализа
-• .vlist  — история последних проверок
-• .vinfo [имя файла] — полный отчёт из кэша
-• .vclear — очистить историю проверок
-• .vhelp  — показать список команд"""
+• .nv — ответом на файл запускает проверку
+• Через меню NeuralV можно выбрать файл или проверить все установленные плагины
+
+neuralvv.org"""
 __author__ = "@NeuralV_chnl"
-__version__ = "2.0"
+__version__ = "3.0"
 __min_version__ = "11.12.1"
 __icon__ = "neuralvstickers/0"
 
-VCHECK_CMD = ".vcheck"
-VLIST_CMD = ".vlist"
-VINFO_CMD = ".vinfo"
-VCLEAR_CMD = ".vclear"
-VHELP_CMD = ".vhelp"
+NV_CMD = ".nv"
+AI_REVIEW_URL = "https://neuralvv.org/basedata/api/ai/plugin-review/summary"
+AI_TIMEOUT = 45
 CACHE_TTL = 3600
-TEXT_SAMPLE_SIZE = 8192
-TEXT_EXTENSIONS = {
-    ".py",
-    ".plugin",
-    ".txt",
-    ".json",
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".yaml",
-    ".yml",
-    ".ini",
-    ".cfg",
-    ".conf",
-    ".toml",
-    ".env",
-    ".md",
-    ".csv",
-    ".xml",
-    ".html",
-    ".css",
-    ".sql",
-    ".sh",
-}
+MAX_FINDINGS = 6
+MAX_FRAGMENTS = 4
+MAX_BATCH_RESULTS = 18
+FILE_PICK_REQUEST_CODE = 24871
+
 VERDICT_ICONS = {
     "Безопасно": "✅",
     "Осторожно": "⚠️",
     "Опасно": "🚫",
 }
-SEVERITY_LABELS = {
-    "low": "Низко",
-    "medium": "Средне",
-    "high": "Высоко",
-    "critical": "Критично",
+SEVERITY_RANK = {"Низко": 0, "Средне": 1, "Высоко": 2, "Критично": 3}
+
+TYPE_SIGNATURES = {
+    "extera": {
+        "label": "плагин ExteraGram",
+        "patterns": [
+            r"from\s+base_plugin\s+import\s+BasePlugin",
+            r"class\s+\w+\(BasePlugin\)",
+            r"\bHookResult\b",
+            r"\bHookStrategy\b",
+            r"__min_version__\s*=",
+            r"def\s+on_send_message_hook\s*\(",
+            r"from\s+ui\.settings\s+import",
+        ],
+    },
+    "hikka": {
+        "label": "модуль Hikka/Heroku",
+        "patterns": [
+            r"from\s+\.\.\s+import\s+loader\s*,\s*utils",
+            r"@loader\.tds",
+            r"class\s+\w+\(loader\.Module\)",
+            r"loader\.ModuleConfig",
+            r"loader\.ConfigValue",
+            r"@loader\.command",
+            r"utils\.answer\(",
+        ],
+    },
 }
-SEVERITY_SCORES = {
-    "low": 1,
-    "medium": 3,
-    "high": 6,
-    "critical": 10,
-}
-TOKEN_RE = re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{30,}\b")
-OPENAI_KEY_RE = re.compile(r"\bsk-[A-Za-z0-9]{20,}\b", re.IGNORECASE)
-URL_RE = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
-BASE64_BLOB_RE = re.compile(r"[A-Za-z0-9+/]{180,}={0,2}")
-SENSITIVE_NAME_RE = re.compile(r"(token|session|cookie|passwd|password|secret|api[_-]?key|authorization)", re.IGNORECASE)
+
+RULES = [
+    {
+        "id": "reverse_shell",
+        "severity": "Критично",
+        "score": 8,
+        "title": "Есть признаки обратной оболочки",
+        "summary": "сеть сочетается с запуском командной оболочки или subprocess",
+        "patterns": [r"socket\.socket", r"subprocess\.(Popen|run|call)", r"/bin/sh", r"cmd\.exe", r"powershell"],
+        "min_hits": 2,
+    },
+    {
+        "id": "runtime_exec",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть динамическое выполнение кода",
+        "summary": "файл использует exec, eval, compile или динамический import",
+        "patterns": [r"\bexec\s*\(", r"\beval\s*\(", r"\bcompile\s*\(", r"\b__import__\s*\("],
+    },
+    {
+        "id": "shell_exec",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть запуск системных команд",
+        "summary": "код вызывает subprocess или os.system",
+        "patterns": [
+            r"os\.system\s*\(",
+            r"subprocess\.(Popen|run|call|check_output|check_call)\s*\(",
+            r"popen\s*\(",
+            r"shell\s*=\s*True",
+            r"asyncio\.create_subprocess",
+        ],
+    },
+    {
+        "id": "obfuscation",
+        "severity": "Средне",
+        "score": 3,
+        "title": "Есть признаки обфускации",
+        "summary": "внутри есть base64, marshal, zlib или похожая маскировка",
+        "patterns": [
+            r"base64\.(b64decode|urlsafe_b64decode|b85decode)",
+            r"marshal\.(loads|dumps)",
+            r"zlib\.(decompress|compress)",
+            r"bytes\.fromhex\s*\(",
+            r"codecs\.decode\s*\(",
+        ],
+    },
+    {
+        "id": "network",
+        "severity": "Низко",
+        "score": 1,
+        "title": "Есть сетевой слой",
+        "summary": "код делает HTTP-запросы или работает с сокетами",
+        "patterns": [
+            r"requests\.(get|post|request|Session)",
+            r"httpx\.(Client|AsyncClient|get|post|request)",
+            r"urllib\.request",
+            r"aiohttp\.",
+            r"socket\.",
+            r"websockets?\.",
+        ],
+    },
+    {
+        "id": "remote_download",
+        "severity": "Средне",
+        "score": 2,
+        "title": "Есть загрузка данных извне",
+        "summary": "код скачивает внешний контент во время работы",
+        "patterns": [
+            r"download_media\s*\(",
+            r"requests\.(get|post)\s*\(",
+            r"httpx\.(get|post|request)\s*\(",
+            r"urllib\.request\.urlopen",
+        ],
+    },
+    {
+        "id": "secret_access",
+        "severity": "Средне",
+        "score": 2,
+        "title": "Есть доступ к токенам или секретам",
+        "summary": "файл читает токены, сессии, ключи или чувствительные переменные",
+        "patterns": [
+            r"os\.getenv\s*\(",
+            r"os\.environ",
+            r"session(_string)?",
+            r"api[_-]?key",
+            r"Authorization",
+            r"bot[_-]?token",
+            r"access[_-]?token",
+        ],
+    },
+    {
+        "id": "sensitive_send",
+        "severity": "Высоко",
+        "score": 3,
+        "title": "Есть отправка чувствительных данных",
+        "summary": "код умеет отправлять файлы, сообщения или логи наружу",
+        "patterns": [
+            r"send_file\s*\(",
+            r"send_document\s*\(",
+            r"send_message\s*\(",
+            r"client\.send_file\s*\(",
+            r"requests\.post\s*\(",
+            r"httpx\.post\s*\(",
+        ],
+    },
+    {
+        "id": "destructive_fs",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть опасные действия с файлами",
+        "summary": "файл умеет удалять, обходить или массово менять содержимое файловой системы",
+        "patterns": [
+            r"os\.remove\s*\(",
+            r"os\.unlink\s*\(",
+            r"shutil\.rmtree\s*\(",
+            r"Path\([^\n]+\)\.unlink\s*\(",
+            r"os\.walk\s*\(",
+            r"glob\.glob\s*\(",
+            r"chmod\s*\(",
+        ],
+    },
+    {
+        "id": "persistence",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть признаки закрепления",
+        "summary": "в коде встречаются автозагрузка, cron, startup или похожие механики",
+        "patterns": [
+            r"winreg\.",
+            r"CurrentVersion\\Run",
+            r"startup",
+            r"schtasks",
+            r"crontab",
+            r"systemd",
+            r"autorun",
+        ],
+    },
+    {
+        "id": "surveillance",
+        "severity": "Высоко",
+        "score": 4,
+        "title": "Есть признаки слежения",
+        "summary": "код работает со скриншотами, клавиатурой, мышью или буфером обмена",
+        "patterns": [
+            r"pyautogui\.",
+            r"ImageGrab\.",
+            r"pynput\.",
+            r"keyboard\.",
+            r"mouse\.",
+            r"clipboard",
+            r"pyperclip\.",
+            r"screenshot",
+        ],
+    },
+    {
+        "id": "elevation",
+        "severity": "Высоко",
+        "score": 5,
+        "title": "Есть попытки повышения привилегий",
+        "summary": "код использует runas, ctypes shell calls или проверки админ-прав",
+        "patterns": [r"ShellExecuteW", r"runas", r"IsUserAnAdmin", r"ctypes\.windll", r"sudo\s", r"pkexec"],
+    },
+]
+
+COMBOS = [
+    {
+        "id": "obfuscated_exec",
+        "requires": ["runtime_exec", "obfuscation"],
+        "severity": "Критично",
+        "score": 6,
+        "title": "Есть скрытая исполняемая нагрузка",
+        "summary": "обфускация сочетается с exec/eval",
+    },
+    {
+        "id": "network_exec",
+        "requires": ["runtime_exec", "network"],
+        "severity": "Критично",
+        "score": 6,
+        "title": "Сеть связана с исполнением кода",
+        "summary": "после сетевого получения код может исполняться на лету",
+    },
+    {
+        "id": "exfiltration_chain",
+        "requires": ["network", "secret_access", "sensitive_send"],
+        "severity": "Высоко",
+        "score": 5,
+        "title": "Есть признаки выноса данных",
+        "summary": "секреты читаются и рядом же могут отправляться наружу",
+    },
+]
 
 
-class SyntaxCollector(ast.NodeVisitor):
-    def __init__(self):
-        self.imports: Set[str] = set()
-        self.calls: List[str] = []
-        self.class_bases: List[str] = []
-        self.class_names: List[str] = []
-        self.functions: Set[str] = set()
-        self.strings: List[str] = []
-        self.names: Set[str] = set()
-        self.has_shell_true = False
+class RunnableFactory(dynamic_proxy(Runnable)):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
 
-    def visit_Import(self, node):
-        for alias in node.names:
-            self.imports.add(alias.name)
-        self.generic_visit(node)
-
-    def visit_ImportFrom(self, node):
-        module = node.module or ""
-        for alias in node.names:
-            full = f"{module}.{alias.name}" if module else alias.name
-            self.imports.add(full)
-        self.generic_visit(node)
-
-    def visit_ClassDef(self, node):
-        self.class_names.append(node.name)
-        for base in node.bases:
-            name = dotted_name(base)
-            if name:
-                self.class_bases.append(name)
-        self.generic_visit(node)
-
-    def visit_FunctionDef(self, node):
-        self.functions.add(node.name)
-        self.generic_visit(node)
-
-    def visit_AsyncFunctionDef(self, node):
-        self.functions.add(node.name)
-        self.generic_visit(node)
-
-    def visit_Call(self, node):
-        name = dotted_name(node.func)
-        if name:
-            self.calls.append(name)
-        for kw in node.keywords:
-            if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
-                self.has_shell_true = True
-        self.generic_visit(node)
-
-    def visit_Name(self, node):
-        self.names.add(node.id)
-        self.generic_visit(node)
-
-    def visit_Constant(self, node):
-        if isinstance(node.value, str):
-            self.strings.append(node.value)
-        self.generic_visit(node)
-
-
-class Finding:
-    __slots__ = ("key", "severity", "title", "summary", "terms", "evidence")
-
-    def __init__(self, key: str, severity: str, title: str, summary: str, terms: Iterable[str], evidence: List[str]):
-        self.key = key
-        self.severity = severity
-        self.title = title
-        self.summary = summary
-        self.terms = list(terms)
-        self.evidence = evidence
-
-
-class LocalAnalyzer:
-    def __init__(self, source: str, filename: str):
-        self.source = normalize_text(source)
-        self.filename = filename or "snippet.txt"
-        self.lines = self.source.splitlines() or [self.source]
-        self.lower = self.source.lower()
-        self.ext = detect_extension(self.filename)
-        self.tree = None
-        self.collector = SyntaxCollector()
+    def run(self):
         try:
-            self.tree = ast.parse(self.source)
-            self.collector.visit(self.tree)
-        except Exception:
-            self.tree = None
-        self.imports_lower = {item.lower() for item in self.collector.imports}
-        self.calls_lower = [item.lower() for item in self.collector.calls]
-        self.functions_lower = {item.lower() for item in self.collector.functions}
-        self.class_bases_lower = [item.lower() for item in self.collector.class_bases]
-        self.class_names_lower = [item.lower() for item in self.collector.class_names]
-        self.strings_lower = [item.lower() for item in self.collector.strings[:400]]
-        self.seed = hashlib.sha256((self.filename + "\n" + self.source).encode("utf-8", "ignore")).hexdigest()
-
-    def analyze(self) -> Dict[str, object]:
-        kind, kind_label, mismatch_note = self._classify_kind()
-        findings = self._collect_findings(mismatch_note)
-        score = sum(SEVERITY_SCORES[item.severity] for item in findings)
-        verdict = self._pick_verdict(score, findings)
-        icon = VERDICT_ICONS[verdict]
-        report = self._build_report(kind_label, mismatch_note, findings, verdict)
-        return {
-            "filename": self.filename,
-            "kind": kind,
-            "kind_label": kind_label,
-            "mismatch_note": mismatch_note,
-            "findings": findings,
-            "score": score,
-            "verdict": verdict,
-            "icon": icon,
-            "report": report,
-        }
-
-    def _classify_kind(self):
-        extera_score = 0
-        hikka_score = 0
-
-        if contains_import(self.imports_lower, "base_plugin"):
-            extera_score += 5
-        if any(base.endswith("baseplugin") for base in self.class_bases_lower):
-            extera_score += 5
-        if "create_settings" in self.functions_lower:
-            extera_score += 2
-        if "on_send_message_hook" in self.functions_lower:
-            extera_score += 3
-        if "hookresult" in self.lower or "hookstrategy" in self.lower:
-            extera_score += 2
-        if "__min_version__" in self.lower:
-            extera_score += 2
-        if "ui.settings" in self.lower or "ui.bulletin" in self.lower:
-            extera_score += 2
-
-        if "@loader.tds" in self.lower:
-            hikka_score += 4
-        if contains_import(self.imports_lower, "loader"):
-            hikka_score += 3
-        if "loader.moduleconfig" in self.lower:
-            hikka_score += 4
-        if "loader.configvalue" in self.lower:
-            hikka_score += 3
-        if "utils.answer" in self.lower:
-            hikka_score += 2
-        if any("loader.module" in base for base in self.class_bases_lower):
-            hikka_score += 5
-        if any(name.endswith("mod") for name in self.class_names_lower):
-            hikka_score += 1
-        if "@loader.command" in self.lower:
-            hikka_score += 3
-
-        if extera_score >= max(5, hikka_score + 2):
-            kind = "extera"
-            label = "плагин ExteraGram"
-        elif hikka_score >= max(5, extera_score + 2):
-            kind = "hikka"
-            label = "модуль Hikka/Heroku"
-        elif self._looks_like_python():
-            kind = "python"
-            label = "обычный Python-скрипт"
-        else:
-            kind = "text"
-            label = "текстовый файл без явной структуры модуля"
-
-        mismatch_note = ""
-        if self.ext == ".plugin" and kind != "extera":
-            mismatch_note = (
-                "Файл назван как Extera-плагин, но по структуре больше похож "
-                f"на {label}. Простым переименованием такой файл за плагин маскировать можно."
-            )
-        elif self.ext == ".py" and kind == "extera":
-            mismatch_note = (
-                "Файл имеет обычное расширение .py, но по внутренним маркерам это именно Extera-плагин. "
-                "Если его выдают за другой формат, это стоит проверять вручную."
-            )
-        elif self.ext == ".plugin" and kind == "text":
-            mismatch_note = "Файл назван как plugin, но внутри не видно ни структуры Extera, ни нормального Python-модуля."
-        return kind, label, mismatch_note
-
-    def _looks_like_python(self) -> bool:
-        if self.tree is not None:
-            return True
-        markers = ["def ", "class ", "import ", "from ", "return ", "async def "]
-        return sum(1 for item in markers if item in self.lower) >= 2
-
-    def _collect_findings(self, mismatch_note: str) -> List[Finding]:
-        findings: List[Finding] = []
-        add = findings.append
-
-        dynamic_terms = []
-        if contains_call(self.calls_lower, "exec") or "exec(" in self.lower:
-            dynamic_terms.append("exec")
-        if contains_call(self.calls_lower, "eval") or "eval(" in self.lower:
-            dynamic_terms.append("eval")
-        if "exec(compile(" in self.lower.replace(" ", ""):
-            dynamic_terms.append("exec(compile")
-        if dynamic_terms:
-            severity = "critical" if "exec(compile" in self.lower.replace(" ", "") else "high"
-            add(self._make_finding(
-                "dynamic_exec",
-                severity,
-                "Динамическое выполнение кода",
-                "Код сам собирает и запускает выражения на лету. Это один из самых опасных паттернов для модулей и плагинов.",
-                dynamic_terms,
-            ))
-
-        obfuscation_terms = []
-        for term in ["base64", "marshal", "zlib", "binascii", "codecs.decode"]:
-            if term in self.lower:
-                obfuscation_terms.append(term)
-        if BASE64_BLOB_RE.search(self.source):
-            obfuscation_terms.append("encoded_blob")
-        if obfuscation_terms:
-            severity = "high" if dynamic_terms else "medium"
-            add(self._make_finding(
-                "obfuscation",
-                severity,
-                "Признаки сокрытия логики",
-                "Внутри есть кодеки, упаковка или крупные закодированные блоки. Такое часто используют, чтобы спрятать реальное поведение.",
-                obfuscation_terms,
-            ))
-
-        shell_terms = []
-        for term in [
-            "os.system",
-            "subprocess.run",
-            "subprocess.popen",
-            "subprocess.call",
-            "subprocess.check_output",
-            "asyncio.create_subprocess_shell",
-        ]:
-            if contains_call(self.calls_lower, term):
-                shell_terms.append(term)
-        if self.collector.has_shell_true:
-            shell_terms.append("shell=True")
-        if shell_terms:
-            severity = "critical" if self.collector.has_shell_true else "high"
-            add(self._make_finding(
-                "shell_exec",
-                severity,
-                "Запуск системных команд",
-                "Модуль умеет выходить в shell или дергать системные процессы. Для чат-расширений это зона повышенного риска.",
-                shell_terms,
-            ))
-
-        network_terms = []
-        for term in [
-            "requests.get",
-            "requests.post",
-            "httpx.get",
-            "httpx.post",
-            "aiohttp.clientsession",
-            "socket.socket",
-            "websockets.connect",
-            "urllib.request.urlopen",
-        ]:
-            if contains_call(self.calls_lower, term) or term in self.lower:
-                network_terms.append(term)
-        urls = URL_RE.findall(self.source)[:6]
-        if urls:
-            network_terms.extend(urls[:2])
-        if network_terms:
-            add(self._make_finding(
-                "network",
-                "low",
-                "Сетевые обращения",
-                "Код ходит во внешнюю сеть. Само по себе это не делает его вредоносным, но такой трафик нужно понимать по назначению.",
-                network_terms,
-            ))
-
-        remote_exec = False
-        if network_terms and (dynamic_terms or "importlib" in self.lower or "runpy" in self.lower):
-            if any(fragment in self.lower for fragment in ["requests.get(", "httpx.get(", "urlopen(", "download_media("]):
-                remote_exec = True
-        if remote_exec:
-            add(self._make_finding(
-                "remote_exec",
-                "critical",
-                "Похоже на догрузку и запуск удалённого кода",
-                "Есть связка из сетевой загрузки и последующего исполнения. Это уже не просто сетевой модуль, а крайне рискованный сценарий.",
-                ["requests.get", "httpx.get", "urlopen", "exec", "importlib"],
-            ))
-
-        secret_terms = []
-        if "os.getenv" in self.lower or "os.environ" in self.lower:
-            secret_terms.extend(["os.getenv", "os.environ"])
-        if TOKEN_RE.search(self.source):
-            secret_terms.append("telegram_token")
-        if OPENAI_KEY_RE.search(self.source):
-            secret_terms.append("api_key_literal")
-        if any(SENSITIVE_NAME_RE.search(text) for text in self.strings_lower[:80]):
-            secret_terms.append("sensitive_names")
-        if secret_terms:
-            severity = "medium" if network_terms else "low"
-            add(self._make_finding(
-                "secret_access",
-                severity,
-                "Доступ к чувствительным данным",
-                "Код работает с токенами, сессионными строками или секретами окружения. Без понятной причины это настораживает.",
-                secret_terms,
-            ))
-
-        surveillance_terms = []
-        for term in ["pynput", "keyboard", "pyautogui", "imagegrab", "pil.imagegrab", "mss", "cv2.videocapture", "clipboard"]:
-            if term in self.lower:
-                surveillance_terms.append(term)
-        if surveillance_terms:
-            add(self._make_finding(
-                "surveillance",
-                "high",
-                "Слежение за вводом или экраном",
-                "В коде видны импорты и вызовы, связанные с клавиатурой, буфером обмена, скриншотами или захватом экрана.",
-                surveillance_terms,
-            ))
-
-        persistence_terms = []
-        for term in ["winreg", "runonce", "software\\microsoft\\windows\\currentversion\\run", "cron", "schtasks", "startup", ".desktop"]:
-            if term in self.lower:
-                persistence_terms.append(term)
-        if persistence_terms:
-            add(self._make_finding(
-                "persistence",
-                "high",
-                "Признаки персистентности",
-                "Код пытается закрепиться в системе и переживать перезапуск. Для обычного плагина это лишний и опасный слой.",
-                persistence_terms,
-            ))
-
-        privilege_terms = []
-        for term in ["shell.executew", "runas", "isuseranadmin", "ctypes.windll", "sudo ", "pkexec"]:
-            if term in self.lower:
-                privilege_terms.append(term.strip())
-        if privilege_terms:
-            add(self._make_finding(
-                "privilege",
-                "high",
-                "Попытка получить повышенные права",
-                "В коде есть паттерны, связанные с запуском от администратора или с прямой работой через системные API.",
-                privilege_terms,
-            ))
-
-        destructive_terms = []
-        for term in ["shutil.rmtree", "os.remove", "os.unlink", ".unlink(", ".rmdir(", "os.walk", "path.unlink"]:
-            if term in self.lower:
-                destructive_terms.append(term)
-        if destructive_terms:
-            severity = "high" if "shutil.rmtree" in destructive_terms else "medium"
-            add(self._make_finding(
-                "destructive_fs",
-                severity,
-                "Агрессивные операции с файлами",
-                "Есть удаление файлов или каталогов. В обычных утилитах это бывает, но без явного контекста такой код лучше не запускать вслепую.",
-                destructive_terms,
-            ))
-
-        if mismatch_note:
-            add(self._make_finding(
-                "format_mismatch",
-                "medium",
-                "Формат файла не совпадает с содержимым",
-                mismatch_note,
-                [self.ext or "unknown_ext"],
-            ))
-
-        unique: Dict[str, Finding] = {}
-        for item in findings:
-            prev = unique.get(item.key)
-            if not prev or SEVERITY_SCORES[item.severity] > SEVERITY_SCORES[prev.severity]:
-                unique[item.key] = item
-        return sorted(unique.values(), key=lambda item: (-SEVERITY_SCORES[item.severity], item.title))
-
-    def _make_finding(self, key: str, severity: str, title: str, summary: str, terms: Iterable[str]) -> Finding:
-        evidence = []
-        lowered_terms = [str(term).lower() for term in terms if term]
-        for term in lowered_terms:
-            evidence.extend(find_evidence(self.lines, term))
-            if len(evidence) >= 2:
-                break
-        deduped = []
-        seen = set()
-        for item in evidence:
-            if item not in seen:
-                deduped.append(item)
-                seen.add(item)
-        return Finding(key, severity, title, summary, lowered_terms, deduped[:2])
-
-    def _pick_verdict(self, score: int, findings: List[Finding]) -> str:
-        severities = {item.severity for item in findings}
-        if "critical" in severities or score >= 12:
-            return "Опасно"
-        if "high" in severities or score >= 5:
-            return "Осторожно"
-        return "Безопасно"
-
-    def _build_report(self, kind_label: str, mismatch_note: str, findings: List[Finding], verdict: str) -> str:
-        purpose = self._compose_purpose(kind_label, findings)
-        checked = self._compose_checked()
-        findings_text = self._compose_findings(findings)
-        conclusion = self._compose_conclusion(verdict, findings, mismatch_note)
-        sections = [
-            "1. Тип и назначение\n" + purpose,
-            "2. Что проверено\n" + checked,
-            "3. Что найдено\n" + findings_text,
-            "4. Что важно учесть\n" + conclusion,
-            "5. Итог\n" + verdict,
-        ]
-        return "\n\n".join(sections).strip()
-
-    def _compose_purpose(self, kind_label: str, findings: List[Finding]) -> str:
-        if kind_label == "плагин ExteraGram":
-            first = pick_variant([
-                "Похоже на плагин ExteraGram: внутри есть характерная базовая обвязка, хук обработки сообщений и блок локальных настроек.",
-                "Код выглядит как плагин ExteraGram: он подключается к клиенту, ловит сообщения и добавляет собственные действия поверх чата.",
-            ], self.seed + "purpose-extera")
-        elif kind_label == "модуль Hikka/Heroku":
-            first = pick_variant([
-                "Похоже на модуль Hikka/Heroku: видны loader-команды, конфиг модуля и типичная структура чат-расширения.",
-                "Код выглядит как модуль Hikka/Heroku: он объявляет команды, использует loader и встраивается в существующий клиентский сценарий.",
-            ], self.seed + "purpose-hikka")
-        elif kind_label == "обычный Python-скрипт":
-            first = pick_variant([
-                "Это обычный Python-скрипт без явной привязки к ExteraGram или Hikka/Heroku.",
-                "По структуре это скорее самостоятельный Python-файл, а не готовый чат-плагин под конкретный клиент.",
-            ], self.seed + "purpose-python")
-        else:
-            first = "Внутри нет устойчивой структуры полноценного плагина. Это просто текстовый файл или сильно урезанный фрагмент кода."
-
-        if any(item.key in {"dynamic_exec", "remote_exec", "surveillance"} for item in findings):
-            second = "При этом в логике уже есть поведение, которое выходит далеко за рамки обычной вспомогательной автоматизации."
-        elif any(item.key in {"network", "secret_access", "destructive_fs"} for item in findings):
-            second = "Внутри есть прикладные действия с сетью, файлами или чувствительными данными, поэтому код нельзя считать совсем безобидным без ручной проверки."
-        else:
-            second = "По явным маркерам код похож на обычную служебную логику и не выглядит как попытка скрытно выполнить что-то постороннее."
-
-        return first + " " + second
-
-    def _compose_checked(self) -> str:
-        return pick_variant([
-            "Проверил запуск системных команд, сетевые вызовы, операции с файлами, работу с секретами, признаки обфускации и попытки догружать код снаружи.",
-            "Проверка прошла по ключевым зонам риска: shell-команды, внешняя сеть, чувствительные данные, скрытие логики, удаление файлов и признаки закрепления в системе.",
-            "Разобрал импортную карту, вызовы функций, строковые литералы и характерные сигнатуры: от shell и сети до токенов, обфускации и персистентности.",
-        ], self.seed + "checked")
-
-    def _compose_findings(self, findings: List[Finding]) -> str:
-        if not findings:
-            return pick_variant([
-                "Явных опасных паттернов не видно. Сетевых догрузок, shell-команд, скрытого запуска кода и агрессивных операций с файлами в явном виде нет.",
-                "На уровне сигнатур код выглядит спокойно: нет явных попыток тянуть и исполнять удалённый код, ломиться в shell или прятать реальную логику через упаковку.",
-            ], self.seed + "clean")
-
-        rows = []
-        for item in findings[:6]:
-            row = f"- {SEVERITY_LABELS[item.severity]}: {item.title}. {item.summary}"
-            if item.evidence:
-                row += " Примеры: " + "; ".join(item.evidence)
-            rows.append(row)
-        return "\n".join(rows)
-
-    def _compose_conclusion(self, verdict: str, findings: List[Finding], mismatch_note: str) -> str:
-        if verdict == "Опасно":
-            text = pick_variant([
-                "Набор признаков уже слишком тяжёлый для безопасного плагина. Такой код лучше не запускать без полной ручной разборки и изоляции.",
-                "Картина больше похожа на рискованный или вредоносный сценарий, чем на обычный модуль. Без песочницы и ручного аудита запускать это не стоит.",
-            ], self.seed + "conclusion-danger")
-        elif verdict == "Осторожно":
-            text = pick_variant([
-                "Здесь нет однозначного приговора по одному сигналу, но связка найденных паттернов требует ручной проверки и понимания контекста.",
-                "Код нельзя назвать заведомо вредоносным по одному признаку, но и доверять ему вслепую уже нельзя. Нужна ручная проверка перед запуском.",
-            ], self.seed + "conclusion-warn")
-        else:
-            text = pick_variant([
-                "По текущим сигнатурам это выглядит как спокойный модуль без грубых признаков вредоносной активности.",
-                "На уровне статического разбора код выглядит адекватно: явных попыток скрыть опасное поведение или навредить системе не видно.",
-            ], self.seed + "conclusion-safe")
-
-        if mismatch_note:
-            text += " Отдельно настораживает несовпадение имени файла и его реальной структуры."
-        return text
+            self.fn()
+        except Exception as error:
+            log(f"[NeuralV] Runnable error: {error}")
 
 
-def normalize_text(text: str) -> str:
-    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+class ActivityResultHook(MethodHook):
+    def __init__(self, plugin_instance):
+        super().__init__()
+        self.plugin = plugin_instance
+
+    def before_hooked_method(self, param):
+        try:
+            request_code = param.args[0]
+            if request_code != FILE_PICK_REQUEST_CODE:
+                return
+            param.setResult(None)
+            result_code = param.args[1]
+            data = param.args[2]
+            if result_code == Activity.RESULT_OK and data is not None and data.getData() is not None:
+                uri_string = data.getData().toString()
+                run_on_queue(lambda: self.plugin._handle_file_uri(uri_string))
+        finally:
+            if self.plugin._activity_hook:
+                try:
+                    self.plugin._activity_hook.unhook()
+                except Exception:
+                    pass
+                self.plugin._activity_hook = None
 
 
-def detect_extension(filename: str) -> str:
-    filename = (filename or "").lower().strip()
-    if "." not in filename:
-        return ""
-    return "." + filename.rsplit(".", 1)[-1]
+def _safe_snippet(line: str, limit: int = 120) -> str:
+    compact = re.sub(r"\s+", " ", (line or "").strip())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
 
 
-def dotted_name(node) -> str:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        base = dotted_name(node.value)
-        return f"{base}.{node.attr}" if base else node.attr
-    if isinstance(node, ast.Call):
-        return dotted_name(node.func)
-    return ""
-
-
-def contains_import(imports_lower: Set[str], fragment: str) -> bool:
-    fragment = fragment.lower()
-    return any(fragment == item or item.endswith("." + fragment) or fragment in item for item in imports_lower)
-
-
-def contains_call(calls_lower: List[str], fragment: str) -> bool:
-    fragment = fragment.lower()
-    return any(call == fragment or call.endswith("." + fragment) or fragment in call for call in calls_lower)
-
-
-def pick_variant(options: List[str], seed: str) -> str:
-    if not options:
-        return ""
-    digest = hashlib.sha256(seed.encode("utf-8", "ignore")).hexdigest()
-    index = int(digest[:8], 16) % len(options)
-    return options[index]
-
-
-def find_evidence(lines: List[str], term: str) -> List[str]:
-    term = (term or "").lower().strip()
-    if not term:
-        return []
-    found = []
-    for idx, line in enumerate(lines, 1):
-        if term in line.lower():
-            compact = " ".join(line.strip().split())
-            if compact:
-                found.append(f"строка {idx}: {compact[:140]}")
-            if len(found) >= 2:
-                break
-    return found
-
-
-def looks_binary(data: bytes, filename: str) -> bool:
-    if not data:
+def _is_probably_binary(raw: bytes) -> bool:
+    if not raw:
         return False
-    ext = detect_extension(filename)
-    if ext and ext in TEXT_EXTENSIONS:
-        return False
-    if b"\x00" in data[:TEXT_SAMPLE_SIZE]:
+    sample = raw[:4096]
+    if b"\x00" in sample:
         return True
-    sample = data[:TEXT_SAMPLE_SIZE]
-    printable = 0
+    bad_controls = 0
     for byte in sample:
-        if byte in (9, 10, 13) or 32 <= byte <= 126:
-            printable += 1
-    return printable / max(1, len(sample)) < 0.78
+        if byte in (9, 10, 13):
+            continue
+        if byte < 32:
+            bad_controls += 1
+    if sample and bad_controls / float(len(sample)) > 0.08:
+        return True
+    decoded = raw.decode("utf-8", errors="ignore")
+    return not decoded.strip() and bool(raw.strip(b"\r\n\t "))
 
 
-def get_localized_strings():
+def _decode_text(raw: bytes) -> str:
+    return raw.decode("utf-8", errors="ignore").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _declared_family(filename: str) -> str:
+    lower = (filename or "").lower()
+    if lower.endswith(".plugin"):
+        return "extera"
+    if lower.endswith(".py"):
+        return "python"
+    return "unknown"
+
+
+def _detect_family(code: str) -> dict:
+    scores = {}
+    reasons = {}
+    for family, config in TYPE_SIGNATURES.items():
+        score = 0
+        matched = []
+        for pattern in config["patterns"]:
+            if re.search(pattern, code, re.IGNORECASE | re.MULTILINE):
+                score += 1
+                matched.append(pattern)
+        scores[family] = score
+        reasons[family] = matched
+
+    extera_score = scores.get("extera", 0)
+    hikka_score = scores.get("hikka", 0)
+    if extera_score == 0 and hikka_score == 0:
+        return {"family": "generic", "label": "обычный Python-скрипт", "reasons": []}
+    if extera_score >= hikka_score:
+        return {"family": "extera", "label": TYPE_SIGNATURES["extera"]["label"], "reasons": reasons["extera"]}
+    return {"family": "hikka", "label": TYPE_SIGNATURES["hikka"]["label"], "reasons": reasons["hikka"]}
+
+
+def _collect_hits(lines, patterns, min_hits=1):
+    hits = []
+    seen = set()
+    for idx, raw_line in enumerate(lines, 1):
+        for pattern in patterns:
+            if re.search(pattern, raw_line, re.IGNORECASE):
+                key = (idx, pattern)
+                if key in seen:
+                    continue
+                seen.add(key)
+                snippet = _safe_snippet(raw_line)
+                if not snippet:
+                    continue
+                hits.append({"line": idx, "snippet": snippet})
+                break
+        if len(hits) >= max(min_hits, 3):
+            break
+    return hits
+
+
+def _sorted_findings(findings):
+    return sorted(findings, key=lambda item: (item["score"], SEVERITY_RANK[item["severity"]]), reverse=True)
+
+
+def analyze_code(filename: str, code: str) -> dict:
+    code = (code or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = code.split("\n")
+    family_info = _detect_family(code)
+    declared = _declared_family(filename)
+    detected = family_info["family"]
+    mismatch = (declared == "extera" and detected != "extera") or (declared == "python" and detected == "extera")
+
+    findings = []
+    triggered_ids = set()
+    for rule in RULES:
+        hits = _collect_hits(lines, rule["patterns"], rule.get("min_hits", 1))
+        if len(hits) >= rule.get("min_hits", 1):
+            triggered_ids.add(rule["id"])
+            findings.append({
+                "id": rule["id"],
+                "title": rule["title"],
+                "severity": rule["severity"],
+                "score": rule["score"],
+                "summary": rule["summary"],
+                "hits": hits,
+            })
+
+    for combo in COMBOS:
+        if all(req in triggered_ids for req in combo["requires"]):
+            findings.append({
+                "id": combo["id"],
+                "title": combo["title"],
+                "severity": combo["severity"],
+                "score": combo["score"],
+                "summary": combo["summary"],
+                "hits": [],
+            })
+
+    findings = _sorted_findings(findings)
+    score = sum(item["score"] for item in findings)
+    if mismatch:
+        score += 2
+
+    if score >= 13:
+        verdict = "Опасно"
+    elif score >= 5:
+        verdict = "Осторожно"
+    else:
+        verdict = "Безопасно"
+
+    fragments = []
+    seen_fragments = set()
+    for finding in findings:
+        for hit in finding.get("hits", []):
+            key = (hit["line"], hit["snippet"])
+            if key in seen_fragments:
+                continue
+            seen_fragments.add(key)
+            fragments.append(hit)
+            if len(fragments) >= MAX_FRAGMENTS:
+                break
+        if len(fragments) >= MAX_FRAGMENTS:
+            break
+
     return {
-        "settings_header": "🛡 NeuralV",
-        "settings_subtitle": "Локальная проверка кода без ИИ и без внешних API.",
-        "local_section": "Локальные параметры",
-        "max_file_mb_text": "Макс. размер файла (MB)",
-        "max_file_mb_sub": "Файлы больше этого размера не проверяются локально (1–50)",
-        "no_reply": "⚠️ NeuralV: Ответь на файл или сообщение с кодом командой .vcheck",
-        "no_content": "⚠️ NeuralV: В сообщении нет текста или кода для проверки.",
-        "analyzing": "⌛ NeuralV: Проверяю код локально...",
-        "download_error": "❗ NeuralV: Не удалось загрузить файл. Отправь его ещё раз.",
-        "read_error": "❗ NeuralV: Не удалось прочитать файл. Попробуй отправить его ещё раз.",
-        "too_big": "❗ NeuralV: Файл слишком большой (>{mb} MB).",
-        "binary_file": "❗ NeuralV: Похоже, это не текстовый кодовый файл. Локальная проверка ждёт текст или код.",
-        "unexpected": "❗ NeuralV: Не удалось завершить проверку. Попробуй ещё раз.",
-        "report_header": "🛡 Отчёт проверки: {filename}\n\n",
-        "report_footer": "\n\nИтоговая оценка: {icon} {word}",
-        "cache_empty": "📂 NeuralV: История проверок пуста.",
-        "cache_header": "📊 История проверки NeuralV:\n\n",
-        "cache_row": "{icon} {name} — {word} ({age})\n",
-        "age_min": "{n} мин. назад",
-        "age_hour": "{n} ч. назад",
-        "vinfo_usage": "⚠️ Укажи имя файла. Пример: .vinfo bot.py",
-        "vinfo_not_found": "❗ NeuralV: Файл «{name}» не найден в истории.",
-        "vinfo_expired": "⏳ NeuralV: Запись устарела. Перепроверь файл.",
-        "vinfo_header": "🛡 Отчёт из кэша: {name}\n\n",
-        "vinfo_footer": "\n\nИтоговая оценка: {icon} {word}",
-        "vclear_done": "🧹 NeuralV: История очищена.",
-        "vhelp_text": (
-            "🛡 NeuralV — команды:\n\n"
-            "• .vcheck — ответить на файл или текст с кодом для проверки\n"
-            "• .vlist  — история последних проверок\n"
-            "• .vinfo [имя] — полный отчёт из кэша\n"
-            "• .vclear — очистить историю\n"
-            "• .vhelp  — эта справка\n\n"
-            "Проверка идёт полностью локально: без ИИ, без API и без внешних сервисов."
-        ),
+        "filename": filename,
+        "detected_family": detected,
+        "detected_label": family_info["label"],
+        "declared_family": declared,
+        "mismatch": mismatch,
+        "findings": findings,
+        "fragments": fragments,
+        "verdict": verdict,
+        "icon": VERDICT_ICONS[verdict],
+        "score": score,
     }
 
 
 class NeuralVPlugin(BasePlugin):
     def __init__(self):
         super().__init__()
-        self.v_cache: Dict[str, Dict[str, Any]] = {}
+        self.analysis_cache: Dict[str, Dict[str, Any]] = {}
+        self._activity_hook = None
+        self._drawer_menu_item = None
+        self._loading_dialog = None
+        self._loading_builder = None
+        self._loading_active = False
+        self._loading_thread = None
+        self._last_report_text = ""
+        self._last_report_peer = None
 
     def on_plugin_load(self):
         self.add_on_send_message_hook()
-        log("[NeuralV] loaded")
+        self._ensure_drawer_item()
+        self.add_menu_item(MenuItemData(
+            menu_type=MenuItemType.MESSAGE_CONTEXT_MENU,
+            text="NeuralV",
+            icon="msg_search",
+            on_click=self._on_context_check,
+        ))
+        log("[NeuralV] loaded v3.0")
 
     def on_plugin_unload(self):
-        self.v_cache.clear()
+        self.analysis_cache.clear()
+        self._dismiss_loading_dialog()
+        if self._activity_hook:
+            try:
+                self._activity_hook.unhook()
+            except Exception:
+                pass
+            self._activity_hook = None
         log("[NeuralV] unloaded")
 
-    def create_settings(self) -> List[Any]:
-        s = get_localized_strings()
-        return [
-            Header(text=s["settings_header"]),
-            Divider(text=s["settings_subtitle"]),
-            Header(text=s["local_section"]),
-            Input(
-                key="max_file_mb",
-                text=s["max_file_mb_text"],
-                subtext=s["max_file_mb_sub"],
-                default="10",
-                icon="input_phone",
-            ),
-        ]
-
-    def _s(self, key: str, **kwargs) -> str:
-        template = get_localized_strings().get(key, key)
+    def _ensure_drawer_item(self):
+        if self._drawer_menu_item is not None:
+            return
         try:
-            return template.format(**kwargs) if kwargs else template
-        except Exception:
-            return template
-
-    def _show_error(self, key: str, **kwargs):
-        msg = self._s(key, **kwargs)
-        run_on_ui_thread(lambda: BulletinHelper.show_error(msg))
-
-    def _show_runtime_error(self, error: Exception):
-        text = str(error or "").lower()
-        if "не удалось загрузить файл" in text or "download" in text or "attach" in text:
-            self._show_error("download_error")
-        elif "decode" in text or "utf-" in text or "binary" in text:
-            self._show_error("binary_file")
-        elif "permission" in text or "read" in text or "open" in text:
-            self._show_error("read_error")
-        else:
-            self._show_error("unexpected")
-
-    def _show_status(self, verdict_word: str, verdict_icon: str):
-        def inner():
-            if verdict_word == "Опасно":
-                BulletinHelper.show_error(f"{verdict_icon} {verdict_word}")
-            elif verdict_word == "Осторожно":
-                BulletinHelper.show_info(f"{verdict_icon} {verdict_word}")
-            else:
-                BulletinHelper.show_success(f"{verdict_icon} {verdict_word}")
-        run_on_ui_thread(inner)
+            self._drawer_menu_item = self.add_menu_item(MenuItemData(
+                menu_type=MenuItemType.DRAWER_MENU,
+                text="NeuralV",
+                icon="msg_settings_ny",
+                on_click=lambda ctx: self._open_main_menu(),
+            ))
+        except Exception as error:
+            log(f"[NeuralV] drawer item error: {error}")
 
     def _get_max_bytes(self) -> int:
+        return 10 * 1024 * 1024
+
+    def _get_current_dialog_id(self) -> Optional[int]:
         try:
-            mb = max(1, min(50, int(self.get_setting("max_file_mb", "10"))))
+            fragment = get_last_fragment()
+            if fragment and hasattr(fragment, "getDialogId"):
+                value = fragment.getDialogId()
+                return int(value)
         except Exception:
-            mb = 10
-        return mb * 1024 * 1024
+            return None
+        return None
 
-    def _send_msg(self, params: Any, text: str):
+    def _send_payload(self, payload: Dict[str, Any]) -> bool:
         try:
-            send_message({"peer": params.peer, "message": text})
-        except Exception as e:
-            log(f"[NeuralV] _send_msg failed: {e}")
+            send_message(payload)
+            return True
+        except Exception as error:
+            log(f"[NeuralV] send payload failed: {error}")
+            return False
 
-    def _store_report(self, filename: str, analysis: Dict[str, object]):
-        self.v_cache[filename] = {
-            "report": analysis["report"],
-            "icon": analysis["icon"],
-            "word": analysis["verdict"],
-            "kind": analysis["kind_label"],
-            "ts": time.time(),
+    def _show_error(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_error(text))
+
+    def _show_success(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_success(text))
+
+    def _show_info(self, text: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_info(text))
+
+    def _start_loading_dialog(self, title: str, phases: Optional[List[str]] = None):
+        self._dismiss_loading_dialog()
+        phases = phases or [
+            "Собираю структуру…",
+            "Сверяю сигнатуры…",
+            "Подключаю второй анализ…",
+            "Собираю итог…",
+        ]
+
+        def action():
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                return
+            try:
+                builder = AlertDialogBuilder(activity, AlertDialogBuilder.ALERT_TYPE_LOADING)
+            except Exception:
+                builder = AlertDialogBuilder(activity, AlertDialogBuilder.ALERT_TYPE_SPINNER)
+            builder.set_title(title)
+            builder.set_message(phases[0])
+            dialog = builder.show()
+            try:
+                dialog.set_cancelable(False)
+            except Exception:
+                pass
+            self._loading_builder = builder
+            self._loading_dialog = dialog
+            self._loading_active = True
+
+        run_on_ui_thread(action)
+
+        def animator():
+            step = 0
+            while self._loading_active:
+                time.sleep(0.9)
+                if not self._loading_active or not self._loading_builder:
+                    break
+                step += 1
+                message = phases[step % len(phases)]
+                run_on_ui_thread(lambda msg=message: self._update_loading_message(msg))
+
+        self._loading_thread = threading.Thread(target=animator, daemon=True)
+        self._loading_thread.start()
+
+    def _update_loading_message(self, message: str):
+        try:
+            if self._loading_builder:
+                self._loading_builder.set_message(message)
+        except Exception:
+            pass
+
+    def _dismiss_loading_dialog(self):
+        self._loading_active = False
+        def action():
+            try:
+                if self._loading_dialog and hasattr(self._loading_dialog, "dismiss"):
+                    self._loading_dialog.dismiss()
+            except Exception:
+                pass
+            self._loading_dialog = None
+            self._loading_builder = None
+        run_on_ui_thread(action)
+
+    def _open_main_menu(self):
+        def action():
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                return
+            builder = AlertDialogBuilder(activity)
+            builder.set_title("NeuralV")
+            items = [
+                "Проверить файл с устройства",
+                "Проверить все установленные плагины",
+            ]
+            def on_item_click(dialog, which):
+                dialog.dismiss()
+                if which == 0:
+                    self._launch_file_picker()
+                elif which == 1:
+                    run_on_queue(self._scan_installed_plugins_task)
+            builder.set_items(items, on_item_click)
+            builder.set_negative_button("Закрыть", lambda d, w: d.dismiss())
+            builder.show()
+        run_on_ui_thread(action)
+
+    def _launch_file_picker(self):
+        try:
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                self._show_error("NeuralV: не удалось получить текущий экран.")
+                return
+            if self._activity_hook:
+                try:
+                    self._activity_hook.unhook()
+                except Exception:
+                    pass
+            method = activity.getClass().getDeclaredMethod(
+                "onActivityResult",
+                find_class("java.lang.Integer").TYPE,
+                find_class("java.lang.Integer").TYPE,
+                Intent,
+            )
+            self._activity_hook = self.hook_method(method, ActivityResultHook(self))
+            intent = Intent(Intent.ACTION_GET_CONTENT)
+            intent.setType("*/*")
+            intent.addCategory(Intent.CATEGORY_OPENABLE)
+            activity.startActivityForResult(Intent.createChooser(intent, "Выберите файл для проверки"), FILE_PICK_REQUEST_CODE)
+        except Exception as error:
+            log(f"[NeuralV] file picker error: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось открыть выбор файла.")
+
+    def _handle_file_uri(self, uri_string: str):
+        try:
+            uri = find_class("android.net.Uri").parse(uri_string)
+            content_resolver = ApplicationLoader.applicationContext.getContentResolver()
+            file_name = f"picked_{int(time.time())}.txt"
+            cursor = content_resolver.query(uri, None, None, None, None)
+            if cursor is not None:
+                try:
+                    if cursor.moveToFirst():
+                        idx = cursor.getColumnIndex("_display_name")
+                        if idx != -1:
+                            file_name = cursor.getString(idx) or file_name
+                finally:
+                    cursor.close()
+            input_stream = content_resolver.openInputStream(uri)
+            if not input_stream:
+                self._show_error("NeuralV: не удалось открыть выбранный файл.")
+                return
+            raw_chunks = bytearray()
+            buffer = bytearray(4096)
+            while True:
+                read = input_stream.read(buffer)
+                if read == -1:
+                    break
+                raw_chunks.extend(buffer[:read])
+                if len(raw_chunks) > self._get_max_bytes():
+                    self._show_error("NeuralV: файл слишком большой для проверки.")
+                    return
+            raw = bytes(raw_chunks)
+            if _is_probably_binary(raw):
+                self._show_error("NeuralV: нужен текстовый файл с кодом.")
+                return
+            code_content = _decode_text(raw)
+            if not code_content.strip():
+                self._show_error("NeuralV: в файле нет текста для проверки.")
+                return
+            self._analyze_text_task(file_name, code_content, self._get_current_dialog_id())
+        except Exception as error:
+            log(f"[NeuralV] file uri error: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось прочитать выбранный файл.")
+
+    def _build_local_summary(self, analysis: dict) -> str:
+        parts = [
+            f"Тип: {analysis['detected_label']}",
+            f"Локальный вердикт: {analysis['verdict']}",
+            f"Счёт риска: {analysis['score']}",
+        ]
+        if analysis["mismatch"]:
+            parts.append("Есть несовпадение между именем файла и реальной структурой")
+        if analysis["findings"]:
+            titles = "; ".join(item["title"] for item in analysis["findings"][:4])
+            parts.append(f"Главные сигналы: {titles}")
+        else:
+            parts.append("Явных опасных сигнатур нет")
+        return ". ".join(parts) + "."
+
+    def _build_ai_analysis_text(self, filename: str, code: str, analysis: dict) -> str:
+        lines = [
+            f"Файл: {filename}",
+            f"Тип: {analysis['detected_label']}",
+            f"Локальный вердикт: {analysis['verdict']}",
+            f"Счёт риска: {analysis['score']}",
+            f"Несовпадение формата: {'да' if analysis['mismatch'] else 'нет'}",
+            "",
+            "Локальные сигналы:",
+        ]
+        if analysis["findings"]:
+            for finding in analysis["findings"][:MAX_FINDINGS]:
+                line_info = ""
+                if finding.get("hits"):
+                    line_info = f" (строка {finding['hits'][0]['line']})"
+                lines.append(f"- [{finding['severity']}] {finding['title']}: {finding['summary']}{line_info}")
+        else:
+            lines.append("- Явных красных флагов локальный слой не нашёл.")
+        if analysis["fragments"]:
+            lines.extend(["", "Фрагменты:"])
+            for fragment in analysis["fragments"][:MAX_FRAGMENTS]:
+                lines.append(f"- строка {fragment['line']}: {fragment['snippet']}")
+        lines.extend(["", "Код:", code[:12000]])
+        return "\n".join(lines)
+
+    def _to_api_finding(self, finding: dict) -> dict:
+        return {
+            "severity": finding["severity"],
+            "title": finding["title"],
+            "summary": finding["summary"],
+            "line": finding["hits"][0]["line"] if finding.get("hits") else None,
+            "snippets": [item["snippet"] for item in finding.get("hits", [])[:2]],
         }
 
-    def _send_report(self, params: Any, filename: str, analysis: Dict[str, object]):
-        self._store_report(filename, analysis)
-        word = str(analysis["verdict"])
-        icon = str(analysis["icon"])
-        report = str(analysis["report"])
-        header = self._s("report_header", filename=filename)
-        footer = self._s("report_footer", icon=icon, word=word)
-        self._send_msg(params, header + report + footer)
-        self._show_status(word, icon)
+    def _request_ai_review(self, filename: str, code: str, analysis: dict) -> dict:
+        payload = {
+            "summary": self._build_local_summary(analysis),
+            "analysis": self._build_ai_analysis_text(filename, code, analysis),
+            "findings": [self._to_api_finding(item) for item in analysis["findings"][:MAX_FINDINGS]],
+            "file": {
+                "filename": filename,
+                "declared_type": analysis["declared_family"],
+                "detected_type": analysis["detected_family"],
+            },
+            "meta": {
+                "plugin_surface": "exteragram",
+                "local_verdict": analysis["verdict"],
+                "local_score": analysis["score"],
+                "mismatch": analysis["mismatch"],
+            },
+        }
+        try:
+            response = requests.post(AI_REVIEW_URL, json=payload, timeout=AI_TIMEOUT)
+            if not response.ok:
+                return {
+                    "success": False,
+                    "summary": "Серверный разбор сейчас недоступен. Показан только локальный результат.",
+                    "bullets": [],
+                    "verdict_suggestion": "review",
+                }
+            data = response.json()
+            if not data.get("success"):
+                return {
+                    "success": False,
+                    "summary": str(data.get("error") or "Серверный разбор сейчас недоступен."),
+                    "bullets": [],
+                    "verdict_suggestion": "review",
+                }
+            return data
+        except Exception as error:
+            log(f"[NeuralV] AI review failed: {error}")
+            return {
+                "success": False,
+                "summary": "Серверный разбор сейчас недоступен. Показан только локальный результат.",
+                "bullets": [],
+                "verdict_suggestion": "review",
+            }
 
-    def _send_vlist(self, params: Any):
-        if not self.v_cache:
-            self._send_msg(params, self._s("cache_empty"))
-            return
-        now = time.time()
-        text = self._s("cache_header")
-        for name, entry in self.v_cache.items():
-            age_min = int((now - float(entry["ts"])) / 60)
-            age = self._s("age_min", n=age_min) if age_min < 60 else self._s("age_hour", n=age_min // 60)
-            text += self._s("cache_row", icon=entry["icon"], name=name, word=entry["word"], age=age)
-        self._send_msg(params, text)
+    def _merge_verdicts(self, local_verdict: str, ai_suggestion: str) -> str:
+        order = {"Безопасно": 0, "Осторожно": 1, "Опасно": 2}
+        ai_map = {"clean": "Безопасно", "review": "Осторожно", "block": "Опасно"}
+        ai_verdict = ai_map.get(str(ai_suggestion or "").strip().lower(), local_verdict)
+        return local_verdict if order[local_verdict] >= order[ai_verdict] else ai_verdict
 
-    def _send_vinfo(self, params: Any, args: str):
-        name = args.strip()
-        if not name:
-            self._send_msg(params, self._s("vinfo_usage"))
-            return
-        entry = self.v_cache.get(name)
-        if not entry:
-            self._send_msg(params, self._s("vinfo_not_found", name=name))
-            return
-        if time.time() - float(entry["ts"]) > CACHE_TTL:
-            self._send_msg(params, self._s("vinfo_expired"))
-            return
-        header = self._s("vinfo_header", name=name)
-        footer = self._s("vinfo_footer", icon=entry["icon"], word=entry["word"])
-        self._send_msg(params, header + str(entry["report"]) + footer)
+    def _compose_report(self, filename: str, analysis: dict, ai_result: dict) -> dict:
+        ai_summary = str(ai_result.get("summary") or "").strip()
+        ai_bullets = [str(item).strip() for item in (ai_result.get("bullets") or []) if str(item).strip()]
+        final_verdict = self._merge_verdicts(analysis["verdict"], ai_result.get("verdict_suggestion"))
+        final_icon = VERDICT_ICONS[final_verdict]
 
-    def _send_vclear(self, params: Any):
-        self.v_cache.clear()
-        self._send_msg(params, self._s("vclear_done"))
+        lines = [
+            f"Файл: {filename}",
+            f"Тип: {analysis['detected_label']}",
+            f"Локально: {analysis['icon']} {analysis['verdict']}",
+            f"Итог: {final_icon} {final_verdict}",
+        ]
+        if analysis["mismatch"]:
+            lines.append("Формат: имя файла не совпадает с реальной структурой")
+        lines.append("")
+        lines.append("Кратко:")
+        lines.append(ai_summary or "Серверный разбор не дал краткой сводки.")
+        lines.append("")
+        lines.append("Сигналы:")
+        if analysis["findings"]:
+            for finding in analysis["findings"][:MAX_FINDINGS]:
+                line_info = f" • строка {finding['hits'][0]['line']}" if finding.get('hits') else ""
+                lines.append(f"- [{finding['severity']}] {finding['title']}{line_info}")
+        else:
+            lines.append("- Явных красных флагов локальный слой не нашёл.")
+        if ai_bullets:
+            lines.append("")
+            lines.append("AI отметил:")
+            for item in ai_bullets:
+                lines.append(f"- {item}")
+        return {
+            "verdict": final_verdict,
+            "icon": final_icon,
+            "report": "\n".join(lines).strip(),
+        }
 
-    def _send_vhelp(self, params: Any):
-        self._send_msg(params, self._s("vhelp_text"))
+    def _cache_key(self, filename: str, code: str) -> str:
+        return hashlib.sha256(f"{filename}\n{code}".encode("utf-8", "ignore")).hexdigest()
+
+    def _analyze_text_task(self, filename: str, code_content: str, peer_id: Optional[int], reply_to: Any = None):
+        self._start_loading_dialog("NeuralV", [
+            "Собираю структуру…",
+            "Сверяю сигнатуры…",
+            "Подключаю второй анализ…",
+            "Готовлю итог…",
+        ])
+        try:
+            cache_key = self._cache_key(filename, code_content)
+            cached = self.analysis_cache.get(cache_key)
+            if cached and (time.time() - cached.get("ts", 0)) < CACHE_TTL:
+                result = cached["result"]
+            else:
+                analysis = analyze_code(filename, code_content)
+                ai_result = self._request_ai_review(filename, code_content, analysis)
+                result = self._compose_report(filename, analysis, ai_result)
+                self.analysis_cache[cache_key] = {"ts": time.time(), "result": result}
+            self._show_result_dialog(filename, result, peer_id, reply_to)
+        except Exception as error:
+            log(f"[NeuralV] analyze text task failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось завершить проверку.")
+        finally:
+            self._dismiss_loading_dialog()
+
+    def _show_result_dialog(self, filename: str, result: dict, peer_id: Optional[int], reply_to: Any = None):
+        self._last_report_text = result["report"]
+        self._last_report_peer = peer_id
+
+        def action():
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                self._send_report_to_chat(peer_id, reply_to, result["report"])
+                return
+            builder = AlertDialogBuilder(activity)
+            builder.set_title(f"{result['icon']} {result['verdict']}")
+            builder.set_message(result["report"])
+            builder.set_positive_button("Отправить в чат", lambda d, w: (self._send_report_to_chat(peer_id, reply_to, result["report"]), d.dismiss()))
+            builder.set_negative_button("Закрыть", lambda d, w: d.dismiss())
+            builder.show()
+            if result["verdict"] == "Опасно":
+                BulletinHelper.show_error(f"{result['icon']} {result['verdict']}")
+            elif result["verdict"] == "Осторожно":
+                BulletinHelper.show_info(f"{result['icon']} {result['verdict']}")
+            else:
+                BulletinHelper.show_success(f"{result['icon']} {result['verdict']}")
+        run_on_ui_thread(action)
+
+    def _send_report_to_chat(self, peer_id: Optional[int], reply_to: Any, report: str):
+        target_peer = peer_id or self._get_current_dialog_id()
+        if not target_peer:
+            self._show_error("NeuralV: не удалось определить чат для отправки.")
+            return
+        blocks = []
+        current = ""
+        for line in report.splitlines():
+            candidate = line if not current else current + "\n" + line
+            if len(candidate) <= 3500:
+                current = candidate
+            else:
+                if current:
+                    blocks.append(current)
+                current = line
+        if current:
+            blocks.append(current)
+        for index, block in enumerate(blocks or [report]):
+            payload = {"peer": target_peer, "message": block}
+            if index == 0 and reply_to:
+                payload["replyToMsg"] = reply_to
+            self._send_payload(payload)
+        self._show_success("NeuralV: отчёт отправлен в чат.")
+
+    def _scan_installed_plugins_task(self):
+        self._start_loading_dialog("NeuralV", [
+            "Ищу установленные плагины…",
+            "Проверяю структуру…",
+            "Добираю спорные случаи…",
+            "Собираю сводку…",
+        ])
+        try:
+            controller = PluginsController.getInstance()
+            java_list = ArrayList(controller.plugins.values())
+            plugins = list(java_list.toArray())
+            results = []
+            for plugin in plugins[:MAX_BATCH_RESULTS]:
+                try:
+                    plugin_id = str(plugin.getId())
+                    plugin_path = str(controller.getPluginPath(plugin_id))
+                    if not plugin_path or not os.path.isfile(plugin_path):
+                        continue
+                    with open(plugin_path, "rb") as handle:
+                        raw = handle.read(self._get_max_bytes() + 1)
+                    if len(raw) > self._get_max_bytes() or _is_probably_binary(raw):
+                        continue
+                    code = _decode_text(raw)
+                    if not code.strip():
+                        continue
+                    local = analyze_code(os.path.basename(plugin_path), code)
+                    if local["verdict"] == "Безопасно" and local["score"] < 4:
+                        final = {"verdict": local["verdict"], "icon": local["icon"], "report": "Явных спорных сигналов нет."}
+                    else:
+                        ai_result = self._request_ai_review(os.path.basename(plugin_path), code, local)
+                        final = self._compose_report(os.path.basename(plugin_path), local, ai_result)
+                    results.append({
+                        "name": os.path.basename(plugin_path),
+                        "verdict": final["verdict"],
+                        "icon": final["icon"],
+                    })
+                except Exception as error:
+                    log(f"[NeuralV] batch plugin scan failed: {error}")
+            if not results:
+                self._show_error("NeuralV: не удалось собрать список установленных плагинов.")
+                return
+            order = {"Безопасно": 0, "Осторожно": 1, "Опасно": 2}
+            results.sort(key=lambda item: order[item["verdict"]], reverse=True)
+            lines = ["Установленные плагины:", ""]
+            for item in results:
+                lines.append(f"{item['icon']} {item['name']} — {item['verdict']}")
+            summary = "\n".join(lines)
+            self._show_result_dialog("Установленные плагины", {
+                "verdict": results[0]["verdict"],
+                "icon": results[0]["icon"],
+                "report": summary,
+            }, self._get_current_dialog_id())
+        except Exception as error:
+            log(f"[NeuralV] scan installed plugins failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось завершить пакетную проверку.")
+        finally:
+            self._dismiss_loading_dialog()
 
     def _normalize_path_candidate(self, value: Any) -> str:
         if value is None:
@@ -838,20 +1006,17 @@ class NeuralVPlugin(BasePlugin):
             loader = get_file_loader()
         except Exception:
             loader = None
-
         if loader is not None:
             for force in (True, False):
                 try:
                     add(loader.getPathToAttach(document, force))
                 except Exception:
                     pass
-
         for attr in ("path", "localPath", "attachPath", "filePath", "local_path", "file_path"):
             try:
                 add(getattr(document, attr, None))
             except Exception:
                 pass
-
         if reply_msg is not None:
             for holder in (reply_msg, getattr(reply_msg, "messageOwner", None)):
                 if holder is None:
@@ -861,13 +1026,11 @@ class NeuralVPlugin(BasePlugin):
                         add(getattr(holder, attr, None))
                     except Exception:
                         pass
-
         return candidates
 
     def _pick_ready_document_path(self, document: Any, reply_msg: Any = None, timeout_sec: int = 30) -> str:
         loader = get_file_loader()
-
-        def find_ready_path() -> str:
+        def find_ready():
             for path in self._collect_document_paths(document, reply_msg):
                 try:
                     if os.path.isfile(path) and os.path.getsize(path) > 0:
@@ -875,122 +1038,89 @@ class NeuralVPlugin(BasePlugin):
                 except Exception:
                     continue
             return ""
-
-        path = find_ready_path()
+        path = find_ready()
         if path:
             return path
-
         try:
             loader.loadFile(document, "neuralv", FileLoader.PRIORITY_HIGH, 1)
         except Exception:
             pass
-
         for _ in range(timeout_sec):
-            path = find_ready_path()
+            path = find_ready()
             if path:
                 return path
             time.sleep(1)
-
-        raise RuntimeError(self._s("download_error"))
-
-    def _read_document_bytes(self, document: Any, reply_msg: Any = None) -> bytes:
-        path = self._pick_ready_document_path(document, reply_msg)
-        with open(path, "rb") as fh:
-            return fh.read()
-
-    def _analyze_bytes(self, params: Any, filename: str, raw: bytes):
-        max_bytes = self._get_max_bytes()
-        if len(raw) > max_bytes:
-            self._show_error("too_big", mb=max_bytes // (1024 * 1024))
-            return
-        if looks_binary(raw, filename):
-            self._show_error("binary_file")
-            return
-        text = raw.decode("utf-8", errors="ignore")
-        if not text.strip():
-            self._show_error("no_content")
-            return
-        analysis = LocalAnalyzer(text, filename).analyze()
-        self._send_report(params, filename, analysis)
+        raise RuntimeError("NeuralV: не удалось загрузить файл.")
 
     def _analyze_file_task(self, params: Any, document: Any, reply_msg: Any = None):
         try:
             filename = getattr(document, "file_name_fixed", None) or f"file_{int(time.time())}.txt"
-            raw = self._read_document_bytes(document, reply_msg)
-            self._analyze_bytes(params, filename, raw)
-        except RuntimeError as e:
-            log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
-            if str(e) == self._s("download_error"):
-                self._show_error("download_error")
-            else:
-                self._show_runtime_error(e)
-        except Exception as e:
-            log(f"[NeuralV] _analyze_file_task: {traceback.format_exc()}")
-            self._show_runtime_error(e)
-
-    def _analyze_text_task(self, params: Any, text: str, filename: str):
-        try:
-            max_bytes = self._get_max_bytes()
-            if len(text.encode("utf-8", "ignore")) > max_bytes:
-                self._show_error("too_big", mb=max_bytes // (1024 * 1024))
+            path = self._pick_ready_document_path(document, reply_msg)
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            if len(raw) > self._get_max_bytes():
+                self._show_error("NeuralV: файл слишком большой для проверки.")
                 return
-            analysis = LocalAnalyzer(text, filename).analyze()
-            self._send_report(params, filename, analysis)
-        except Exception as e:
-            log(f"[NeuralV] _analyze_text_task: {traceback.format_exc()}")
-            self._show_runtime_error(e)
+            if _is_probably_binary(raw):
+                self._show_error("NeuralV: нужен текстовый файл с кодом.")
+                return
+            content = _decode_text(raw)
+            if not content.strip():
+                self._show_error("NeuralV: в файле нет текста для проверки.")
+                return
+            peer_id = getattr(params, "peer", None)
+            reply_to = getattr(params, "replyToMsg", None)
+            self._analyze_text_task(filename, content, peer_id, reply_to)
+        except Exception as error:
+            log(f"[NeuralV] analyze file task failed: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось завершить проверку.")
 
-    def on_send_message_hook(self, account: int, params: Any) -> HookResult:
+    def _on_context_check(self, context: Dict[str, Any]):
+        try:
+            message_obj = context.get("message")
+            if not message_obj:
+                self._show_error("NeuralV: не удалось получить сообщение для проверки.")
+                return
+            if hasattr(message_obj, "messageOwner") and MessageObject.getDocument(message_obj.messageOwner):
+                document = MessageObject.getDocument(message_obj.messageOwner)
+                params = type("Ctx", (), {})()
+                params.peer = self._get_current_dialog_id()
+                params.replyToMsg = getattr(message_obj, "messageOwner", None)
+                run_on_queue(lambda: self._analyze_file_task(params, document, message_obj))
+                return
+            text = getattr(getattr(message_obj, "messageOwner", None), "message", None)
+            if text:
+                run_on_queue(lambda: self._analyze_text_task(f"snippet_{int(time.time())}.txt", text, self._get_current_dialog_id(), getattr(message_obj, "messageOwner", None)))
+                return
+            self._show_error("NeuralV: в этом сообщении нечего проверять.")
+        except Exception as error:
+            log(f"[NeuralV] context check error: {error}\n{traceback.format_exc()}")
+            self._show_error("NeuralV: не удалось подготовить сообщение к проверке.")
+
+    def on_send_message_hook(self, account, params):
         if not hasattr(params, "message") or not isinstance(params.message, str):
             return HookResult()
-
         msg = params.message.strip()
-        cmd = msg.lower()
-
-        if cmd == VLIST_CMD:
-            run_on_queue(lambda: self._send_vlist(params))
-            return HookResult(strategy=HookStrategy.CANCEL)
-
-        if cmd == VCLEAR_CMD:
-            run_on_queue(lambda: self._send_vclear(params))
-            return HookResult(strategy=HookStrategy.CANCEL)
-
-        if cmd == VHELP_CMD:
-            run_on_queue(lambda: self._send_vhelp(params))
-            return HookResult(strategy=HookStrategy.CANCEL)
-
-        if cmd.startswith(VINFO_CMD):
-            args = msg[len(VINFO_CMD):].strip()
-            run_on_queue(lambda: self._send_vinfo(params, args))
-            return HookResult(strategy=HookStrategy.CANCEL)
-
-        if cmd != VCHECK_CMD:
+        if not msg.lower().startswith(NV_CMD):
             return HookResult()
-
-        if not hasattr(params, "replyToMsg") or not params.replyToMsg:
-            self._show_error("no_reply")
+        args = msg[len(NV_CMD):].strip().lower()
+        if args == "all":
+            run_on_queue(self._scan_installed_plugins_task)
             return HookResult(strategy=HookStrategy.CANCEL)
-
-        reply_msg = params.replyToMsg
-        document = None
+        reply_msg = getattr(params, "replyToMsg", None)
+        if not reply_msg:
+            run_on_queue(lambda: self._open_main_menu())
+            return HookResult(strategy=HookStrategy.CANCEL)
         try:
             document = MessageObject.getDocument(reply_msg.messageOwner)
         except Exception:
             document = None
-
-        run_on_ui_thread(lambda: BulletinHelper.show_info(self._s("analyzing")))
-
-        if document:
+        if document is not None:
             run_on_queue(lambda: self._analyze_file_task(params, document, reply_msg))
-        else:
-            try:
-                reply_text = (reply_msg.messageOwner.message or "").strip()
-            except Exception:
-                reply_text = ""
-            if not reply_text:
-                self._show_error("no_content")
-                return HookResult(strategy=HookStrategy.CANCEL)
-            filename = f"snippet_{int(time.time())}.txt"
-            run_on_queue(lambda: self._analyze_text_task(params, reply_text, filename))
-
+            return HookResult(strategy=HookStrategy.CANCEL)
+        text = getattr(getattr(reply_msg, "messageOwner", None), "message", None)
+        if text:
+            run_on_queue(lambda: self._analyze_text_task(f"snippet_{int(time.time())}.txt", text, getattr(params, "peer", None), reply_msg.messageOwner))
+            return HookResult(strategy=HookStrategy.CANCEL)
+        self._show_error("NeuralV: ответьте на текст или текстовый файл.")
         return HookResult(strategy=HookStrategy.CANCEL)

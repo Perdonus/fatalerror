@@ -2,7 +2,7 @@ import { CenteredHeroSection } from '../components/CenteredHeroSection';
 import { StoryScene } from '../components/StoryScene';
 import '../styles/story.css';
 
-const telegramAssetVersion = '2.0.20260326';
+const telegramAssetVersion = '3.0.20260329';
 
 const telegramArtifacts = [
   {
@@ -24,7 +24,7 @@ export function TelegramPage() {
     <div className="page-stack platform-story-shell telegram-page">
       <CenteredHeroSection
         title="NeuralV для Telegram"
-        body="Здесь два отдельных сценария: плагин для Extera/Ayu и модуль для Heroku. Оба остаются локальными и не зависят от внешней AI-проверки."
+        body="Здесь два отдельных сценария: плагин для Extera/Ayu и модуль для Heroku. В обоих локальный анализ идёт первым, а серверный AI подключается как второй короткий ревьюер."
         media={{
           kind: 'image',
           src: '/media/story/telegram.jpg',
@@ -39,12 +39,12 @@ export function TelegramPage() {
       <div className="story-track platform-story-track">
         <StoryScene
           kicker="Telegram"
-          title="Два формата. Один локальный принцип проверки."
-          body="И плагин, и модуль проверяют код локально, без удалённого AI-контурa. Разница только в формате установки и окружении."
-          accent="Extera/Ayu и Heroku больше не расходятся по логике анализа."
+          title="Два формата. Одна логика проверки."
+          body="И плагин, и модуль сначала прогоняют код локально, а затем подключают короткий серверный разбор через NeuralV. Пользователю не нужен никакой API-ключ."
+          accent="Extera/Ayu и Heroku проверяют и .plugin, и .py по одному и тому же правилу."
           visual="telegram"
           mediaAlign="right"
-          chips={['Extera/Ayu', 'Heroku', 'Local-only']}
+          chips={['Extera/Ayu', 'Heroku', 'Local + AI']}
         />
       </div>
 

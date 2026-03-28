@@ -21,6 +21,7 @@ const profileOverviewRoutes = require('./routes/profileOverview');
 const supportChatRoutes = require('./routes/supportChat');
 const releaseNotifierRoutes = require('./routes/releaseNotifier');
 const releaseNotifierAdminRoutes = require('./routes/releaseNotifierAdmin');
+const { PLUGIN_AI_REVIEW_BODY_LIMIT_BYTES } = require('./services/pluginAiReviewService');
 const { resumePendingDeepScans } = require('./services/deepScanService');
 const { resumePendingDesktopScans } = require('./services/desktopScanService');
 const { resumePendingVerifiedAppsJobs } = require('./services/verifiedAppsService');
@@ -91,6 +92,20 @@ const aiLimiter = rateLimit({
 });
 
 app.use(limiter);
+app.use('/api/ai/plugin-review', express.json({ limit: PLUGIN_AI_REVIEW_BODY_LIMIT_BYTES }));
+app.use('/api/ai/plugin-review', (err, req, res, next) => {
+    if (err?.type === 'entity.too.large') {
+        res.status(413).json({
+            error: 'Данные анализа слишком большие. Сократите summary/findings и попробуйте снова.'
+        });
+        return;
+    }
+    if (err instanceof SyntaxError && err?.status === 400 && 'body' in err) {
+        res.status(400).json({ error: 'Некорректный JSON body.' });
+        return;
+    }
+    next(err);
+});
 app.use(express.json({ limit: '24mb' }));
 app.use(express.urlencoded({ extended: true }));
 

@@ -537,10 +537,14 @@ class NeuralVPlugin(BasePlugin):
 
     def _send_payload(self, payload: Dict[str, Any]) -> bool:
         try:
-            send_message(payload)
+            log(f"[NeuralV] send payload -> peer={payload.get('peer')} reply={payload.get('replyToMsg')}")
+            result = send_message(payload)
+            if result is False:
+                log("[NeuralV] send payload returned False")
+                return False
             return True
         except Exception as error:
-            log(f"[NeuralV] send payload failed: {error}")
+            log(f"[NeuralV] send payload failed: {error}\n{traceback.format_exc()}")
             return False
 
     def _show_error(self, text: str):
@@ -551,6 +555,45 @@ class NeuralVPlugin(BasePlugin):
 
     def _show_info(self, text: str):
         run_on_ui_thread(lambda: BulletinHelper.show_info(text))
+
+    def _open_share_modal(self, report: str):
+        def action():
+            fragment = get_last_fragment()
+            activity = fragment.getParentActivity() if fragment else None
+            if not activity:
+                log("[NeuralV] share modal failed: no activity")
+                self._show_error("NeuralV: не удалось открыть окно пересылки.")
+                return
+            try:
+                intent = Intent(Intent.ACTION_SEND)
+                intent.setType("text/plain")
+                intent.putExtra(Intent.EXTRA_TEXT, report)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                package_name = None
+                try:
+                    package_name = activity.getPackageName()
+                except Exception:
+                    package_name = None
+
+                if package_name:
+                    try:
+                        direct_intent = Intent(intent)
+                        direct_intent.setPackage(package_name)
+                        activity.startActivity(direct_intent)
+                        log(f"[NeuralV] opened direct Telegram share modal: package={package_name}")
+                        return
+                    except Exception as direct_error:
+                        log(f"[NeuralV] direct share modal failed for package={package_name}: {direct_error}")
+
+                chooser = Intent.createChooser(intent, "Отправить отчёт")
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activity.startActivity(chooser)
+                log("[NeuralV] opened chooser share modal fallback")
+            except Exception as error:
+                log(f"[NeuralV] share modal failed: {error}\n{traceback.format_exc()}")
+                self._show_error("NeuralV: не удалось открыть окно пересылки.")
+
 
     def _start_loading_dialog(self, title: str, phases: Optional[List[str]] = None):
         self._dismiss_loading_dialog()
@@ -894,8 +937,10 @@ class NeuralVPlugin(BasePlugin):
 
     def _send_report_to_chat(self, peer_id: Optional[int], reply_to: Any, report: str):
         target_peer = peer_id or self._get_current_dialog_id()
+        log(f"[NeuralV] send report requested: peer_id={peer_id} current_dialog={self._get_current_dialog_id()} target={target_peer}")
         if not target_peer:
-            self._show_error("NeuralV: не удалось определить чат для отправки.")
+            log("[NeuralV] target chat not found, opening share modal")
+            self._open_share_modal(report)
             return
         blocks = []
         current = ""
@@ -909,12 +954,22 @@ class NeuralVPlugin(BasePlugin):
                 current = line
         if current:
             blocks.append(current)
+        sent_any = False
         for index, block in enumerate(blocks or [report]):
             payload = {"peer": target_peer, "message": block}
             if index == 0 and reply_to:
                 payload["replyToMsg"] = reply_to
-            self._send_payload(payload)
-        self._show_success("NeuralV: отчёт отправлен в чат.")
+            if self._send_payload(payload):
+                sent_any = True
+            else:
+                log(f"[NeuralV] send report chunk failed at index={index}, opening share modal fallback")
+                self._open_share_modal(report)
+                return
+        if sent_any:
+            self._show_success("NeuralV: отчёт отправлен в чат.")
+        else:
+            log("[NeuralV] no chunks were sent, opening share modal fallback")
+            self._open_share_modal(report)
 
     def _scan_installed_plugins_task(self):
         self._start_loading_dialog("NeuralV", [

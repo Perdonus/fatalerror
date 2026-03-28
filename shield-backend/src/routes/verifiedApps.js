@@ -175,6 +175,8 @@ async function handleCreateVerificationJob(req, res) {
             repository_url: req.body?.repository_url,
             official_site_url: req.body?.official_site_url,
             platform: req.body?.platform,
+            platforms: req.body?.platforms,
+            compatible_platforms: req.body?.compatible_platforms,
             app_name: req.body?.app_name,
             description: req.body?.description,
             release_tag: req.body?.release_tag,
@@ -203,6 +205,8 @@ async function handleCheckVerificationUpdate(req, res) {
         const result = await checkVerificationJobUpdate(req.userId, req.params.id, {
             official_site_url: req.body?.official_site_url,
             platform: req.body?.platform,
+            platforms: req.body?.platforms,
+            compatible_platforms: req.body?.compatible_platforms,
             app_name: req.body?.app_name,
             description: req.body?.description,
             release_tag: req.body?.release_tag,

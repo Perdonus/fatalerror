@@ -28,7 +28,7 @@ from android_utils import OnClickListener, run_on_ui_thread, log
 from ui.alert import AlertDialogBuilder
 from ui.bulletin import BulletinHelper
 
-from android.app import Activity
+from android.app import Activity, Dialog
 from android.content import ClipData, Context, Intent
 from android.graphics import Color
 from android.graphics.drawable import ColorDrawable, GradientDrawable
@@ -857,7 +857,6 @@ class NeuralVPlugin(BasePlugin):
         context = self._dialog_context()
         if context is None:
             return None
-        builder = AlertDialog.Builder(context)
         root = LinearLayout(context)
         root.setOrientation(LinearLayout.VERTICAL)
         root.setPadding(
@@ -977,9 +976,9 @@ class NeuralVPlugin(BasePlugin):
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             row_lp.setMargins(
-                int(AndroidUtilities.dp(8)),
+                int(AndroidUtilities.dp(4)),
                 int(AndroidUtilities.dp(10)),
-                int(AndroidUtilities.dp(8)),
+                int(AndroidUtilities.dp(4)),
                 0,
             )
             card.addView(row_view, row_lp)
@@ -994,9 +993,9 @@ class NeuralVPlugin(BasePlugin):
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             actions_lp.setMargins(
-                int(AndroidUtilities.dp(8)),
+                int(AndroidUtilities.dp(4)),
                 int(AndroidUtilities.dp(12)),
-                int(AndroidUtilities.dp(8)),
+                int(AndroidUtilities.dp(4)),
                 int(AndroidUtilities.dp(10)),
             )
             for action in actions:
@@ -1025,30 +1024,41 @@ class NeuralVPlugin(BasePlugin):
                 actions_wrap.addView(button, button_lp)
             card.addView(actions_wrap, actions_lp)
 
-        builder.setView(root)
-        dialog = builder.create()
-        holder[0] = dialog
         try:
+            dialog = Dialog(context)
+            holder[0] = dialog
+            try:
+                dialog.setCancelable(True)
+                dialog.setCanceledOnTouchOutside(True)
+            except Exception:
+                pass
+            dialog.setContentView(root)
             dialog.show()
             window = dialog.getWindow()
             if window is not None:
                 window.setGravity(Gravity.BOTTOM)
-                window.setDimAmount(0.58)
+                try:
+                    window.setDimAmount(0.58)
+                except Exception as dim_error:
+                    log(f"[NeuralV] sheet window dim setup failed: {dim_error}")
                 try:
                     window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
                     decor = window.getDecorView()
                     if decor is not None:
                         decor.setPadding(0, 0, 0, 0)
-                        self._clear_sheet_parent_backgrounds(decor)
+                        decor.setBackgroundColor(Color.TRANSPARENT)
                     self._clear_sheet_parent_backgrounds(root)
-                    log("[NeuralV] sheet window background set to transparent")
+                    log("[NeuralV] custom sheet window background set to transparent")
                 except Exception as bg_error:
-                    log(f"[NeuralV] sheet window background setup failed: {bg_error}")
-                window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    log(f"[NeuralV] custom sheet window background setup failed: {bg_error}")
+                try:
+                    window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                except Exception as layout_error:
+                    log(f"[NeuralV] custom sheet layout setup failed: {layout_error}")
         except Exception as error:
-            log(f"[NeuralV] show sheet dialog failed: {error}")
+            log(f"[NeuralV] show custom sheet dialog failed: {error}\n{traceback.format_exc()}")
             return None
-        log("[NeuralV] sheet dialog shown, binding swipe close")
+        log("[NeuralV] custom sheet dialog shown, binding swipe close")
         self._bind_sheet_swipe_close(drag_zone, card, holder)
         return dialog
 

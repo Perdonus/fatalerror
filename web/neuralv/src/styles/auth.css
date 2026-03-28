@@ -1196,6 +1196,59 @@
   flex-wrap: wrap;
 }
 
+.developer-app-title-tools {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.developer-app-icon-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.developer-app-icon-button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--nv-text);
+  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.developer-app-icon-button:hover {
+  border-color: rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.08);
+}
+
+.developer-app-icon-button svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.developer-app-icon-button-danger {
+  color: #ffb4bf;
+  border-color: rgba(255, 92, 114, 0.16);
+  background: rgba(255, 92, 114, 0.08);
+}
+
+.developer-app-icon-button-danger:hover {
+  border-color: rgba(255, 92, 114, 0.28);
+  background: rgba(255, 92, 114, 0.12);
+}
+
 .developer-app-title-row strong,
 .developer-app-row strong {
   color: var(--nv-text);
@@ -1253,6 +1306,60 @@
   align-self: flex-start;
 }
 
+.developer-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.profile-avatar-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.profile-avatar-field-preview {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--nv-text);
+  font-size: 1.2rem;
+  font-weight: 780;
+}
+
+.profile-avatar-field-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-avatar-field-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.profile-avatar-field-copy strong {
+  color: var(--nv-text);
+}
+
+.profile-avatar-field-copy span {
+  color: var(--nv-text-soft);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.profile-avatar-field-input {
+  display: none;
+}
+
 .developer-app-card-public {
   height: auto;
   min-height: 100%;
@@ -1274,6 +1381,7 @@
   .profile-panel-head-wide,
   .developer-app-card-head,
   .developer-app-title-row,
+  .developer-app-title-tools,
   .developer-app-row,
   .profile-system-head,
   .profile-history-head,
@@ -1284,6 +1392,10 @@
   }
 
   .profile-verify-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-avatar-field {
     grid-template-columns: 1fr;
   }
 }

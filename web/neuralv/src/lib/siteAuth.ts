@@ -227,6 +227,7 @@ export type SiteVerifiedAppReviewRequest = {
   appName: string;
   officialSiteUrl?: string;
   description?: string;
+  avatarDataUrl?: string;
   platform?: SiteVerifiedAppPlatform;
   platforms?: SiteVerifiedAppPlatform[];
   releaseTag?: string;
@@ -1767,6 +1768,7 @@ export async function submitVerifiedAppReview(
       repository_url: payload.repositoryUrl,
       official_site_url: payload.officialSiteUrl,
       description: payload.description,
+      avatar_data_url: payload.avatarDataUrl,
       release_tag: payload.releaseTag,
       release_asset_name: payload.releaseAssetName
     }),
@@ -1781,6 +1783,48 @@ export async function submitVerifiedAppReview(
     ok: true,
     data: {
       message: readMessage(result.data)
+    }
+  };
+}
+
+export async function updateVerifiedApp(
+  appId: string,
+  payload: SiteVerifiedAppReviewRequest
+): Promise<SiteAuthResult<{ message?: string; state?: string; app?: SiteVerifiedApp | null }>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as unknown as SiteAuthResult<{ message?: string; state?: string; app?: SiteVerifiedApp | null }>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>(`/profile/developer/apps/${encodeURIComponent(appId)}`, {
+    method: 'PUT',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    body: JSON.stringify({
+      app_name: payload.appName,
+      platform: payload.platform,
+      platforms: payload.platforms,
+      repository_url: payload.repositoryUrl,
+      official_site_url: payload.officialSiteUrl,
+      description: payload.description,
+      avatar_data_url: payload.avatarDataUrl,
+      release_tag: payload.releaseTag,
+      release_asset_name: payload.releaseAssetName
+    }),
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<{ message?: string; state?: string; app?: SiteVerifiedApp | null }>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      message: readMessage(result.data),
+      state: typeof result.data?.state === 'string' ? String(result.data.state) : undefined,
+      app: result.data?.app && typeof result.data.app === 'object'
+        ? mapVerifiedApp(result.data.app as Record<string, unknown>)
+        : null
     }
   };
 }
@@ -1821,6 +1865,32 @@ export async function submitVerifiedAppUpdateCheck(
       app: result.data?.app && typeof result.data.app === 'object'
         ? mapVerifiedApp(result.data.app as Record<string, unknown>)
         : null
+    }
+  };
+}
+
+export async function deleteVerifiedApp(
+  appId: string
+): Promise<SiteAuthResult<{ message?: string }>> {
+  const sessionResult = await getAuthorizedSession();
+  if (!sessionResult.ok || !sessionResult.data) {
+    return sessionResult as unknown as SiteAuthResult<{ message?: string }>;
+  }
+
+  const result = await requestJson<Record<string, unknown>>(`/profile/developer/apps/${encodeURIComponent(appId)}`, {
+    method: 'DELETE',
+    baseUrl: VERIFIED_APPS_BASE_URL,
+    headers: { Authorization: `Bearer ${sessionResult.data.token}` }
+  });
+
+  if (!result.ok) {
+    return result as SiteAuthResult<{ message?: string }>;
+  }
+
+  return {
+    ok: true,
+    data: {
+      message: readMessage(result.data)
     }
   };
 }

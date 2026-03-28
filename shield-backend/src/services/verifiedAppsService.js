@@ -1,9 +1,16 @@
 const crypto = require('crypto');
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const { fetchUserById, sanitizeAccountUser } = require('./accountEntitlementsService');
 const { isMailConfigured, sendMail, queueMailTask } = require('../utils/mail');
 const { isVerifiedAppsAiConfigured, reviewVerifiedRepositoryWithAi } = require('./verifiedAppsAiReviewService');
+
+const execFileAsync = promisify(execFile);
 
 const GITHUB_API_BASE = String(process.env.GITHUB_API_BASE || 'https://api.github.com').replace(/\/$/, '');
 const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '').trim();
@@ -25,6 +32,9 @@ const VERIFIED_APP_AI_BASE_URL = String(process.env.VERIFIED_APP_AI_BASE_URL || 
 const VERIFIED_APP_AI_API_KEY = String(process.env.VERIFIED_APP_AI_API_KEY || process.env.SOSISKIBOT_API_KEY || '').trim();
 const VERIFIED_APP_AI_MODEL = String(process.env.VERIFIED_APP_AI_MODEL || 'gpt-4.1-mini').trim();
 const VERIFIED_APP_AI_TIMEOUT_MS = parseInt(process.env.VERIFIED_APP_AI_TIMEOUT_MS || '90000', 10);
+const VERIFIED_APP_AVATAR_MAX_BYTES = parseInt(process.env.VERIFIED_APP_AVATAR_MAX_BYTES || String(10 * 1024 * 1024), 10);
+const VERIFIED_APP_AVATAR_DIR = path.resolve(__dirname, '../../storage/verified-apps/avatars');
+const VERIFIED_APP_AVATAR_PUBLIC_PREFIX = '/basedata/api/verified-apps/assets/';
 
 const VERIFIED_APPS_PLATFORM_ENUM = "ENUM('android','windows','linux','plugins','heroku')";
 const ALLOWED_PLATFORMS = new Set(['android', 'windows', 'linux', 'plugins', 'heroku']);
@@ -308,6 +318,10 @@ function normalizeUrl(value) {
     return String(value || '').trim();
 }
 
+function normalizeOptionalUrl(value) {
+    return normalizeUrl(value || '');
+}
+
 function normalizeAppName(value) {
     return String(value || '')
         .replace(/\s+/g, ' ')
@@ -324,6 +338,121 @@ function normalizeOptionalMessage(value, maxLength = 700) {
 
 function normalizeProjectDescription(value) {
     return normalizeOptionalMessage(value, 1200);
+}
+
+function hasOwn(source, key) {
+    return Boolean(source) && Object.prototype.hasOwnProperty.call(source, key);
+}
+
+function compareStringSets(left, right) {
+    const leftValues = Array.isArray(left) ? [...left].sort() : [];
+    const rightValues = Array.isArray(right) ? [...right].sort() : [];
+    return JSON.stringify(leftValues) === JSON.stringify(rightValues);
+}
+
+function buildManagedAvatarUrl(fileName) {
+    return `${VERIFIED_APP_AVATAR_PUBLIC_PREFIX}${encodeURIComponent(fileName)}`;
+}
+
+function isManagedAvatarUrl(value) {
+    return String(value || '').startsWith(VERIFIED_APP_AVATAR_PUBLIC_PREFIX);
+}
+
+function extractManagedAvatarFileName(value) {
+    const normalized = String(value || '').trim();
+    if (!isManagedAvatarUrl(normalized)) {
+        return null;
+    }
+    const fileName = decodeURIComponent(normalized.slice(VERIFIED_APP_AVATAR_PUBLIC_PREFIX.length));
+    if (!/^[a-f0-9-]+\.jpg$/i.test(fileName)) {
+        return null;
+    }
+    return fileName;
+}
+
+function resolveManagedAvatarPath(fileName) {
+    const safeFileName = String(fileName || '').trim();
+    if (!/^[a-f0-9-]+\.jpg$/i.test(safeFileName)) {
+        return null;
+    }
+    return path.join(VERIFIED_APP_AVATAR_DIR, safeFileName);
+}
+
+async function ensureVerifiedAppAvatarDir() {
+    await fs.mkdir(VERIFIED_APP_AVATAR_DIR, { recursive: true });
+}
+
+async function removeManagedAvatar(value) {
+    const fileName = extractManagedAvatarFileName(value);
+    const targetPath = fileName ? resolveManagedAvatarPath(fileName) : null;
+    if (!targetPath) {
+        return;
+    }
+    try {
+        await fs.rm(targetPath, { force: true });
+    } catch (_) {
+        // ignore avatar cleanup failures
+    }
+}
+
+function parseAvatarDataUrl(dataUrl) {
+    const normalized = String(dataUrl || '').trim();
+    const match = normalized.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif|avif));base64,([a-z0-9+/=\s]+)$/i);
+    if (!match) {
+        const error = new Error('Invalid avatar image');
+        error.code = 'INVALID_AVATAR_IMAGE';
+        throw error;
+    }
+    const mimeType = String(match[1] || '').toLowerCase();
+    const payload = String(match[2] || '').replace(/\s+/g, '');
+    let buffer;
+    try {
+        buffer = Buffer.from(payload, 'base64');
+    } catch (_) {
+        const error = new Error('Invalid avatar image');
+        error.code = 'INVALID_AVATAR_IMAGE';
+        throw error;
+    }
+    if (!buffer.length || buffer.length > VERIFIED_APP_AVATAR_MAX_BYTES) {
+        const error = new Error('Avatar image is too large');
+        error.code = 'AVATAR_IMAGE_TOO_LARGE';
+        throw error;
+    }
+    return { mimeType, buffer };
+}
+
+async function compressManagedAvatar(dataUrl, appId) {
+    const parsed = parseAvatarDataUrl(dataUrl);
+    await ensureVerifiedAppAvatarDir();
+    const tempInputPath = path.join(os.tmpdir(), `verified-app-avatar-${appId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.bin`);
+    const outputFileName = `${String(appId || uuidv4()).replace(/[^a-z0-9-]/gi, '').slice(0, 48)}-${crypto.randomBytes(5).toString('hex')}.jpg`;
+    const outputPath = path.join(VERIFIED_APP_AVATAR_DIR, outputFileName);
+
+    try {
+        await fs.writeFile(tempInputPath, parsed.buffer);
+        await execFileAsync('ffmpeg', [
+            '-y',
+            '-i', tempInputPath,
+            '-vf', 'scale=640:640:force_original_aspect_ratio=decrease,format=yuvj420p',
+            '-frames:v', '1',
+            '-q:v', '5',
+            '-map_metadata', '-1',
+            outputPath
+        ]);
+        const stat = await fs.stat(outputPath);
+        if (!stat.isFile() || stat.size <= 0) {
+            throw new Error('Avatar output missing');
+        }
+        return buildManagedAvatarUrl(outputFileName);
+    } catch (error) {
+        await fs.rm(outputPath, { force: true }).catch(() => {});
+        const wrapped = new Error('Avatar processing failed');
+        wrapped.code = 'AVATAR_PROCESSING_FAILED';
+        wrapped.cause = error;
+        throw wrapped;
+    } finally {
+        await fs.rm(tempInputPath, { force: true }).catch(() => {});
+    }
 }
 
 function normalizeReleaseTag(value) {
@@ -1422,6 +1551,206 @@ async function listMyVerifiedApps(userId, db = pool) {
     return rows.map(toPrivateRecord);
 }
 
+async function updateVerifiedApp(userId, appId, input = {}, db = pool) {
+    await ensureVerifiedAppsSchema(db);
+
+    const user = await fetchUserById(userId, { db });
+    if (!user) {
+        const error = new Error('User not found');
+        error.code = 'USER_NOT_FOUND';
+        throw error;
+    }
+
+    const existing = await fetchVerifiedAppById(appId, db);
+    if (!existing || String(existing.owner_user_id || '') !== String(userId || '')) {
+        const error = new Error('Verified app not found');
+        error.code = 'VERIFIED_APP_NOT_FOUND';
+        throw error;
+    }
+
+    if (['QUEUED', 'RUNNING'].includes(String(existing.status || '').toUpperCase())) {
+        return {
+            kind: 'in_progress',
+            app: toPrivateRecord(existing),
+            message: 'Текущая проверка этого приложения ещё не завершилась.'
+        };
+    }
+
+    const repositoryUrl = hasOwn(input, 'repository_url') ? normalizeUrl(input.repository_url) : normalizeUrl(existing.repository_url);
+    const repositoryChanged = repositoryUrl !== normalizeUrl(existing.repository_url);
+    if (!repositoryUrl) {
+        const error = new Error('Public GitHub repository URL required');
+        error.code = 'INVALID_REPOSITORY_URL';
+        throw error;
+    }
+
+    const requestedAppName = requireAppName(hasOwn(input, 'app_name') ? input.app_name : existing.app_name);
+    const officialSiteUrl = hasOwn(input, 'official_site_url')
+        ? normalizeOptionalUrl(input.official_site_url)
+        : normalizeOptionalUrl(existing.official_site_url);
+    if (officialSiteUrl) {
+        try {
+            const parsed = new URL(officialSiteUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                throw new Error('unsupported');
+            }
+        } catch (_) {
+            const error = new Error('Invalid official site URL');
+            error.code = 'INVALID_OFFICIAL_SITE_URL';
+            throw error;
+        }
+    }
+
+    const projectDescription = hasOwn(input, 'project_description') || hasOwn(input, 'description')
+        ? normalizeProjectDescription(hasOwn(input, 'project_description') ? input.project_description : input.description)
+        : normalizeProjectDescription(existing.project_description);
+    const releaseTag = hasOwn(input, 'release_tag') ? normalizeReleaseTag(input.release_tag) : normalizeReleaseTag(existing.release_tag);
+    const releaseAssetName = hasOwn(input, 'release_asset_name') ? normalizeReleaseAssetName(input.release_asset_name) : normalizeReleaseAssetName(existing.release_asset_name);
+    const platformOverride = normalizePlatform(input.platform || input.platform_override || existing.platform);
+    if (platformOverride && !validatePlatform(platformOverride)) {
+        const error = new Error('Unsupported platform');
+        error.code = 'UNSUPPORTED_PLATFORM';
+        throw error;
+    }
+
+    const compatiblePlatformsInput = parseCompatiblePlatformsInput(
+        hasOwn(input, 'compatible_platforms')
+            ? input.compatible_platforms
+            : (hasOwn(input, 'platforms') ? input.platforms : parseCompatiblePlatformsFromRow(existing))
+    );
+    if (compatiblePlatformsInput.invalid.length > 0) {
+        const error = new Error('Unsupported compatible platform');
+        error.code = 'UNSUPPORTED_PLATFORM';
+        throw error;
+    }
+    const requestedPrimaryPlatform = platformOverride || compatiblePlatformsInput.platforms[0] || existing.platform;
+    const nextCompatiblePlatforms = ensureCompatiblePlatforms(
+        requestedPrimaryPlatform,
+        compatiblePlatformsInput.platforms.length > 0
+            ? compatiblePlatformsInput.platforms
+            : parseCompatiblePlatformsFromRow(existing)
+    );
+    const currentCompatiblePlatforms = parseCompatiblePlatformsFromRow(existing);
+
+    const compatibilityChanged = !compareStringSets(nextCompatiblePlatforms, currentCompatiblePlatforms);
+    const releaseSelectionChanged = releaseTag !== normalizeReleaseTag(existing.release_tag)
+        || releaseAssetName !== normalizeReleaseAssetName(existing.release_asset_name);
+    const requiresReverification = repositoryChanged || compatibilityChanged || releaseSelectionChanged;
+
+    const pendingAvatarDataUrl = hasOwn(input, 'avatar_data_url') && input.avatar_data_url
+        ? String(input.avatar_data_url).trim()
+        : '';
+    let avatarUrl = existing.avatar_url || null;
+
+    if (!requiresReverification) {
+        if (pendingAvatarDataUrl) {
+            const nextAvatarUrl = await compressManagedAvatar(pendingAvatarDataUrl, existing.id);
+            if (nextAvatarUrl !== avatarUrl) {
+                await removeManagedAvatar(avatarUrl);
+                avatarUrl = nextAvatarUrl;
+            }
+        }
+        await db.query(
+            `UPDATE verified_apps
+             SET app_name = ?,
+                 official_site_url = ?,
+                 project_description = ?,
+                 avatar_url = ?,
+                 updated_at = ?
+             WHERE id = ?`,
+            [
+                requestedAppName,
+                officialSiteUrl || null,
+                projectDescription,
+                avatarUrl || null,
+                nowMs(),
+                existing.id
+            ]
+        );
+        return {
+            kind: 'updated',
+            app: toPrivateRecord(await fetchVerifiedAppById(existing.id, db)),
+            message: 'Изменения сохранены.'
+        };
+    }
+
+    if (!user.is_verified_developer || !isVerifiedAppsAiConfigured()) {
+        const error = new Error(!user.is_verified_developer ? 'Developer verification required' : 'AI review is not configured');
+        error.code = !user.is_verified_developer ? 'VERIFIED_DEVELOPER_REQUIRED' : 'VERIFICATION_AI_NOT_CONFIGURED';
+        throw error;
+    }
+
+    const discovery = await discoverVerificationSubmission({
+        repositoryUrl,
+        appName: requestedAppName,
+        platform: platformOverride || nextCompatiblePlatforms[0] || existing.platform,
+        releaseTag,
+        releaseAssetName
+    });
+
+    if (pendingAvatarDataUrl) {
+        const nextAvatarUrl = await compressManagedAvatar(pendingAvatarDataUrl, existing.id);
+        if (nextAvatarUrl !== avatarUrl) {
+            await removeManagedAvatar(avatarUrl);
+            avatarUrl = nextAvatarUrl;
+        }
+    }
+
+    const queuedApp = await queueExistingVerificationUpdate(existing, {
+        repo: discovery.repoMeta,
+        selectedRelease: discovery.release,
+        selectedAsset: discovery.asset,
+        selectedPlatform: discovery.platform,
+        compatiblePlatforms: ensureCompatiblePlatforms(discovery.platform, nextCompatiblePlatforms),
+        appName: requestedAppName,
+        officialSiteUrl,
+        projectDescription,
+        avatarUrl,
+        user
+    }, db);
+
+    return {
+        kind: 'update_queued',
+        app: queuedApp,
+        message: 'Изменения сохранены. Перепроверка уже запущена.'
+    };
+}
+
+async function deleteVerifiedApp(userId, appId, db = pool) {
+    await ensureVerifiedAppsSchema(db);
+    const existing = await fetchVerifiedAppById(appId, db);
+    if (!existing || String(existing.owner_user_id || '') !== String(userId || '')) {
+        const error = new Error('Verified app not found');
+        error.code = 'VERIFIED_APP_NOT_FOUND';
+        throw error;
+    }
+
+    await db.query('DELETE FROM verified_apps WHERE id = ? LIMIT 1', [existing.id]);
+    await removeManagedAvatar(existing.avatar_url);
+    return { success: true };
+}
+
+async function sendVerifiedAppAsset(fileName, res) {
+    await ensureVerifiedAppAvatarDir();
+    const assetPath = resolveManagedAvatarPath(fileName);
+    if (!assetPath) {
+        res.status(404).json({ error: 'Файл не найден.' });
+        return;
+    }
+    try {
+        const stat = await fs.stat(assetPath);
+        if (!stat.isFile()) {
+            res.status(404).json({ error: 'Файл не найден.' });
+            return;
+        }
+        res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+        res.type('image/jpeg');
+        res.sendFile(assetPath);
+    } catch (_) {
+        res.status(404).json({ error: 'Файл не найден.' });
+    }
+}
+
 async function listPublicVerifiedApps({ platform = null, limit = 24, db = pool } = {}) {
     await ensureVerifiedAppsSchema(db);
     const normalizedLimit = Math.min(60, Math.max(1, parseInt(limit, 10) || 24));
@@ -1526,6 +1855,7 @@ async function queueExistingVerificationUpdate(existing, {
     appName,
     officialSiteUrl,
     projectDescription,
+    avatarUrl,
     user
 }, db = pool) {
     const compatibilityJson = serializeCompatiblePlatforms(selectedPlatform, compatiblePlatforms);
@@ -1546,6 +1876,7 @@ async function queueExistingVerificationUpdate(existing, {
              platform = ?,
              platform_compatibility_json = ?,
              app_name = ?,
+             avatar_url = ?,
              author_name = ?,
              status = 'QUEUED',
              sha256 = NULL,
@@ -1577,6 +1908,7 @@ async function queueExistingVerificationUpdate(existing, {
             selectedPlatform,
             compatibilityJson,
             appName,
+            avatarUrl || null,
             String(user.name || '').slice(0, 120) || 'Unknown',
             now,
             now,
@@ -1675,6 +2007,9 @@ async function createVerificationJob(userId, input, db = pool) {
             };
         }
 
+        const nextAvatarUrl = hasOwn(input, 'avatar_data_url') && input.avatar_data_url
+            ? await compressManagedAvatar(input.avatar_data_url, uuidv4())
+            : null;
         const app = await queueExistingVerificationUpdate(existingByRepo, {
             repo,
             selectedRelease,
@@ -1684,6 +2019,7 @@ async function createVerificationJob(userId, input, db = pool) {
             appName,
             officialSiteUrl,
             projectDescription,
+            avatarUrl: nextAvatarUrl || existingByRepo.avatar_url || null,
             user
         }, db);
         return {
@@ -1724,10 +2060,13 @@ async function createVerificationJob(userId, input, db = pool) {
 
     const now = nowMs();
     const id = uuidv4();
+    const nextAvatarUrl = hasOwn(input, 'avatar_data_url') && input.avatar_data_url
+        ? await compressManagedAvatar(input.avatar_data_url, id)
+        : null;
     await db.query(
         `INSERT INTO verified_apps
-         (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, platform_compatibility_json, app_name, author_name, status, queued_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
+         (id, owner_user_id, repository_url, repository_owner, repository_name, release_artifact_url, release_tag, release_name, release_asset_name, release_published_at, official_site_url, project_description, platform, platform_compatibility_json, app_name, avatar_url, author_name, status, queued_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?)`,
         [
             id,
             userId,
@@ -1744,6 +2083,7 @@ async function createVerificationJob(userId, input, db = pool) {
             selectedPlatform,
             serializeCompatiblePlatforms(selectedPlatform, compatiblePlatforms),
             appName,
+            nextAvatarUrl,
             String(user.name || '').slice(0, 120) || 'Unknown',
             now,
             now,
@@ -1832,6 +2172,9 @@ async function checkVerificationJobUpdate(userId, appId, input = {}, db = pool) 
     const releaseTag = normalizeReleaseTag(input.release_tag);
     const releaseAssetName = normalizeReleaseAssetName(input.release_asset_name);
     const requestedAppName = normalizeAppName(input.app_name) || normalizeAppName(existing.app_name) || 'NeuralV App';
+    const avatarUrl = hasOwn(input, 'avatar_data_url') && input.avatar_data_url
+        ? await compressManagedAvatar(input.avatar_data_url, existing.id)
+        : existing.avatar_url;
 
     const discovery = await discoverVerificationSubmission({
         repositoryUrl: existing.repository_url,
@@ -1862,6 +2205,7 @@ async function checkVerificationJobUpdate(userId, appId, input = {}, db = pool) 
         appName: requestedAppName,
         officialSiteUrl,
         projectDescription,
+        avatarUrl,
         user
     }, db);
 
@@ -1955,7 +2299,7 @@ async function processVerificationJob(id, db = pool) {
             platform: analysis.platform || job.platform,
             platform_compatibility_json: serializeCompatiblePlatforms(analysis.platform || job.platform, analysis.compatiblePlatforms),
             app_name: analysis.appName || job.app_name,
-            avatar_url: analysis.avatarUrl,
+            avatar_url: isManagedAvatarUrl(job.avatar_url) ? job.avatar_url : analysis.avatarUrl,
             sha256: analysis.artifact.sha256,
             artifact_file_name: analysis.artifact.fileName,
             artifact_size_bytes: analysis.artifact.sizeBytes,
@@ -2338,11 +2682,14 @@ module.exports = {
     createDeveloperApplication,
     reviewDeveloperApplicationAction,
     createVerificationJob,
+    updateVerifiedApp,
     checkVerificationJobUpdate,
+    deleteVerifiedApp,
     listMyVerifiedApps,
     listPublicVerifiedApps,
     fetchVerifiedAppById,
     fetchPublicVerifiedAppById,
+    sendVerifiedAppAsset,
     resumePendingVerifiedAppsJobs,
     findTrustedVerifiedAppMatch
 };

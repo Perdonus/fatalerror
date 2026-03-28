@@ -5,10 +5,13 @@ const {
     createDeveloperApplication,
     reviewDeveloperApplicationAction,
     createVerificationJob,
+    updateVerifiedApp,
     checkVerificationJobUpdate,
+    deleteVerifiedApp,
     listMyVerifiedApps,
     listPublicVerifiedApps,
-    fetchPublicVerifiedAppById
+    fetchPublicVerifiedAppById,
+    sendVerifiedAppAsset
 } = require('../services/verifiedAppsService');
 
 const router = express.Router();
@@ -67,6 +70,12 @@ function mapServiceError(error) {
             return { status: 400, error: 'Ссылка на сайт указана неверно.' };
         case 'VERIFIED_APP_NOT_FOUND':
             return { status: 404, error: 'Приложение не найдено.' };
+        case 'INVALID_AVATAR_IMAGE':
+            return { status: 400, error: 'Картинка приложения должна быть обычным изображением.' };
+        case 'AVATAR_IMAGE_TOO_LARGE':
+            return { status: 413, error: 'Картинка слишком большая. Возьмите файл поменьше.' };
+        case 'AVATAR_PROCESSING_FAILED':
+            return { status: 422, error: 'Не удалось подготовить картинку приложения.' };
         case 'REPOSITORY_RELEASES_NOT_FOUND':
             return { status: 422, error: 'Для проверки нужен публичный GitHub Release с файлом сборки. Добавьте релиз в репозиторий и попробуйте ещё раз.' };
         case 'REPOSITORY_RELEASE_ASSET_NOT_FOUND':
@@ -179,6 +188,7 @@ async function handleCreateVerificationJob(req, res) {
             compatible_platforms: req.body?.compatible_platforms,
             app_name: req.body?.app_name,
             description: req.body?.description,
+            avatar_data_url: req.body?.avatar_data_url,
             release_tag: req.body?.release_tag,
             release_asset_name: req.body?.release_asset_name
         });
@@ -209,6 +219,7 @@ async function handleCheckVerificationUpdate(req, res) {
             compatible_platforms: req.body?.compatible_platforms,
             app_name: req.body?.app_name,
             description: req.body?.description,
+            avatar_data_url: req.body?.avatar_data_url,
             release_tag: req.body?.release_tag,
             release_asset_name: req.body?.release_asset_name
         });
@@ -226,12 +237,56 @@ async function handleCheckVerificationUpdate(req, res) {
     }
 }
 
+async function handleUpdateVerifiedApp(req, res) {
+    try {
+        const result = await updateVerifiedApp(req.userId, req.params.id, {
+            repository_url: req.body?.repository_url,
+            official_site_url: req.body?.official_site_url,
+            platform: req.body?.platform,
+            platforms: req.body?.platforms,
+            compatible_platforms: req.body?.compatible_platforms,
+            app_name: req.body?.app_name,
+            description: req.body?.description,
+            project_description: req.body?.project_description,
+            release_tag: req.body?.release_tag,
+            release_asset_name: req.body?.release_asset_name,
+            avatar_data_url: req.body?.avatar_data_url
+        });
+
+        const status = result?.kind === 'update_queued' ? 202 : 200;
+        res.status(status).json({
+            success: true,
+            state: result?.kind || 'updated',
+            app: result?.app || null,
+            message: result?.message || 'Изменения сохранены.'
+        });
+    } catch (error) {
+        const payload = mapServiceError(error);
+        res.status(payload.status).json(payload);
+    }
+}
+
+async function handleDeleteVerifiedApp(req, res) {
+    try {
+        await deleteVerifiedApp(req.userId, req.params.id);
+        res.json({ success: true, message: 'Приложение удалено.' });
+    } catch (error) {
+        const payload = mapServiceError(error);
+        res.status(payload.status).json(payload);
+    }
+}
+
 router.get(['/verified-apps/developer/status', '/profile/developer/status'], auth, handleDeveloperStatus);
 router.post(['/verified-apps/developer/apply', '/profile/developer/apply'], auth, handleDeveloperApply);
 router.get('/verified-apps/developer/applications/:id/:action', handleDeveloperApplicationReview);
 router.get(['/verified-apps/mine', '/profile/developer/apps'], auth, handleMyVerifiedApps);
 router.post(['/verified-apps/mine', '/profile/developer/apps/verify'], auth, handleCreateVerificationJob);
+router.put(['/verified-apps/mine/:id', '/profile/developer/apps/:id'], auth, handleUpdateVerifiedApp);
 router.post(['/verified-apps/mine/:id/check-update', '/profile/developer/apps/:id/check-update'], auth, handleCheckVerificationUpdate);
+router.delete(['/verified-apps/mine/:id', '/profile/developer/apps/:id'], auth, handleDeleteVerifiedApp);
+router.get('/verified-apps/assets/:fileName', (req, res) => {
+    void sendVerifiedAppAsset(req.params.fileName, res);
+});
 
 router.get('/verified-apps', async (req, res) => {
     try {

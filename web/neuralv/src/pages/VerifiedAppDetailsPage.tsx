@@ -149,7 +149,7 @@ export function VerifiedAppDetailsPage() {
     <div className="page-stack platform-story-shell">
       <CenteredHeroSection
         title={app.appName}
-        body={app.publicSummary || app.projectDescription || 'Проверенное приложение из каталога NeuralV.'}
+        body={app.projectDescription || app.publicSummary || 'Проверенное приложение из каталога NeuralV.'}
         actions={[
           ...(app.releaseArtifactUrl ? [{ label: 'Скачать', href: app.releaseArtifactUrl, external: true }] : []),
           ...(app.repositoryUrl ? [{ label: 'Репозиторий', href: app.repositoryUrl, external: true, variant: 'secondary' as const }] : []),

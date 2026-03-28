@@ -1,4 +1,4 @@
-import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { PasswordStrength } from '../components/PasswordStrength';
 import { useSiteAuth } from '../components/SiteAuthProvider';
@@ -17,6 +17,8 @@ import {
   requestProfileNameChange,
   requestProfilePasswordChange,
   resolveDeveloperApplicationState,
+  updateVerifiedApp,
+  deleteVerifiedApp,
   submitDeveloperApplication,
   submitVerifiedAppReview,
   submitVerifiedAppUpdateCheck,
@@ -41,6 +43,8 @@ type ReviewFormState = {
   appName: string;
   officialSiteUrl: string;
   description: string;
+  avatarDataUrl: string;
+  avatarPreviewUrl: string;
   platforms: SiteVerifiedAppPlatform[];
   releaseTag: string;
   releaseAssetName: string;
@@ -69,6 +73,10 @@ type VerifiedDeveloperWorkspaceProps = {
   setReviewForm: Dispatch<SetStateAction<ReviewFormState>>;
   onVerify: (event: FormEvent) => Promise<void>;
   onCheckUpdate: (app: SiteVerifiedApp) => Promise<void>;
+  onEdit: (app: SiteVerifiedApp) => void;
+  onDelete: (app: SiteVerifiedApp) => Promise<void>;
+  editingAppId: string | null;
+  onCancelEdit: () => void;
 };
 
 type DeveloperApplicationCardProps = {
@@ -112,10 +120,21 @@ const EMPTY_REVIEW_FORM: ReviewFormState = {
   appName: '',
   officialSiteUrl: '',
   description: '',
+  avatarDataUrl: '',
+  avatarPreviewUrl: '',
   platforms: [],
   releaseTag: '',
   releaseAssetName: ''
 };
+
+async function readImageAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error || new Error('Не удалось прочитать картинку.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function sanitizeReviewPlatforms(platforms: Array<string | SiteVerifiedAppPlatform> | null | undefined): SiteVerifiedAppPlatform[] {
   return [...new Set(
@@ -139,6 +158,8 @@ function buildReviewFormFromApp(app: SiteVerifiedApp): ReviewFormState {
     appName: app.appName || '',
     officialSiteUrl: app.officialSiteUrl || '',
     description: app.projectDescription || '',
+    avatarDataUrl: '',
+    avatarPreviewUrl: app.avatarUrl || '',
     platforms: sanitizeReviewPlatforms(app.compatiblePlatforms || [String(app.platform || '')]),
     releaseTag: app.releaseTag || '',
     releaseAssetName: app.releaseAssetName || ''
@@ -325,9 +346,15 @@ function ProfileScanCard({ scan }: { scan: SiteProfileScan }) {
 }
 
 function ProfileVerifiedAppCard({
-  app
+  app,
+  onEdit,
+  onDelete,
+  disabled
 }: {
   app: SiteVerifiedApp;
+  onEdit: (app: SiteVerifiedApp) => void;
+  onDelete: (app: SiteVerifiedApp) => void;
+  disabled?: boolean;
 }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = formatDate(app.verifiedAt || app.createdAt);
@@ -353,9 +380,40 @@ function ProfileVerifiedAppCard({
         <div className="developer-app-meta">
           <div className="developer-app-title-row">
             <strong>{app.appName}</strong>
-            <span className={`profile-status-pill${safe ? ' is-active' : ''}`}>
-              {statusLabel}
-            </span>
+            <div className="developer-app-title-tools">
+              <span className={`profile-status-pill${safe ? ' is-active' : ''}`}>
+                {statusLabel}
+              </span>
+              <div className="developer-app-icon-actions">
+                <button
+                  type="button"
+                  className="developer-app-icon-button"
+                  aria-label="Редактировать приложение"
+                  disabled={disabled}
+                  onClick={() => onEdit(app)}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M4 16.25V20h3.75L18.3 9.45l-3.75-3.75L4 16.25Z" />
+                    <path d="M13.9 6.1 17.65 9.85" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="developer-app-icon-button developer-app-icon-button-danger"
+                  aria-label="Удалить приложение"
+                  disabled={disabled}
+                  onClick={() => onDelete(app)}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M5 7h14" />
+                    <path d="M9 7V5.75A1.75 1.75 0 0 1 10.75 4h2.5A1.75 1.75 0 0 1 15 5.75V7" />
+                    <path d="M7.5 7.5 8.25 19a1 1 0 0 0 1 .93h5.5a1 1 0 0 0 1-.93L16.5 7.5" />
+                    <path d="M10 10.5v5" />
+                    <path d="M14 10.5v5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -506,12 +564,17 @@ function VerifiedDeveloperWorkspace({
   reviewDraftStatus,
   setReviewForm,
   onVerify,
-  onCheckUpdate
+  onCheckUpdate,
+  onEdit,
+  onDelete,
+  editingAppId,
+  onCancelEdit
 }: VerifiedDeveloperWorkspaceProps) {
   const [activePlatform, setActivePlatform] = useState<SiteVerifiedAppFilter>('all');
   const reviewSectionRef = useRef<HTMLElement | null>(null);
   const reviewRepositoryInputRef = useRef<HTMLInputElement | null>(null);
   const reviewAdvancedDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  const reviewAvatarInputRef = useRef<HTMLInputElement | null>(null);
   const filteredApps = useMemo(
     () => (
       activePlatform === 'all'
@@ -521,6 +584,29 @@ function VerifiedDeveloperWorkspace({
     [activePlatform, apps]
   );
   const catalogTitle = useMemo(() => getVerifiedAppsTitle(activePlatform), [activePlatform]);
+  const isEditing = Boolean(editingAppId);
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      return;
+    }
+    try {
+      const avatarDataUrl = await readImageAsDataUrl(file);
+      setReviewForm((current) => ({
+        ...current,
+        avatarDataUrl,
+        avatarPreviewUrl: avatarDataUrl
+      }));
+    } finally {
+      if (reviewAvatarInputRef.current) {
+        reviewAvatarInputRef.current.value = '';
+      }
+    }
+  }
 
   function handleRetryReview(app: SiteVerifiedApp) {
     const nextReviewForm = buildReviewFormFromApp(app);
@@ -538,11 +624,50 @@ function VerifiedDeveloperWorkspace({
     }
   }
 
+  function handleEditReview(app: SiteVerifiedApp) {
+    onEdit(app);
+    if (reviewAdvancedDetailsRef.current) {
+      reviewAdvancedDetailsRef.current.open = Boolean(
+        (app.compatiblePlatforms || []).length || app.releaseTag || app.releaseAssetName
+      );
+    }
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        reviewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        reviewRepositoryInputRef.current?.focus();
+      });
+    }
+  }
+
   return (
     <div className="profile-panel-stack">
       <section ref={reviewSectionRef} className="content-card profile-panel-card profile-form-card profile-verify-card">
         <div className="profile-verify-layout">
           <form className="auth-form" onSubmit={onVerify}>
+            <div className="profile-avatar-field">
+              <div className="profile-avatar-field-preview" aria-hidden="true">
+                {reviewForm.avatarPreviewUrl ? (
+                  <img src={reviewForm.avatarPreviewUrl} alt="" loading="lazy" />
+                ) : (
+                  <span>{(reviewForm.appName || '?').slice(0, 1).toUpperCase()}</span>
+                )}
+              </div>
+              <div className="profile-avatar-field-copy">
+                <strong>Картинка</strong>
+                <span>Если ничего не загружать, останется текущая картинка или стандартная обложка проекта.</span>
+              </div>
+              <input
+                ref={reviewAvatarInputRef}
+                className="profile-avatar-field-input"
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarChange}
+              />
+              <button className="shell-chip" type="button" onClick={() => reviewAvatarInputRef.current?.click()}>
+                Выбрать
+              </button>
+            </div>
+
             <label className="auth-field">
               <span className="auth-field-label">Репозиторий</span>
               <input
@@ -643,9 +768,16 @@ function VerifiedDeveloperWorkspace({
             <div className="profile-draft-note" aria-live="polite">
               {reviewDraftStatus === 'saved' ? 'Черновик сохранён.' : 'Черновик сохраняется автоматически.'}
             </div>
-            <button className="nv-button" type="submit" disabled={pending !== null}>
-              {pending === 'verify' ? 'Отправляем...' : 'Запустить проверку'}
-            </button>
+            <div className="developer-form-actions">
+              <button className="nv-button" type="submit" disabled={pending !== null}>
+                {pending === 'verify' ? 'Сохраняем...' : isEditing ? 'Сохранить' : 'Запустить проверку'}
+              </button>
+              {isEditing ? (
+                <button className="shell-chip" type="button" disabled={pending !== null} onClick={onCancelEdit}>
+                  Отмена
+                </button>
+              ) : null}
+            </div>
           </form>
         <aside className="profile-verify-requirements" aria-label="Требования к проверке">
           <strong>Требования к проверке</strong>
@@ -698,7 +830,14 @@ function VerifiedDeveloperWorkspace({
             <div className="developer-app-grid">
               {filteredApps.map((app) => (
                 <div key={app.id || `${app.appName}-${normalizeVerifiedAppPlatform(String(app.platform || ''))}`} className="developer-app-card-stack">
-                  <ProfileVerifiedAppCard app={app} />
+                  <ProfileVerifiedAppCard
+                    app={app}
+                    disabled={pending !== null}
+                    onEdit={handleEditReview}
+                    onDelete={(selectedApp) => {
+                      void onDelete(selectedApp);
+                    }}
+                  />
                   {canRetryVerifiedAppReview(app) ? (
                     <button
                       className="nv-button developer-app-repeat-button"
@@ -823,10 +962,13 @@ export function ProfilePage() {
   const [applyMessage, setApplyMessage] = useState(() => loadDraft(DEVELOPER_APPLICATION_DRAFT_KEY, { message: '' }).message);
   const [applicationDraftStatus, setApplicationDraftStatus] = useState<DraftStatus>('idle');
   const [showRetryForm, setShowRetryForm] = useState(false);
+  const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => {
     const draft = loadDraft(VERIFIED_REVIEW_DRAFT_KEY, EMPTY_REVIEW_FORM);
     return {
       ...draft,
+      avatarDataUrl: '',
+      avatarPreviewUrl: '',
       platforms: sanitizeReviewPlatforms((draft as ReviewFormState).platforms)
     };
   });
@@ -853,7 +995,15 @@ export function ProfilePage() {
   }, [applyMessage, applyProject]);
 
   useEffect(() => {
-    saveDraft(VERIFIED_REVIEW_DRAFT_KEY, reviewForm);
+    saveDraft(VERIFIED_REVIEW_DRAFT_KEY, {
+      repositoryUrl: reviewForm.repositoryUrl,
+      appName: reviewForm.appName,
+      officialSiteUrl: reviewForm.officialSiteUrl,
+      description: reviewForm.description,
+      platforms: reviewForm.platforms,
+      releaseTag: reviewForm.releaseTag,
+      releaseAssetName: reviewForm.releaseAssetName
+    });
     setReviewDraftStatus('saved');
   }, [reviewForm]);
 
@@ -998,27 +1148,44 @@ export function ProfilePage() {
     setDeveloperPending('verify');
     setMessage('');
     setError('');
-    const result = await submitVerifiedAppReview({
+    const payload = {
       repositoryUrl: reviewForm.repositoryUrl,
       appName: reviewForm.appName,
       officialSiteUrl: reviewForm.officialSiteUrl,
       description: reviewForm.description,
+      avatarDataUrl: reviewForm.avatarDataUrl || undefined,
       platform: reviewForm.platforms.length === 1 ? reviewForm.platforms[0] : undefined,
       platforms: reviewForm.platforms,
       releaseTag: reviewForm.releaseTag,
       releaseAssetName: reviewForm.releaseAssetName
-    });
+    };
+    const result = editingAppId
+      ? await updateVerifiedApp(editingAppId, payload)
+      : await submitVerifiedAppReview(payload);
     if (!result.ok) {
-      setError(result.error || 'Не удалось отправить приложение.');
+      setError(result.error || (editingAppId ? 'Не удалось сохранить приложение.' : 'Не удалось отправить приложение.'));
       setDeveloperPending(null);
       return;
     }
-    setMessage(result.data?.message || 'Проверка отправлена.');
+    setMessage(result.data?.message || (editingAppId ? 'Изменения сохранены.' : 'Проверка отправлена.'));
+    setEditingAppId(null);
     setReviewForm({ ...EMPTY_REVIEW_FORM });
     clearDraft(VERIFIED_REVIEW_DRAFT_KEY);
     setReviewDraftStatus('idle');
     await loadDeveloperData();
     setDeveloperPending(null);
+  }
+
+  function handleDeveloperEdit(app: SiteVerifiedApp) {
+    setEditingAppId(app.id || null);
+    setReviewForm(buildReviewFormFromApp(app));
+  }
+
+  function handleDeveloperEditCancel() {
+    setEditingAppId(null);
+    setReviewForm({ ...EMPTY_REVIEW_FORM });
+    clearDraft(VERIFIED_REVIEW_DRAFT_KEY);
+    setReviewDraftStatus('idle');
   }
 
   async function handleDeveloperCheckUpdate(app: SiteVerifiedApp) {
@@ -1043,6 +1210,30 @@ export function ProfilePage() {
       return;
     }
     setMessage(result.data?.message || 'Проверка обновления завершена.');
+    await loadDeveloperData();
+    setDeveloperPending(null);
+  }
+
+  async function handleDeveloperDelete(app: SiteVerifiedApp) {
+    if (developerPending || pending || !app.id) {
+      return;
+    }
+    if (typeof window !== 'undefined' && !window.confirm(`Удалить ${app.appName} из проверенных приложений?`)) {
+      return;
+    }
+    setDeveloperPending('update');
+    setMessage('');
+    setError('');
+    const result = await deleteVerifiedApp(app.id);
+    if (!result.ok) {
+      setError(result.error || 'Не удалось удалить приложение.');
+      setDeveloperPending(null);
+      return;
+    }
+    if (editingAppId === app.id) {
+      handleDeveloperEditCancel();
+    }
+    setMessage(result.data?.message || 'Приложение удалено.');
     await loadDeveloperData();
     setDeveloperPending(null);
   }
@@ -1133,6 +1324,10 @@ export function ProfilePage() {
                 setReviewForm={setReviewForm}
                 onVerify={handleDeveloperVerify}
                 onCheckUpdate={handleDeveloperCheckUpdate}
+                onEdit={handleDeveloperEdit}
+                onDelete={handleDeveloperDelete}
+                editingAppId={editingAppId}
+                onCancelEdit={handleDeveloperEditCancel}
               />
             ) : applicationState === 'pending' ? (
               <article className="content-card profile-panel-card profile-panel-card-featured profile-panel-card-centered">

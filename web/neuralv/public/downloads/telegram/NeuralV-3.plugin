@@ -922,7 +922,15 @@ class NeuralVPlugin(BasePlugin):
 
         if body_text:
             scroll = ScrollView(context)
+            try:
+                scroll.setBackgroundColor(Color.TRANSPARENT)
+            except Exception:
+                pass
             body_view = TextView(context)
+            try:
+                body_view.setBackgroundColor(Color.TRANSPARENT)
+            except Exception:
+                pass
             body_view.setText(body_text)
             body_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
             body_view.setLineSpacing(float(AndroidUtilities.dp(4)), 1.05)
@@ -1031,6 +1039,8 @@ class NeuralVPlugin(BasePlugin):
                     decor = window.getDecorView()
                     if decor is not None:
                         decor.setPadding(0, 0, 0, 0)
+                        self._clear_sheet_parent_backgrounds(decor)
+                    self._clear_sheet_parent_backgrounds(root)
                     log("[NeuralV] sheet window background set to transparent")
                 except Exception as bg_error:
                     log(f"[NeuralV] sheet window background setup failed: {bg_error}")
@@ -1041,6 +1051,37 @@ class NeuralVPlugin(BasePlugin):
         log("[NeuralV] sheet dialog shown, binding swipe close")
         self._bind_sheet_swipe_close(drag_zone, card, holder)
         return dialog
+
+    def _clear_sheet_parent_backgrounds(self, view):
+        try:
+            current = view
+            depth = 0
+            while current is not None and depth < 6:
+                try:
+                    current.setBackgroundColor(Color.TRANSPARENT)
+                except Exception:
+                    try:
+                        current.setBackground(ColorDrawable(Color.TRANSPARENT))
+                    except Exception:
+                        pass
+                try:
+                    current.setPadding(0, 0, 0, 0)
+                except Exception:
+                    pass
+                try:
+                    log(f"[NeuralV] cleared sheet background layer depth={depth} class={current.getClass().getName()}")
+                except Exception:
+                    log(f"[NeuralV] cleared sheet background layer depth={depth}")
+                try:
+                    parent = current.getParent()
+                except Exception:
+                    parent = None
+                if parent is None or parent == current or not hasattr(parent, 'setBackgroundColor') and not hasattr(parent, 'setBackground'):
+                    break
+                current = parent
+                depth += 1
+        except Exception as error:
+            log(f"[NeuralV] clear sheet parent backgrounds failed: {error}\n{traceback.format_exc()}")
 
     def _bind_sheet_swipe_close(self, handle, motion_view, holder):
         try:

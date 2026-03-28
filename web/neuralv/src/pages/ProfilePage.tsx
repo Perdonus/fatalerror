@@ -1,4 +1,4 @@
-import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { PasswordStrength } from '../components/PasswordStrength';
 import { useSiteAuth } from '../components/SiteAuthProvider';
 import {
@@ -103,6 +103,45 @@ function formatDate(value: string | number | null | undefined) {
 
 const DEVELOPER_APPLICATION_DRAFT_KEY = 'neuralv-profile-developer-application-draft';
 const VERIFIED_REVIEW_DRAFT_KEY = 'neuralv-profile-verified-review-draft';
+const EMPTY_REVIEW_FORM: ReviewFormState = {
+  repositoryUrl: '',
+  appName: '',
+  officialSiteUrl: '',
+  description: '',
+  platform: '',
+  releaseTag: '',
+  releaseAssetName: ''
+};
+
+function toPlatformOption(platform: string | null | undefined): PlatformOption {
+  const normalizedPlatform = normalizeVerifiedAppPlatform(String(platform || ''));
+  return (
+    normalizedPlatform === 'android'
+    || normalizedPlatform === 'windows'
+    || normalizedPlatform === 'linux'
+    || normalizedPlatform === 'plugins'
+    || normalizedPlatform === 'heroku'
+  )
+    ? normalizedPlatform
+    : '';
+}
+
+function buildReviewFormFromApp(app: SiteVerifiedApp): ReviewFormState {
+  return {
+    repositoryUrl: app.repositoryUrl || '',
+    appName: app.appName || '',
+    officialSiteUrl: app.officialSiteUrl || '',
+    description: app.projectDescription || '',
+    platform: toPlatformOption(app.platform),
+    releaseTag: app.releaseTag || '',
+    releaseAssetName: app.releaseAssetName || ''
+  };
+}
+
+function canRetryVerifiedAppReview(app: SiteVerifiedApp) {
+  const status = String(app.status || '').trim().toUpperCase();
+  return Boolean(app.repositoryUrl) && status !== 'RUNNING' && status !== 'QUEUED';
+}
 
 function loadDraft<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') {
@@ -271,11 +310,16 @@ function ProfileScanCard({ scan }: { scan: SiteProfileScan }) {
   );
 }
 
-function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
+function ProfileVerifiedAppCard({
+  app
+}: {
+  app: SiteVerifiedApp;
+}) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = formatDate(app.verifiedAt || app.createdAt);
   const status = String(app.status || '').trim().toUpperCase();
-  const safe = status === 'SAFE';
+  const safe = status === 'SAFE' || status === 'SUCCESS';
+  const showReport = status === 'FAILED';
   const statusLabel = safe
     ? 'Безопасно'
     : status === 'FAILED'
@@ -301,7 +345,6 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
           </div>
         </div>
       </div>
-      {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
       <div className="developer-app-row">
         <span>Раздел</span>
         <strong>{platformLabel}</strong>
@@ -315,8 +358,15 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
         {app.releaseArtifactUrl ? <a className="shell-chip" href={app.releaseArtifactUrl} target="_blank" rel="noreferrer">Релиз</a> : null}
         {app.officialSiteUrl ? <a className="shell-chip" href={app.officialSiteUrl} target="_blank" rel="noreferrer">Сайт</a> : null}
       </div>
+      <div className="developer-app-detail-shell">
+        {showReport ? (
+          <div className="developer-app-detail-scroll">
+            {app.publicSummary ? <p className="developer-app-summary">{app.publicSummary}</p> : null}
+            {app.errorMessage ? <div className="developer-app-footnote is-error">{app.errorMessage}</div> : null}
+          </div>
+        ) : null}
+      </div>
       {verifiedAt ? <div className="developer-app-footnote">Проверено: {verifiedAt}</div> : null}
-      {app.errorMessage ? <div className="developer-app-footnote is-error">{app.errorMessage}</div> : null}
     </article>
   );
 }
@@ -441,6 +491,9 @@ function VerifiedDeveloperWorkspace({
   onVerify
 }: VerifiedDeveloperWorkspaceProps) {
   const [activePlatform, setActivePlatform] = useState<SiteVerifiedAppFilter>('all');
+  const reviewSectionRef = useRef<HTMLElement | null>(null);
+  const reviewRepositoryInputRef = useRef<HTMLInputElement | null>(null);
+  const reviewAdvancedDetailsRef = useRef<HTMLDetailsElement | null>(null);
   const filteredApps = useMemo(
     () => (
       activePlatform === 'all'
@@ -451,14 +504,31 @@ function VerifiedDeveloperWorkspace({
   );
   const catalogTitle = useMemo(() => getVerifiedAppsTitle(activePlatform), [activePlatform]);
 
+  function handleRetryReview(app: SiteVerifiedApp) {
+    const nextReviewForm = buildReviewFormFromApp(app);
+    setReviewForm(nextReviewForm);
+    if (reviewAdvancedDetailsRef.current) {
+      reviewAdvancedDetailsRef.current.open = Boolean(
+        nextReviewForm.platform || nextReviewForm.releaseTag || nextReviewForm.releaseAssetName
+      );
+    }
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        reviewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        reviewRepositoryInputRef.current?.focus();
+      });
+    }
+  }
+
   return (
     <div className="profile-panel-stack">
-      <section className="content-card profile-panel-card profile-form-card profile-verify-card">
+      <section ref={reviewSectionRef} className="content-card profile-panel-card profile-form-card profile-verify-card">
         <div className="profile-verify-layout">
           <form className="auth-form" onSubmit={onVerify}>
             <label className="auth-field">
               <span className="auth-field-label">Репозиторий</span>
               <input
+                ref={reviewRepositoryInputRef}
                 className="auth-input"
                 type="url"
                 value={reviewForm.repositoryUrl}
@@ -500,7 +570,7 @@ function VerifiedDeveloperWorkspace({
               />
             </label>
 
-            <details className="profile-advanced-details">
+            <details ref={reviewAdvancedDetailsRef} className="profile-advanced-details">
               <summary className="profile-advanced-summary">Расширенные настройки</summary>
               <div className="profile-panel-stack">
                 <label className="auth-field">
@@ -598,7 +668,14 @@ function VerifiedDeveloperWorkspace({
           {filteredApps.length > 0 ? (
             <div className="developer-app-grid">
               {filteredApps.map((app) => (
-                <ProfileVerifiedAppCard key={app.id || `${app.appName}-${normalizeVerifiedAppPlatform(String(app.platform || ''))}`} app={app} />
+                <div key={app.id || `${app.appName}-${normalizeVerifiedAppPlatform(String(app.platform || ''))}`} className="developer-app-card-stack">
+                  <ProfileVerifiedAppCard app={app} />
+                  {canRetryVerifiedAppReview(app) ? (
+                    <button className="nv-button developer-app-repeat-button" type="button" onClick={() => handleRetryReview(app)}>
+                      Повторить проверку
+                    </button>
+                  ) : null}
+                </div>
               ))}
             </div>
           ) : (
@@ -706,15 +783,7 @@ export function ProfilePage() {
   const [applyMessage, setApplyMessage] = useState(() => loadDraft(DEVELOPER_APPLICATION_DRAFT_KEY, { message: '' }).message);
   const [applicationDraftStatus, setApplicationDraftStatus] = useState<DraftStatus>('idle');
   const [showRetryForm, setShowRetryForm] = useState(false);
-  const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => loadDraft(VERIFIED_REVIEW_DRAFT_KEY, {
-    repositoryUrl: '',
-    appName: '',
-    officialSiteUrl: '',
-    description: '',
-    platform: '' as PlatformOption,
-    releaseTag: '',
-    releaseAssetName: ''
-  }));
+  const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => loadDraft(VERIFIED_REVIEW_DRAFT_KEY, EMPTY_REVIEW_FORM));
   const [reviewDraftStatus, setReviewDraftStatus] = useState<DraftStatus>('idle');
 
   useEffect(() => {
@@ -727,15 +796,13 @@ export function ProfilePage() {
       if (!current.platform) {
         return current;
       }
-      const normalizedPlatform = normalizeVerifiedAppPlatform(String(current.platform || ''));
+      const normalizedPlatform = toPlatformOption(current.platform);
       if (normalizedPlatform === current.platform) {
         return current;
       }
       return {
         ...current,
-        platform: (normalizedPlatform === 'android' || normalizedPlatform === 'windows' || normalizedPlatform === 'linux' || normalizedPlatform === 'plugins' || normalizedPlatform === 'heroku'
-          ? normalizedPlatform
-          : '') as PlatformOption
+        platform: normalizedPlatform
       };
     });
   }, []);
@@ -905,15 +972,7 @@ export function ProfilePage() {
       return;
     }
     setMessage(result.data?.message || 'Проверка отправлена.');
-    setReviewForm({
-      repositoryUrl: '',
-      appName: '',
-      officialSiteUrl: '',
-      description: '',
-      platform: '',
-      releaseTag: '',
-      releaseAssetName: ''
-    });
+    setReviewForm({ ...EMPTY_REVIEW_FORM });
     clearDraft(VERIFIED_REVIEW_DRAFT_KEY);
     setReviewDraftStatus('idle');
     await loadDeveloperData();

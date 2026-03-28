@@ -11,7 +11,7 @@ type StorySceneProps = {
   visual: StoryVisualKind;
   aside?: ReactNode;
   compact?: boolean;
-  chips?: string[];
+  chips?: readonly string[];
   mediaAlign?: 'left' | 'right';
 };
 

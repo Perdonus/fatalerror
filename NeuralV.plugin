@@ -14,11 +14,12 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from java import dynamic_proxy, find_class
+from java import dynamic_proxy
 from java.lang import Runnable
 from java.util import ArrayList
 
 from base_plugin import BasePlugin, HookResult, HookStrategy, MenuItemData, MenuItemType, MethodHook
+from hook_utils import find_class
 from client_utils import get_file_loader, get_last_fragment, run_on_queue, send_message
 from android_utils import run_on_ui_thread, log
 from ui.alert import AlertDialogBuilder
@@ -26,6 +27,7 @@ from ui.bulletin import BulletinHelper
 
 from android.app import Activity
 from android.content import Intent
+from android.net import Uri
 from org.telegram.messenger import ApplicationLoader, FileLoader, MessageObject
 from com.exteragram.messenger.plugins import PluginsController
 

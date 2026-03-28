@@ -274,7 +274,15 @@ function ProfileScanCard({ scan }: { scan: SiteProfileScan }) {
 function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
   const initial = (app.appName || '?').slice(0, 1).toUpperCase();
   const verifiedAt = formatDate(app.verifiedAt || app.createdAt);
-  const safe = String(app.status || '').toUpperCase() === 'SAFE';
+  const status = String(app.status || '').trim().toUpperCase();
+  const safe = status === 'SAFE';
+  const statusLabel = safe
+    ? 'Безопасно'
+    : status === 'FAILED'
+      ? 'Не подтверждено'
+      : status === 'RUNNING' || status === 'QUEUED'
+        ? 'В проверке'
+        : (app.status || 'В проверке');
   const platformLabel = formatVerifiedAppPlatform(String(app.platform || ''));
   const authorLabel = app.authorName || 'Ваш профиль';
 
@@ -288,7 +296,7 @@ function ProfileVerifiedAppCard({ app }: { app: SiteVerifiedApp }) {
           <div className="developer-app-title-row">
             <strong>{app.appName}</strong>
             <span className={`profile-status-pill${safe ? ' is-active' : ''}`}>
-              {safe ? 'Безопасно' : (app.status || 'В проверке')}
+              {statusLabel}
             </span>
           </div>
         </div>

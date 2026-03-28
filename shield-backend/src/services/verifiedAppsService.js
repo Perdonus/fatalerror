@@ -33,6 +33,10 @@ const TEXT_EXTENSIONS = new Set([
     '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.py', '.java', '.kt', '.kts', '.go',
     '.rs', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp', '.swift', '.sh', '.bat', '.cmd', '.ps1'
 ]);
+const CODE_EXTENSIONS = new Set([
+    '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.py', '.java', '.kt', '.kts', '.go',
+    '.rs', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp', '.swift', '.sh', '.bat', '.cmd', '.ps1'
+]);
 const IMPORTANT_FILE_NAMES = new Set([
     'readme.md', 'package.json', 'app.json', 'cargo.toml', 'build.gradle', 'build.gradle.kts',
     'settings.gradle', 'settings.gradle.kts', 'gradle.properties', 'androidmanifest.xml', 'pom.xml',
@@ -49,6 +53,7 @@ const HARD_BLOCK_KEYWORDS = [
     'injector',
     'silent miner'
 ];
+const NON_BEHAVIORAL_PATH_RE = /(^|\/)(readme|docs?|test|tests|spec|specs|__tests__|fixtures|samples|examples|yara|rules?|signatures?|ioc|blocklist|denylist|analy[sz]er|scanner|detection)(\/|$)|(^|\/)(mock|fixture|sample|example|demo)[._-]/i;
 
 let queueDrainPromise = null;
 const queuedIds = new Set();
@@ -679,6 +684,7 @@ function buildCandidateTextPaths(blobPaths) {
         if (lowered.includes('/src/')) priority += 3;
         if (lowered.includes('/app/')) priority += 2;
         if (/(security|crypto|token|auth|network|scan|hook|plugin|module|heroku|telegram)/.test(lowered)) priority += 4;
+        if (NON_BEHAVIORAL_PATH_RE.test(lowered)) priority -= 8;
         return { path, priority, index };
     });
     return scored
@@ -702,35 +708,166 @@ function buildRepoLanguageHints(paths) {
     return Array.from(hints).slice(0, 8);
 }
 
+function getPathExtension(filePath) {
+    const lowered = String(filePath || '').toLowerCase();
+    const fileName = lowered.split('/').pop() || lowered;
+    return fileName.includes('.') ? `.${fileName.split('.').pop()}` : '';
+}
+
+function isCodeLikePath(filePath) {
+    return CODE_EXTENSIONS.has(getPathExtension(filePath));
+}
+
+function findMatchingPaths(sampledFiles, regexes, { codeOnly = true } = {}) {
+    const pool = codeOnly ? sampledFiles.filter((file) => isCodeLikePath(file.path)) : sampledFiles;
+    return pool
+        .filter((file) => regexes.some((regex) => regex.test(file.content)))
+        .slice(0, 6)
+        .map((file) => file.path);
+}
+
 function analyzeSampledFiles(sampledFiles, paths) {
-    const allText = sampledFiles.map((file) => file.contentLower).join('\n');
     const findings = [];
-    const addFinding = (key, severity, title, detail, terms) => {
-        const matches = sampledFiles
-            .filter((file) => terms.some((term) => file.contentLower.includes(term)))
-            .slice(0, 6)
-            .map((file) => file.path);
+    const addFinding = (key, severity, title, detail, regexes, options = {}) => {
+        const matches = findMatchingPaths(sampledFiles, regexes, options);
         if (matches.length === 0) {
             return;
         }
         findings.push({ key, severity, title, detail, paths: matches });
     };
 
-    addFinding('dynamic_exec', 'critical', 'Динамическое выполнение кода', 'Найдены конструкции, которые могут исполнять собранный на лету код.', ['exec(', 'eval(', 'compile(', 'subprocess.Popen(']);
-    addFinding('download_exec', 'critical', 'Загрузка и запуск кода снаружи', 'Код тянет данные из сети и содержит признаки их последующего исполнения.', ['requests.get(', 'httpx.get(', 'urllib.request.urlopen(', 'download_media(']);
-    addFinding('destructive_fs', 'high', 'Агрессивные файловые операции', 'Есть удаление файлов или каталогов без явного безопасного контура.', ['shutil.rmtree', 'os.remove', 'os.unlink', '.unlink(', '.rmdir(']);
-    addFinding('persistence', 'high', 'Закрепление в системе', 'Есть признаки автозапуска или попытки пережить перезагрузку системы.', ['winreg', 'runonce', 'currentversion\\\\run', 'cron', 'schtasks', 'startup', '.desktop']);
-    addFinding('privilege', 'high', 'Повышение привилегий', 'Есть обращения к механизмам администратора или системным API.', ['runas', 'isuseranadmin', 'ctypes.windll', 'sudo ', 'pkexec']);
-    addFinding('obfuscation', 'high', 'Сокрытие логики', 'Есть обфускация, упаковка или длинные кодированные блоки.', ['base64', 'marshal', 'zlib', 'binascii', 'codecs.decode']);
-    addFinding('token_access', 'medium', 'Доступ к токенам и секретам', 'Встречаются признаки работы с токенами, cookies или секретами окружения.', ['api_key', 'bearer ', 'authorization', 'token', 'session']);
+    const dynamicExecRegexes = [
+        /(?<!["'`])\bexec\s*\(/i,
+        /(?<!["'`])\beval\s*\(/i,
+        /(?<!["'`])\bcompile\s*\(/i,
+        /(?<!["'`])\bsubprocess\.Popen\s*\(/i
+    ];
+    const remoteFetchRegexes = [
+        /(?<!["'`])\brequests\.(?:get|post|put|delete|patch|request)\s*\(/i,
+        /(?<!["'`])\bhttpx\.(?:get|post|put|delete|patch|request)\s*\(/i,
+        /(?<!["'`])\burllib\.request\.urlopen\s*\(/i,
+        /(?<!["'`])\burlopen\s*\(/i
+    ];
+    const remoteExecutionBridgeRegexes = [
+        /(?<!["'`])\bexec\s*\(/i,
+        /(?<!["'`])\beval\s*\(/i,
+        /(?<!["'`])\bcompile\s*\(/i,
+        /(?<!["'`])\bimportlib\.(?:import_module|reload)\s*\(/i,
+        /(?<!["'`])\brunpy\.(?:run_module|run_path)\s*\(/i,
+        /(?<!["'`])\bmarshal\.loads\s*\(/i,
+        /(?<!["'`])\bbase64\.b64decode\s*\(/i,
+        /(?<!["'`])\bzlib\.decompress\s*\(/i,
+        /(?<!["'`])\bcodecs\.decode\s*\(/i
+    ];
+    const remoteFetchMatches = findMatchingPaths(sampledFiles, remoteFetchRegexes);
+    const remoteExecBridgeMatches = findMatchingPaths(sampledFiles, remoteExecutionBridgeRegexes);
 
-    const hardSignals = inferRiskSignals(paths, sampledFiles.map((file) => file.content));
-    const highOrCritical = findings.filter((finding) => finding.severity === 'critical' || finding.severity === 'high');
-    const riskScore = Math.min(98, hardSignals.length * 15 + highOrCritical.length * 12 + findings.length * 6);
+    addFinding(
+        'dynamic_exec',
+        'critical',
+        'Динамическое выполнение кода',
+        'Найдены конструкции, которые действительно выполняют код во время работы программы.',
+        dynamicExecRegexes
+    );
+
+    if (remoteFetchMatches.length > 0 && remoteExecBridgeMatches.length > 0) {
+        findings.push({
+            key: 'download_exec',
+            severity: 'critical',
+            title: 'Загрузка и запуск кода снаружи',
+            detail: 'Есть сочетание сетевой загрузки и последующего выполнения или динамической подгрузки кода.',
+            paths: Array.from(new Set([...remoteFetchMatches, ...remoteExecBridgeMatches])).slice(0, 6)
+        });
+    }
+
+    addFinding(
+        'destructive_fs',
+        'high',
+        'Агрессивные файловые операции',
+        'Есть реальные вызовы удаления файлов или каталогов без явного безопасного контура.',
+        [
+            /(?<!["'`])\bshutil\.rmtree\s*\(/i,
+            /(?<!["'`])\bos\.(?:remove|unlink|rmdir)\s*\(/i,
+            /(?<!["'`])\.[A-Za-z_][A-Za-z0-9_]*\.unlink\s*\(/i,
+            /(?<!["'`])\.[A-Za-z_][A-Za-z0-9_]*\.rmdir\s*\(/i,
+            /(?<!["'`])\bpathlib\.[A-Za-z_][A-Za-z0-9_]*\.unlink\s*\(/i
+        ]
+    );
+
+    addFinding(
+        'persistence',
+        'medium',
+        'Закрепление в системе',
+        'Есть реальные обращения к механизмам автозапуска или постоянного закрепления в системе.',
+        [
+            /(?<!["'`])\bimport\s+winreg\b/i,
+            /(?<!["'`])\bwinreg\./i,
+            /(?<!["'`])\bcrontab\b/i,
+            /(?<!["'`])\bschtasks\b/i
+        ]
+    );
+
+    addFinding(
+        'privilege',
+        'medium',
+        'Повышение привилегий',
+        'Есть признаки запуска с повышенными правами или обращения к системным API.',
+        [
+            /(?<!["'`])\bctypes\.windll\b/i,
+            /(?<!["'`])\bShellExecuteW\s*\(/i,
+            /(?<!["'`])\bpkexec\b/i,
+            /(?<!["'`])\bsudo\b/i
+        ]
+    );
+
+    addFinding(
+        'obfuscation',
+        'medium',
+        'Сокрытие логики',
+        'Есть признаки декодирования или распаковки полезной нагрузки во время работы.',
+        [
+            /[A-Za-z0-9+/]{180,}={0,2}/,
+            /(?<!["'`])\bbase64\.b64decode\s*\(/i,
+            /(?<!["'`])\bmarshal\.loads\s*\(/i,
+            /(?<!["'`])\bzlib\.decompress\s*\(/i,
+            /(?<!["'`])\bbinascii\.(?:a2b_|unhexlify)\w*\s*\(/i,
+            /(?<!["'`])\bcodecs\.decode\s*\(/i
+        ],
+        { codeOnly: false }
+    );
+
+    const secretAccessRegexes = [
+        /(?<!["'`])\bos\.getenv\s*\(/i,
+        /(?<!["'`])\bos\.environ\b/i,
+        /(?<!["'`])\bprocess\.env\b/i
+    ];
+    const outboundRegexes = [
+        /(?<!["'`])\brequests\.(?:post|put|patch|request)\s*\(/i,
+        /(?<!["'`])\bhttpx\.(?:post|put|patch|request)\s*\(/i,
+        /(?<!["'`])\bfetch\s*\(/i
+    ];
+    const secretMatches = findMatchingPaths(sampledFiles, secretAccessRegexes);
+    const outboundMatches = findMatchingPaths(sampledFiles, outboundRegexes);
+    if (secretMatches.length > 0 && outboundMatches.length > 0) {
+        findings.push({
+            key: 'token_access',
+            severity: 'medium',
+            title: 'Передача секретов наружу',
+            detail: 'Есть сочетание доступа к переменным окружения или токенам и сетевой отправки данных.',
+            paths: Array.from(new Set([...secretMatches, ...outboundMatches])).slice(0, 6)
+        });
+    }
+
+    const hardSignals = inferRiskSignals(paths, sampledFiles);
+    const criticalFindings = findings.filter((finding) => finding.severity === 'critical');
+    const highFindings = findings.filter((finding) => finding.severity === 'high');
+    const riskScore = Math.min(98, hardSignals.length * 18 + criticalFindings.length * 18 + highFindings.length * 10 + findings.length * 4);
     return {
         findings,
         hardSignals,
-        riskScore
+        riskScore,
+        criticalCount: criticalFindings.length,
+        highCount: highFindings.length
     };
 }
 
@@ -768,12 +905,21 @@ async function callVerificationAi(payload) {
     }
 }
 
-function inferRiskSignals(paths, sampleTexts) {
+function inferRiskSignals(paths, sampledFiles) {
     const lowerPaths = paths.map((path) => String(path || '').toLowerCase());
-    const lowerText = sampleTexts.join('\n').toLowerCase();
+    const codeTexts = sampledFiles
+        .filter((file) => isCodeLikePath(file.path) && !NON_BEHAVIORAL_PATH_RE.test(String(file.path || '').toLowerCase()))
+        .map((file) => file.content)
+        .join('\n')
+        .toLowerCase();
     const triggered = [];
     for (const keyword of HARD_BLOCK_KEYWORDS) {
-        if (lowerText.includes(keyword) || lowerPaths.some((path) => path.includes(keyword.replace(/\s+/g, '')) || path.includes(keyword))) {
+        const compact = keyword.replace(/\s+/g, '');
+        const pattern = new RegExp(`(?<!["'\`])\\b${compact.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+        if (
+            pattern.test(codeTexts)
+            || lowerPaths.some((path) => isCodeLikePath(path) && !NON_BEHAVIORAL_PATH_RE.test(path) && (path.includes(compact) || path.includes(keyword)))
+        ) {
             triggered.push(keyword);
         }
     }
@@ -1693,7 +1839,13 @@ async function analyzeVerificationCandidate(job) {
     ].filter((finding) => finding.title);
 
     const aiMarksUnsafe = String(aiResult.verdict || '').toUpperCase() !== 'SAFE';
-    const status = serverAnalysis.hardSignals.length > 0 || aiMarksUnsafe ? 'FAILED' : 'SAFE';
+    const blockingServerSignals = serverAnalysis.hardSignals.length > 0
+        || serverAnalysis.criticalCount > 0
+        || serverAnalysis.highCount >= 2;
+    const aiConfidence = Number(aiResult.confidence || 0);
+    const status = blockingServerSignals || (aiMarksUnsafe && (serverAnalysis.riskScore >= 52 || aiConfidence >= 0.78))
+        ? 'FAILED'
+        : 'SAFE';
     const riskScore = Math.min(
         99,
         Math.max(

@@ -4,12 +4,14 @@
 """
 
 import hashlib
+import io
 import json
 import os
 import re
 import threading
 import time
 import traceback
+import tokenize
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -163,8 +165,8 @@ RULES = [
         "summary": "код скачивает внешний контент во время работы",
         "patterns": [
             r"download_media\s*\(",
-            r"requests\.(get|post)\s*\(",
-            r"httpx\.(get|post|request)\s*\(",
+            r"requests\.get\s*\(",
+            r"httpx\.(get|request)\s*\(",
             r"urllib\.request\.urlopen",
         ],
     },
@@ -186,14 +188,13 @@ RULES = [
     },
     {
         "id": "sensitive_send",
-        "severity": "Высоко",
-        "score": 3,
+        "severity": "Средне",
+        "score": 2,
         "title": "Есть отправка чувствительных данных",
         "summary": "код умеет отправлять файлы, сообщения или логи наружу",
         "patterns": [
             r"send_file\s*\(",
             r"send_document\s*\(",
-            r"send_message\s*\(",
             r"client\.send_file\s*\(",
             r"requests\.post\s*\(",
             r"httpx\.post\s*\(",
@@ -243,7 +244,6 @@ RULES = [
             r"pynput\.",
             r"keyboard\.",
             r"mouse\.",
-            r"clipboard",
             r"pyperclip\.",
             r"screenshot",
         ],
@@ -352,6 +352,33 @@ def _decode_text(raw: bytes) -> str:
     return raw.decode("utf-8", errors="ignore").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _strip_strings_and_comments(code: str) -> str:
+    try:
+        source = str(code or "")
+        lines = source.splitlines(True)
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+        for tok in tokens:
+            tok_type = tok.type
+            if tok_type not in (tokenize.STRING, tokenize.COMMENT):
+                continue
+            (start_line, start_col) = tok.start
+            (end_line, end_col) = tok.end
+            for line_index in range(start_line - 1, end_line):
+                if line_index < 0 or line_index >= len(lines):
+                    continue
+                raw_line = lines[line_index]
+                left = start_col if line_index == start_line - 1 else 0
+                right = end_col if line_index == end_line - 1 else len(raw_line)
+                if left >= right:
+                    continue
+                segment = raw_line[left:right]
+                replacement = "".join("\n" if ch == "\n" else " " for ch in segment)
+                lines[line_index] = raw_line[:left] + replacement + raw_line[right:]
+        return "".join(lines)
+    except Exception:
+        return str(code or "")
+
+
 def _declared_family(filename: str) -> str:
     lower = (filename or "").lower()
     if lower.endswith(".plugin"):
@@ -383,17 +410,17 @@ def _detect_family(code: str) -> dict:
     return {"family": "hikka", "label": TYPE_SIGNATURES["hikka"]["label"], "reasons": reasons["hikka"]}
 
 
-def _collect_hits(lines, patterns, min_hits=1):
+def _collect_hits(exec_lines, raw_lines, patterns, min_hits=1):
     hits = []
     seen = set()
-    for idx, raw_line in enumerate(lines, 1):
+    for idx, exec_line in enumerate(exec_lines, 1):
         for pattern in patterns:
-            if re.search(pattern, raw_line, re.IGNORECASE):
+            if re.search(pattern, exec_line, re.IGNORECASE):
                 key = (idx, pattern)
                 if key in seen:
                     continue
                 seen.add(key)
-                snippet = _safe_snippet(raw_line)
+                snippet = _safe_snippet(raw_lines[idx - 1] if idx - 1 < len(raw_lines) else exec_line)
                 if not snippet:
                     continue
                 hits.append({"line": idx, "snippet": snippet})
@@ -409,7 +436,9 @@ def _sorted_findings(findings):
 
 def analyze_code(filename: str, code: str) -> dict:
     code = (code or "").replace("\r\n", "\n").replace("\r", "\n")
-    lines = code.split("\n")
+    raw_lines = code.split("\n")
+    executable_code = _strip_strings_and_comments(code)
+    exec_lines = executable_code.split("\n")
     family_info = _detect_family(code)
     declared = _declared_family(filename)
     detected = family_info["family"]
@@ -418,7 +447,7 @@ def analyze_code(filename: str, code: str) -> dict:
     findings = []
     triggered_ids = set()
     for rule in RULES:
-        hits = _collect_hits(lines, rule["patterns"], rule.get("min_hits", 1))
+        hits = _collect_hits(exec_lines, raw_lines, rule["patterns"], rule.get("min_hits", 1))
         if len(hits) >= rule.get("min_hits", 1):
             triggered_ids.add(rule["id"])
             findings.append({
@@ -478,6 +507,7 @@ def analyze_code(filename: str, code: str) -> dict:
         "verdict": verdict,
         "icon": VERDICT_ICONS[verdict],
         "score": score,
+        "exec_scope_only": True,
     }
 
 
@@ -1418,22 +1448,19 @@ class NeuralVPlugin(BasePlugin):
             f"Локальный вердикт: {analysis['verdict']}",
             f"Счёт риска: {analysis['score']}",
             f"Несовпадение формата: {'да' if analysis['mismatch'] else 'нет'}",
+            f"Сигналы собраны только по исполняемому коду: {'да' if analysis.get('exec_scope_only') else 'нет'}",
             "",
             "Локальные сигналы:",
         ]
         if analysis["findings"]:
             for finding in analysis["findings"][:MAX_FINDINGS]:
-                line_info = ""
-                if finding.get("hits"):
-                    line_info = f" (строка {finding['hits'][0]['line']})"
-                lines.append(f"- [{finding['severity']}] {finding['title']}: {finding['summary']}{line_info}")
+                lines.append(f"- [{finding['severity']}] {finding['title']}: {finding['summary']}")
         else:
             lines.append("- Явных красных флагов локальный слой не нашёл.")
         if analysis["fragments"]:
-            lines.extend(["", "Фрагменты:"])
+            lines.extend(["", "Исполняемые фрагменты:"])
             for fragment in analysis["fragments"][:MAX_FRAGMENTS]:
-                lines.append(f"- строка {fragment['line']}: {fragment['snippet']}")
-        lines.extend(["", "Код:", code[:12000]])
+                lines.append(f"- {fragment['snippet']}")
         return "\n".join(lines)
 
     def _to_api_finding(self, finding: dict) -> dict:
@@ -1461,6 +1488,7 @@ class NeuralVPlugin(BasePlugin):
                 "local_verdict": analysis["verdict"],
                 "local_score": analysis["score"],
                 "mismatch": analysis["mismatch"],
+                "exec_scope_only": analysis.get("exec_scope_only"),
             },
         }
         try:

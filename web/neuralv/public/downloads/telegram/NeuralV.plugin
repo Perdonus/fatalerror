@@ -905,10 +905,10 @@ class NeuralVPlugin(BasePlugin):
         button.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16)
         button.setGravity(Gravity.CENTER)
         button.setPadding(
+            int(AndroidUtilities.dp(10)),
             int(AndroidUtilities.dp(12)),
-            int(AndroidUtilities.dp(13)),
+            int(AndroidUtilities.dp(10)),
             int(AndroidUtilities.dp(12)),
-            int(AndroidUtilities.dp(14)),
         )
         fill, stroke, text_color = self._sheet_button_palette(filled=filled, danger=danger)
         bg = GradientDrawable()
@@ -924,10 +924,10 @@ class NeuralVPlugin(BasePlugin):
         row = LinearLayout(context)
         row.setOrientation(LinearLayout.VERTICAL)
         row.setPadding(
-            int(AndroidUtilities.dp(16)),
             int(AndroidUtilities.dp(14)),
-            int(AndroidUtilities.dp(16)),
+            int(AndroidUtilities.dp(12)),
             int(AndroidUtilities.dp(14)),
+            int(AndroidUtilities.dp(12)),
         )
         bg = GradientDrawable()
         bg.setCornerRadius(float(AndroidUtilities.dp(20)))
@@ -1089,9 +1089,9 @@ class NeuralVPlugin(BasePlugin):
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             row_lp.setMargins(
-                int(AndroidUtilities.dp(4)),
+                int(AndroidUtilities.dp(14)),
                 int(AndroidUtilities.dp(10)),
-                int(AndroidUtilities.dp(4)),
+                int(AndroidUtilities.dp(14)),
                 0,
             )
             card.addView(row_view, row_lp)
@@ -1133,7 +1133,7 @@ class NeuralVPlugin(BasePlugin):
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 )
-                button_lp.setMargins(int(AndroidUtilities.dp(4)), 0, int(AndroidUtilities.dp(4)), int(AndroidUtilities.dp(10)))
+                button_lp.setMargins(int(AndroidUtilities.dp(14)), 0, int(AndroidUtilities.dp(14)), int(AndroidUtilities.dp(10)))
                 actions_wrap.addView(button, button_lp)
             card.addView(actions_wrap, actions_lp)
 
@@ -1438,23 +1438,19 @@ class NeuralVPlugin(BasePlugin):
         def action():
             self._show_sheet_dialog(
                 "NeuralV",
-                "Откройте проверку файла, полный прогон по установленным плагинам или историю прошлых запусков.",
                 rows=[
                     {
                         "title": "Проверить файл с устройства",
-                        "subtitle": "Загрузите файл вручную и проверьте его в отдельном окне.",
                         "icon": "📂",
                         "on_click": self._launch_file_picker,
                     },
                     {
                         "title": "Проверить все установленные плагины",
-                        "subtitle": "NeuralV пройдётся по локальным плагинам и покажет общий итог.",
                         "icon": "🧩",
                         "on_click": lambda: run_on_queue(self._scan_installed_plugins_task),
                     },
                     {
                         "title": "Прошлые проверки",
-                        "subtitle": "Откройте историю и посмотрите недавние результаты.",
                         "icon": "🕘",
                         "on_click": self._show_history_sheet,
                     },

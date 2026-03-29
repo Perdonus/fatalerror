@@ -750,6 +750,10 @@ class NeuralVPlugin(BasePlugin):
         self._loading_label = ""
         self._loading_current_progress = 0.0
         self._loading_target_progress = 0.0
+        self._loading_percent_view = None
+        self._loading_status_view = None
+        self._loading_progress_fill = None
+        self._loading_progress_gap = None
         self._last_report_text = ""
         self._last_report_peer = None
 
@@ -957,6 +961,16 @@ class NeuralVPlugin(BasePlugin):
             row.setOnClickListener(OnClickListener(lambda _v: on_click()))
         return row
 
+    def _sheet_body_height_dp(self, body_text: str, max_body_height_dp: int) -> int:
+        text = str(body_text or "")
+        estimated_lines = max(text.count("\n") + 1, (len(text) // 42) + 1)
+        estimated_dp = 46 + (estimated_lines * 11)
+        return int(max(120, min(max_body_height_dp, estimated_dp)))
+
+    def _sheet_rows_height_dp(self, rows_count: int, max_rows_height_dp: int = 430) -> int:
+        estimated_dp = 18 + (max(0, int(rows_count)) * 70)
+        return int(max(140, min(max_rows_height_dp, estimated_dp)))
+
     def _show_sheet_dialog(
         self,
         title: str,
@@ -1057,9 +1071,10 @@ class NeuralVPlugin(BasePlugin):
                 int(AndroidUtilities.dp(6)),
             )
             scroll.addView(body_view)
+            estimated_body_dp = self._sheet_body_height_dp(body_text, max_body_height_dp)
             body_lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                int(AndroidUtilities.dp(max_body_height_dp)),
+                int(AndroidUtilities.dp(estimated_body_dp)),
             )
             body_lp.setMargins(0, int(AndroidUtilities.dp(10)), 0, 0)
             try:
@@ -1069,6 +1084,34 @@ class NeuralVPlugin(BasePlugin):
             except Exception:
                 pass
             card.addView(scroll, body_lp)
+
+        rows_host = None
+        rows_container = None
+        if rows:
+            rows_host = ScrollView(context)
+            try:
+                rows_host.setBackgroundColor(Color.TRANSPARENT)
+                rows_host.setVerticalScrollBarEnabled(True)
+                rows_host.setScrollbarFadingEnabled(False)
+                rows_host.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET)
+            except Exception:
+                pass
+            rows_container = LinearLayout(context)
+            rows_container.setOrientation(LinearLayout.VERTICAL)
+            rows_host.addView(
+                rows_container,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            rows_height_dp = self._sheet_rows_height_dp(len(rows))
+            rows_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                int(AndroidUtilities.dp(rows_height_dp)),
+            )
+            rows_lp.setMargins(0, int(AndroidUtilities.dp(8)), 0, 0)
+            card.addView(rows_host, rows_lp)
 
         for row in rows or []:
             def _row_click(handler=row.get("on_click")):
@@ -1097,7 +1140,7 @@ class NeuralVPlugin(BasePlugin):
                 int(AndroidUtilities.dp(14)),
                 0,
             )
-            card.addView(row_view, row_lp)
+            (rows_container or card).addView(row_view, row_lp)
 
         holder = [None]
 
@@ -1428,49 +1471,131 @@ class NeuralVPlugin(BasePlugin):
         self._loading_current_progress = 2.0
         self._loading_target_progress = 6.0
 
-        def _format_message(frame: str = "•") -> str:
-            progress = max(0, min(99 if self._loading_active else 100, int(round(self._loading_current_progress))))
-            slots = 10
-            filled = max(0, min(slots, int(round((progress / 100.0) * slots))))
-            bar = "●" * filled + "○" * (slots - filled)
-            label = self._loading_label or "Подготавливаю проверку…"
-            return f"{frame} {progress}%  {bar}\n{label}"
-
         def action():
             fragment = get_last_fragment()
             activity = fragment.getParentActivity() if fragment else None
             if not activity:
                 return
+            dialog = Dialog(activity)
             try:
-                builder = AlertDialogBuilder(activity, AlertDialogBuilder.ALERT_TYPE_LOADING)
-            except Exception:
-                builder = AlertDialogBuilder(activity, AlertDialogBuilder.ALERT_TYPE_SPINNER)
-            builder.set_title(title)
-            builder.set_message(_format_message("⠋"))
-            dialog = builder.show()
-            try:
-                dialog.set_cancelable(False)
+                dialog.setCancelable(False)
+                dialog.setCanceledOnTouchOutside(False)
             except Exception:
                 pass
-            self._loading_builder = builder
+
+            root = LinearLayout(activity)
+            root.setOrientation(LinearLayout.VERTICAL)
+            root.setPadding(
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+            )
+            root.setBackgroundColor(Color.TRANSPARENT)
+
+            card = LinearLayout(activity)
+            card.setOrientation(LinearLayout.VERTICAL)
+            card.setPadding(
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+                int(AndroidUtilities.dp(18)),
+            )
+            card.setBackground(self._sheet_card_background())
+            root.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+
+            title_view = TextView(activity)
+            title_view.setText(title)
+            title_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20)
+            title_view.setTextColor(int(self._sheet_text_color()))
+            card.addView(title_view)
+
+            percent_view = TextView(activity)
+            percent_view.setText("2%")
+            percent_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            percent_view.setTextColor(int(self._sheet_muted_color()))
+            percent_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            percent_lp.setMargins(0, int(AndroidUtilities.dp(8)), 0, 0)
+            card.addView(percent_view, percent_lp)
+
+            track = LinearLayout(activity)
+            track.setOrientation(LinearLayout.HORIZONTAL)
+            track_bg = GradientDrawable()
+            track_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
+            track_bg.setColor(int(self._with_alpha(self._sheet_muted_color(), 0x26)))
+            track.setBackground(track_bg)
+            track_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                int(AndroidUtilities.dp(10)),
+            )
+            track_lp.setMargins(0, int(AndroidUtilities.dp(12)), 0, 0)
+            card.addView(track, track_lp)
+
+            fill_view = View(activity)
+            fill_bg = GradientDrawable()
+            fill_bg.setCornerRadius(float(AndroidUtilities.dp(999)))
+            fill_bg.setColor(int(self._sheet_accent_color()))
+            fill_view.setBackground(fill_bg)
+            fill_lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 2.0)
+            track.addView(fill_view, fill_lp)
+
+            gap_view = View(activity)
+            gap_view.setBackgroundColor(Color.TRANSPARENT)
+            gap_lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 98.0)
+            track.addView(gap_view, gap_lp)
+
+            status_view = TextView(activity)
+            status_view.setText(self._loading_label)
+            status_view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14)
+            status_view.setTextColor(int(self._sheet_text_color()))
+            status_lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            status_lp.setMargins(0, int(AndroidUtilities.dp(12)), 0, 0)
+            card.addView(status_view, status_lp)
+
+            dialog.setContentView(root)
             self._loading_dialog = dialog
+            self._loading_builder = None
+            self._loading_percent_view = percent_view
+            self._loading_status_view = status_view
+            self._loading_progress_fill = fill_view
+            self._loading_progress_gap = gap_view
             self._loading_active = True
+            try:
+                dialog.show()
+                window = dialog.getWindow()
+                if window is not None:
+                    window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                    try:
+                        window.setDimAmount(0.58)
+                    except Exception:
+                        pass
+            except Exception as error:
+                log(f"[NeuralV] loading dialog show failed: {error}")
+            self._refresh_loading_ui()
 
         run_on_ui_thread(action)
 
         def animator():
-            step = 0
-            frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
             while self._loading_active:
                 time.sleep(0.08)
-                if not self._loading_active or not self._loading_builder:
+                if not self._loading_active:
                     break
                 if self._loading_current_progress < self._loading_target_progress:
                     delta = max(0.8, min(3.2, (self._loading_target_progress - self._loading_current_progress) * 0.35))
                     self._loading_current_progress = min(self._loading_target_progress, self._loading_current_progress + delta)
-                frame = frames[step % len(frames)]
-                step += 1
-                run_on_ui_thread(lambda msg=_format_message(frame): self._update_loading_message(msg))
+                run_on_ui_thread(self._refresh_loading_ui)
 
         self._loading_thread = threading.Thread(target=animator, daemon=True)
         self._loading_thread.start()
@@ -1484,10 +1609,21 @@ class NeuralVPlugin(BasePlugin):
         self._set_loading_stage(100, label)
         time.sleep(0.18)
 
-    def _update_loading_message(self, message: str):
+    def _refresh_loading_ui(self):
+        progress = max(0, min(100, int(round(self._loading_current_progress))))
+        label = self._loading_label or "Подготавливаю проверку…"
         try:
-            if self._loading_builder:
-                self._loading_builder.set_message(message)
+            if self._loading_percent_view is not None:
+                self._loading_percent_view.setText(f"{progress}%")
+            if self._loading_status_view is not None:
+                self._loading_status_view.setText(label)
+            if self._loading_progress_fill is not None and self._loading_progress_gap is not None:
+                fill_lp = self._loading_progress_fill.getLayoutParams()
+                gap_lp = self._loading_progress_gap.getLayoutParams()
+                fill_lp.weight = max(0.01, float(progress))
+                gap_lp.weight = max(0.01, float(100 - progress))
+                self._loading_progress_fill.setLayoutParams(fill_lp)
+                self._loading_progress_gap.setLayoutParams(gap_lp)
         except Exception:
             pass
 
@@ -1504,6 +1640,10 @@ class NeuralVPlugin(BasePlugin):
                 pass
             self._loading_dialog = None
             self._loading_builder = None
+            self._loading_percent_view = None
+            self._loading_status_view = None
+            self._loading_progress_fill = None
+            self._loading_progress_gap = None
         run_on_ui_thread(action)
 
     def _open_main_menu(self):
@@ -1610,14 +1750,33 @@ class NeuralVPlugin(BasePlugin):
                 })
             self._show_sheet_dialog(
                 "История проверок",
-                "Откройте прошлый результат или вернитесь к последней спорной проверке.",
                 rows=rows,
                 actions=[
-                    {"label": "Закрыть", "icon": "✕", "close_first": True},
+                    {"label": "Очистить историю", "danger": True, "on_click": self._confirm_clear_history},
+                    {"label": "Назад", "close_first": True},
                 ],
                 max_body_height_dp=1,
             )
         run_on_ui_thread(action)
+
+    def _confirm_clear_history(self):
+        def action():
+            context = self._dialog_context()
+            if context is None:
+                return
+            builder = AlertDialogBuilder(context)
+            builder.set_title("Очистить историю")
+            builder.set_message("NeuralV удалит все сохранённые результаты проверок. Продолжить?")
+            builder.set_positive_button("Очистить", lambda d, w: (d.dismiss(), self._clear_history()))
+            builder.set_negative_button("Отмена", lambda d, w: d.dismiss())
+            builder.show()
+        run_on_ui_thread(action)
+
+    def _clear_history(self):
+        self.analysis_history = []
+        self.runtime_contexts.clear()
+        self._save_history()
+        self._show_success("NeuralV: история очищена.")
 
     def _request_full_report_task(self, result: dict, peer_id: Optional[int], reply_to: Any = None):
         context = self._ensure_runtime_context(result)
@@ -1746,7 +1905,7 @@ class NeuralVPlugin(BasePlugin):
                 str(result.get("filename") or "NeuralV"),
                 body_text=report_text,
                 actions=actions,
-                max_body_height_dp=360,
+                max_body_height_dp=560,
             )
         run_on_ui_thread(action)
 
@@ -2043,43 +2202,25 @@ class NeuralVPlugin(BasePlugin):
         confirmed_chain = _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])})
         if confirmed_chain:
             return result
-        alarmist_markers = [
-            "удалён",
-            "взлом",
-            "обратн",
-            "reverse shell",
-            "утеч",
-            "поврежд",
-            "вредонос",
-            "удалённый контроль",
-            "повредить систему",
-        ]
         target_verdict = "Осторожно" if analysis.get("verdict") == "Осторожно" else "Безопасно"
-        summary = str(result.get("summary") or "").strip()
-        generic_markers = [
-            "локальный слой",
-            "требует дополнительного анализа",
-            "требует ручной проверки",
-            "выглядит спорно",
-        ]
-        if not summary or any(marker in summary.lower() for marker in alarmist_markers + generic_markers):
-            result["summary"] = self._build_benign_tooling_summary(analysis, target_verdict)
+        result["summary"] = self._build_benign_tooling_summary(analysis, target_verdict)
         result["bullets"] = self._build_benign_tooling_bullets(analysis, target_verdict)
         suggestion = str(result.get("verdict_suggestion") or "").strip().lower()
         if suggestion == "block":
             result["verdict_suggestion"] = "review"
-        full_report = str(result.get("full_report") or "").strip()
-        if full_report and any(marker in full_report.lower() for marker in alarmist_markers):
-            result["full_report"] = ""
         return result
 
     def _compose_report(self, filename: str, analysis: dict, ai_result: dict) -> dict:
         ai_result = self._sanitize_ai_review(ai_result, analysis)
-        ai_summary = str(ai_result.get("summary") or "").strip()
-        ai_bullets = [str(item).strip() for item in (ai_result.get("bullets") or []) if str(item).strip()]
-        local_bullets = self._local_reason_bullets(analysis)
-        merged_bullets = self._dedupe_bullets(ai_bullets, local_bullets)
         final_verdict = self._merge_verdicts(analysis["verdict"], ai_result.get("verdict_suggestion"), analysis)
+        if (analysis.get("framework_library") or analysis.get("security_tool")) and not _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])}):
+            ai_summary = self._build_benign_tooling_summary(analysis, final_verdict)
+            merged_bullets = self._build_benign_tooling_bullets(analysis, final_verdict)
+        else:
+            ai_summary = str(ai_result.get("summary") or "").strip()
+            ai_bullets = [str(item).strip() for item in (ai_result.get("bullets") or []) if str(item).strip()]
+            local_bullets = self._local_reason_bullets(analysis)
+            merged_bullets = self._dedupe_bullets(ai_bullets, local_bullets)
         final_icon = VERDICT_ICONS[final_verdict]
 
         lines = [ai_summary or self._build_local_fallback_summary(analysis)]
@@ -2283,7 +2424,7 @@ class NeuralVPlugin(BasePlugin):
                 subtitle,
                 body_text=self._render_result_body(result),
                 actions=actions,
-                max_body_height_dp=300,
+                max_body_height_dp=440,
             )
             if result["verdict"] == "Опасно":
                 BulletinHelper.show_error(f"{result['icon']} {result['verdict']}")

@@ -747,6 +747,9 @@ class NeuralVPlugin(BasePlugin):
         self._loading_builder = None
         self._loading_active = False
         self._loading_thread = None
+        self._loading_label = ""
+        self._loading_current_progress = 0.0
+        self._loading_target_progress = 0.0
         self._last_report_text = ""
         self._last_report_peer = None
 
@@ -1421,6 +1424,17 @@ class NeuralVPlugin(BasePlugin):
             "Подключаю второй анализ…",
             "Собираю итог…",
         ]
+        self._loading_label = str(phases[0] if phases else "Подготавливаю проверку…")
+        self._loading_current_progress = 2.0
+        self._loading_target_progress = 6.0
+
+        def _format_message(frame: str = "•") -> str:
+            progress = max(0, min(99 if self._loading_active else 100, int(round(self._loading_current_progress))))
+            slots = 10
+            filled = max(0, min(slots, int(round((progress / 100.0) * slots))))
+            bar = "●" * filled + "○" * (slots - filled)
+            label = self._loading_label or "Подготавливаю проверку…"
+            return f"{frame} {progress}%  {bar}\n{label}"
 
         def action():
             fragment = get_last_fragment()
@@ -1432,7 +1446,7 @@ class NeuralVPlugin(BasePlugin):
             except Exception:
                 builder = AlertDialogBuilder(activity, AlertDialogBuilder.ALERT_TYPE_SPINNER)
             builder.set_title(title)
-            builder.set_message(phases[0])
+            builder.set_message(_format_message("⠋"))
             dialog = builder.show()
             try:
                 dialog.set_cancelable(False)
@@ -1448,16 +1462,27 @@ class NeuralVPlugin(BasePlugin):
             step = 0
             frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
             while self._loading_active:
-                time.sleep(0.22)
+                time.sleep(0.08)
                 if not self._loading_active or not self._loading_builder:
                     break
+                if self._loading_current_progress < self._loading_target_progress:
+                    delta = max(0.8, min(3.2, (self._loading_target_progress - self._loading_current_progress) * 0.35))
+                    self._loading_current_progress = min(self._loading_target_progress, self._loading_current_progress + delta)
                 frame = frames[step % len(frames)]
-                message = f"{frame} {phases[(step // len(frames)) % len(phases)]}"
                 step += 1
-                run_on_ui_thread(lambda msg=message: self._update_loading_message(msg))
+                run_on_ui_thread(lambda msg=_format_message(frame): self._update_loading_message(msg))
 
         self._loading_thread = threading.Thread(target=animator, daemon=True)
         self._loading_thread.start()
+
+    def _set_loading_stage(self, progress: int, label: str):
+        self._loading_target_progress = float(max(0, min(100, progress)))
+        self._loading_label = str(label or self._loading_label or "Подготавливаю проверку…")
+        log(f"[NeuralV] loading stage -> {int(self._loading_target_progress)}% :: {self._loading_label}")
+
+    def _complete_loading_stage(self, label: str = "Готовлю итог…"):
+        self._set_loading_stage(100, label)
+        time.sleep(0.18)
 
     def _update_loading_message(self, message: str):
         try:
@@ -1468,6 +1493,9 @@ class NeuralVPlugin(BasePlugin):
 
     def _dismiss_loading_dialog(self):
         self._loading_active = False
+        self._loading_label = ""
+        self._loading_current_progress = 0.0
+        self._loading_target_progress = 0.0
         def action():
             try:
                 if self._loading_dialog and hasattr(self._loading_dialog, "dismiss"):
@@ -1577,6 +1605,7 @@ class NeuralVPlugin(BasePlugin):
                         },
                         self._get_current_dialog_id(),
                         None,
+                        from_history=True,
                     ),
                 })
             self._show_sheet_dialog(
@@ -1602,15 +1631,18 @@ class NeuralVPlugin(BasePlugin):
             "Готовлю действия…",
         ])
         try:
+            self._set_loading_stage(12, "Поднимаю сохранённый контекст…")
             ai_result = self._request_ai_review(
                 context["filename"],
                 context["code"],
                 context["analysis"],
                 mode="full",
             )
+            self._set_loading_stage(78, "Собираю полный отчёт…")
             full_report = str(ai_result.get("full_report") or ai_result.get("summary") or "").strip()
             if not full_report:
                 full_report = self._build_local_fallback_summary(context["analysis"])
+            self._complete_loading_stage("Открываю полный отчёт…")
             self._show_full_report_dialog(result, full_report, peer_id, reply_to)
         except Exception as error:
             log(f"[NeuralV] full report failed: {error}\n{traceback.format_exc()}")
@@ -1679,7 +1711,7 @@ class NeuralVPlugin(BasePlugin):
             log(f"[NeuralV] disable plugin failed: {error}\n{traceback.format_exc()}")
             self._show_error("NeuralV: не удалось отключить плагин.")
 
-    def _show_full_report_dialog(self, result: dict, report_text: str, peer_id: Optional[int], reply_to: Any = None):
+    def _show_full_report_dialog(self, result: dict, report_text: str, peer_id: Optional[int], reply_to: Any = None, from_history: bool = False):
         def action():
             share_text = _build_share_report_text(result, report_text)
             source_name = str(result.get("filename") or result.get("display_name") or "Плагин")
@@ -1707,7 +1739,7 @@ class NeuralVPlugin(BasePlugin):
             actions.append({
                 "label": "Назад",
                 "close_first": True,
-                "on_click": lambda: self._show_result_dialog(source_name, result, peer_id, reply_to),
+                "on_click": lambda: self._show_result_dialog(source_name, result, peer_id, reply_to, from_history=from_history),
             })
             self._show_sheet_dialog(
                 f"{result.get('icon', '🧠')} Полный отчёт",
@@ -1876,6 +1908,35 @@ class NeuralVPlugin(BasePlugin):
             return "Файл выглядит спорно: в нём есть поведение, которое требует ручной проверки перед запуском."
         return "Файл показывает опасную цепочку поведения. Запускать его без ручной проверки и изоляции не стоит."
 
+    def _build_benign_tooling_summary(self, analysis: dict, final_verdict: str = "Безопасно") -> str:
+        if analysis.get("security_tool"):
+            if final_verdict == "Осторожно":
+                return "Это служебный модуль проверки. Внутри есть спорные технические возможности, но сами по себе они ещё не подтверждают вредоносное поведение."
+            return "Это служебный модуль проверки. Локальный разбор не показал скрытого запуска, кражи данных или другой вредоносной цепочки."
+        if final_verdict == "Осторожно":
+            return "Файл похож на общую библиотеку или framework для плагинов. Внутри есть спорные технические возможности, но сами по себе они ещё не делают его вредоносным."
+        return "Файл похож на общую библиотеку или framework для плагинов. Явной вредоносной цепочки в нём не видно."
+
+    def _build_benign_tooling_bullets(self, analysis: dict, final_verdict: str = "Безопасно") -> List[str]:
+        items: List[str] = []
+        if analysis.get("security_tool"):
+            items.append("Внутри есть сетевые и файловые подсистемы, что нормально для модуля проверки и отчётов.")
+            items.append("Скрытый запуск, кража данных или закрепление в системе не подтверждены.")
+            if final_verdict == "Осторожно":
+                items.append("Имеет смысл смотреть на конкретные интеграции и то, какие данные модуль реально отправляет.")
+            else:
+                items.append("Поведение похоже на заявленную задачу: анализ, сводка и отправка результата.")
+        else:
+            items.append("Внутри есть служебные сетевые, файловые и системные helper-слои, типичные для общей библиотеки.")
+            items.append("Сама по себе такая библиотека ещё не означает вредоносность без конкретного сценария злоупотребления.")
+            if final_verdict == "Осторожно":
+                items.append("Главный вопрос здесь не в библиотеке отдельно, а в том, как её использует конкретный плагин.")
+            else:
+                items.append("Явная вредоносная цепочка не подтверждена.")
+        if analysis.get("mismatch"):
+            items.append("Имя файла не совпадает с тем, как он устроен внутри.")
+        return items[:4]
+
     def _build_ai_analysis_text(self, filename: str, code: str, analysis: dict) -> str:
         lines = [
             f"Файл: {filename}",
@@ -1969,6 +2030,8 @@ class NeuralVPlugin(BasePlugin):
             confirmed_chain = _has_confirmed_tooling_malicious_chain({item.get("id") for item in (analysis.get("findings") or [])})
             if ai_verdict == "Безопасно" and local_verdict == "Осторожно":
                 return "Безопасно"
+            if ai_verdict == "Осторожно" and local_verdict == "Безопасно" and not confirmed_chain:
+                return "Безопасно"
             if ai_verdict == "Опасно" and not confirmed_chain:
                 return "Осторожно" if local_verdict == "Осторожно" else "Безопасно"
         return local_verdict if order[local_verdict] >= order[ai_verdict] else ai_verdict
@@ -1991,18 +2054,17 @@ class NeuralVPlugin(BasePlugin):
             "удалённый контроль",
             "повредить систему",
         ]
+        target_verdict = "Осторожно" if analysis.get("verdict") == "Осторожно" else "Безопасно"
         summary = str(result.get("summary") or "").strip()
-        if not summary or any(marker in summary.lower() for marker in alarmist_markers):
-            result["summary"] = self._build_local_fallback_summary(analysis)
-        clean_bullets = []
-        for bullet in [str(item).strip() for item in (result.get("bullets") or []) if str(item).strip()]:
-            lowered = bullet.lower()
-            if any(marker in lowered for marker in alarmist_markers):
-                continue
-            clean_bullets.append(bullet)
-        if not clean_bullets:
-            clean_bullets = self._local_reason_bullets(analysis)
-        result["bullets"] = clean_bullets[:5]
+        generic_markers = [
+            "локальный слой",
+            "требует дополнительного анализа",
+            "требует ручной проверки",
+            "выглядит спорно",
+        ]
+        if not summary or any(marker in summary.lower() for marker in alarmist_markers + generic_markers):
+            result["summary"] = self._build_benign_tooling_summary(analysis, target_verdict)
+        result["bullets"] = self._build_benign_tooling_bullets(analysis, target_verdict)
         suggestion = str(result.get("verdict_suggestion") or "").strip().lower()
         if suggestion == "block":
             result["verdict_suggestion"] = "review"
@@ -2146,21 +2208,28 @@ class NeuralVPlugin(BasePlugin):
             "Готовлю итог…",
         ])
         try:
+            self._set_loading_stage(8, "Разбираю файл и тип кода…")
             cache_key = self._cache_key(filename, code_content)
             cached = self.analysis_cache.get(cache_key)
             if cached and (time.time() - cached.get("ts", 0)) < CACHE_TTL:
+                self._set_loading_stage(34, "Поднимаю сохранённый результат…")
                 analysis = cached.get("analysis")
                 result_template = self._clone_result(cached["result"])
             else:
+                self._set_loading_stage(20, "Проверяю локальные сигнатуры…")
                 analysis = analyze_code(filename, code_content)
+                self._set_loading_stage(48, "Локальная проверка завершена…")
                 ai_result = self._request_ai_review(filename, code_content, analysis, mode="summary")
+                self._set_loading_stage(82, "Собираю итоговый отчёт…")
                 result_template = self._compose_report(filename, analysis, ai_result)
                 self.analysis_cache[cache_key] = {
                     "ts": time.time(),
                     "analysis": analysis,
                     "result": self._clone_result(result_template),
                 }
+            self._set_loading_stage(94, "Подготавливаю окно результата…")
             result = self._register_result(filename, code_content, analysis, result_template, source_meta)
+            self._complete_loading_stage("Открываю результат…")
             self._show_result_dialog(filename, result, peer_id, reply_to)
         except Exception as error:
             log(f"[NeuralV] analyze text task failed: {error}\n{traceback.format_exc()}")
@@ -2168,7 +2237,7 @@ class NeuralVPlugin(BasePlugin):
         finally:
             self._dismiss_loading_dialog()
 
-    def _show_result_dialog(self, filename: str, result: dict, peer_id: Optional[int], reply_to: Any = None):
+    def _show_result_dialog(self, filename: str, result: dict, peer_id: Optional[int], reply_to: Any = None, from_history: bool = False):
         self._last_report_text = result["report"]
         self._last_report_peer = peer_id
         log(
@@ -2189,18 +2258,26 @@ class NeuralVPlugin(BasePlugin):
                 subtitle = f"{display_name}\n{display_version}"
             actions = [
                 {
-                    "label": "Отправить",
-                    "compact_row": True,
-                    "filled": True,
-                    "close_first": True,
-                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
-                },
-                {
                     "label": "Скопировать",
                     "compact_row": True,
                     "on_click": lambda: self._copy_to_clipboard(share_text),
                 },
             ]
+            if from_history:
+                actions.append({
+                    "label": "Назад",
+                    "compact_row": True,
+                    "close_first": True,
+                    "on_click": self._show_history_sheet,
+                })
+            else:
+                actions.append({
+                    "label": "Отправить",
+                    "compact_row": True,
+                    "filled": True,
+                    "close_first": True,
+                    "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
+                })
             self._show_sheet_dialog(
                 f"{result['icon']} {result['verdict']}",
                 subtitle,
@@ -2268,13 +2345,19 @@ class NeuralVPlugin(BasePlugin):
             "Собираю сводку…",
         ])
         try:
+            self._set_loading_stage(8, "Собираю список установленных плагинов…")
             plugins = self._list_installed_plugin_sources()
             results = []
-            for plugin in plugins[:MAX_BATCH_RESULTS]:
+            selected = plugins[:MAX_BATCH_RESULTS]
+            total = max(1, len(selected))
+            for index, plugin in enumerate(selected):
                 try:
                     plugin_path = str(plugin.get("plugin_path") or "")
                     if not plugin_path or not os.path.isfile(plugin_path):
                         continue
+                    plugin_name = str(plugin.get("plugin_name") or os.path.basename(plugin_path) or "плагин")
+                    local_progress = 14 + int((index / total) * 56)
+                    self._set_loading_stage(local_progress, f"Проверяю {plugin_name}…")
                     with open(plugin_path, "rb") as handle:
                         raw = handle.read(self._get_max_bytes() + 1)
                     if len(raw) > self._get_max_bytes() or _is_probably_binary(raw):
@@ -2283,6 +2366,7 @@ class NeuralVPlugin(BasePlugin):
                     if not code.strip():
                         continue
                     local = analyze_code(os.path.basename(plugin_path), code)
+                    self._set_loading_stage(min(84, local_progress + 14), f"Локальный разбор готов: {plugin_name}")
                     if local["verdict"] == "Безопасно" and local["score"] < 4:
                         template = {
                             "verdict": local["verdict"],
@@ -2293,6 +2377,7 @@ class NeuralVPlugin(BasePlugin):
                             "local_verdict": local["verdict"],
                         }
                     else:
+                        self._set_loading_stage(min(90, local_progress + 22), f"Подключаю второй анализ: {plugin_name}")
                         ai_result = self._request_ai_review(os.path.basename(plugin_path), code, local, mode="summary")
                         template = self._compose_report(os.path.basename(plugin_path), local, ai_result)
                     final = self._register_result(os.path.basename(plugin_path), code, local, template, plugin)
@@ -2304,6 +2389,7 @@ class NeuralVPlugin(BasePlugin):
                 return
             order = {"Безопасно": 0, "Осторожно": 1, "Опасно": 2}
             results.sort(key=lambda item: order[item["verdict"]], reverse=True)
+            self._complete_loading_stage("Собираю общую сводку…")
             self._show_batch_results_sheet(results)
         except Exception as error:
             log(f"[NeuralV] scan installed plugins failed: {error}\n{traceback.format_exc()}")

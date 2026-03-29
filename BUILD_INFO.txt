@@ -1,5 +1,5 @@
 Repository: Perdonus/fatalerror
 Version: 1.4.1
-Commit: 70808e5015100a0c4833374d906f7ddb4123f18f
-Workflow Run: https://github.com/Perdonus/fatalerror/actions/runs/23667029328
-Built At: 2026-03-27T20:53:36Z
+Commit: 05f8512fbcc2946ef39272eeec708e30c4142f6b
+Workflow Run: https://github.com/Perdonus/fatalerror/actions/runs/23706255069
+Built At: 2026-03-29T09:41:19Z

@@ -1111,7 +1111,10 @@ class NeuralVPlugin(BasePlugin):
                 int(AndroidUtilities.dp(4)),
                 int(AndroidUtilities.dp(10)),
             )
-            for action in actions:
+            index = 0
+            while index < len(actions):
+                action = actions[index]
+
                 def _click(handler=action.get("on_click"), close_first=bool(action.get("close_first"))):
                     if close_first and holder[0] is not None:
                         try:
@@ -1120,6 +1123,46 @@ class NeuralVPlugin(BasePlugin):
                             pass
                     if callable(handler):
                         handler()
+
+                if action.get("compact_row"):
+                    compact_row = LinearLayout(context)
+                    compact_row.setOrientation(LinearLayout.HORIZONTAL)
+                    row_lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    )
+                    row_lp.setMargins(int(AndroidUtilities.dp(14)), 0, int(AndroidUtilities.dp(14)), int(AndroidUtilities.dp(10)))
+                    while index < len(actions) and actions[index].get("compact_row"):
+                        compact_action = actions[index]
+
+                        def _compact_click(handler=compact_action.get("on_click"), close_first=bool(compact_action.get("close_first"))):
+                            if close_first and holder[0] is not None:
+                                try:
+                                    holder[0].dismiss()
+                                except Exception:
+                                    pass
+                            if callable(handler):
+                                handler()
+
+                        button = self._create_sheet_button(
+                            context,
+                            str(compact_action.get("label") or ""),
+                            _compact_click,
+                            icon=str(compact_action.get("icon") or ""),
+                            filled=bool(compact_action.get("filled")),
+                            danger=bool(compact_action.get("danger")),
+                        )
+                        button_lp = LinearLayout.LayoutParams(
+                            0,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            1.0,
+                        )
+                        left_margin = int(AndroidUtilities.dp(4)) if compact_row.getChildCount() else 0
+                        button_lp.setMargins(left_margin, 0, 0, 0)
+                        compact_row.addView(button, button_lp)
+                        index += 1
+                    actions_wrap.addView(compact_row, row_lp)
+                    continue
 
                 button = self._create_sheet_button(
                     context,
@@ -1135,6 +1178,7 @@ class NeuralVPlugin(BasePlugin):
                 )
                 button_lp.setMargins(int(AndroidUtilities.dp(14)), 0, int(AndroidUtilities.dp(14)), int(AndroidUtilities.dp(10)))
                 actions_wrap.addView(button, button_lp)
+                index += 1
             card.addView(actions_wrap, actions_lp)
 
         try:
@@ -1638,15 +1682,16 @@ class NeuralVPlugin(BasePlugin):
     def _show_full_report_dialog(self, result: dict, report_text: str, peer_id: Optional[int], reply_to: Any = None):
         def action():
             share_text = _build_share_report_text(result, report_text)
+            source_name = str(result.get("filename") or result.get("display_name") or "Плагин")
             actions = [
                 {
                     "label": "Скопировать",
-                    "icon": "📋",
+                    "compact_row": True,
                     "on_click": lambda: self._copy_to_clipboard(share_text),
                 },
                 {
-                    "label": "Отправить в чат",
-                    "icon": "✉️",
+                    "label": "Отправить",
+                    "compact_row": True,
                     "filled": True,
                     "close_first": True,
                     "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
@@ -1659,7 +1704,11 @@ class NeuralVPlugin(BasePlugin):
                     "danger": True,
                     "on_click": lambda: self._confirm_disable_plugin(result),
                 })
-            actions.append({"label": "Закрыть", "icon": "✕", "close_first": True})
+            actions.append({
+                "label": "Назад",
+                "close_first": True,
+                "on_click": lambda: self._show_result_dialog(source_name, result, peer_id, reply_to),
+            })
             self._show_sheet_dialog(
                 f"{result.get('icon', '🧠')} Полный отчёт",
                 str(result.get("filename") or "NeuralV"),
@@ -2140,19 +2189,18 @@ class NeuralVPlugin(BasePlugin):
                 subtitle = f"{display_name}\n{display_version}"
             actions = [
                 {
-                    "label": "Отправить в чат",
-                    "icon": "✉️",
+                    "label": "Отправить",
+                    "compact_row": True,
                     "filled": True,
                     "close_first": True,
                     "on_click": lambda: self._send_report_to_chat(peer_id, reply_to, share_text),
                 },
                 {
                     "label": "Скопировать",
-                    "icon": "📋",
+                    "compact_row": True,
                     "on_click": lambda: self._copy_to_clipboard(share_text),
                 },
             ]
-            actions.append({"label": "Закрыть", "icon": "✕", "close_first": True})
             self._show_sheet_dialog(
                 f"{result['icon']} {result['verdict']}",
                 subtitle,
